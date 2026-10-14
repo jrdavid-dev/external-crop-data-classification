@@ -34,3 +34,6 @@ __pycache__/
 
 # Local one-off pasted geometry example
 /decode_pasted_geometry.py
+
+# Recoverable local archive of unused scripts and old exploratory outputs
+/archive/

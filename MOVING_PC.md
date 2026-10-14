@@ -28,3 +28,5 @@ Copy `settings.example.json` to `settings.local.json`, edit the storage roots/pr
 Run the Step 2 settings cell, then Step 5 settings/connection/helpers/inventory. Acquisition metadata can be reused after the corresponding output folders are restored. Before running downloads, rebuild progress paths with `python migrate_progress.py` if drive letters have changed. That utility changes only recorded local paths, preserving request IDs, source settings and checksums.
 
 Steps 6–8 resolve masks and GeoTIFFs from current project/data roots first, so old absolute paths do not prevent local analysis. Rerun Step 6 to identify absent or invalid composites. Observed-summary checkpoints avoid repeating successful metadata retrieval. No code should treat missing bins as cloud-free observations.
+
+The local `archive/` folder is optional and is not required by the notebook. Copy it separately only if you want to retain old exploratory scripts, images or examples. It is excluded from the public repository.

@@ -1,5 +1,7 @@
 # Benguet crop classification: S4A to four-month inputs
 
+> Methodology notes include earlier standalone examples. Those scripts are now archived locally; use the Sen4AgriNet notebook for the current executable workflow.
+
 Prepared October 13, 2026.
 
 ## Purpose

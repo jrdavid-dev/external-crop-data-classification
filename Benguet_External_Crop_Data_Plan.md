@@ -1,5 +1,7 @@
 # External Crop Data for the Benguet Thesis
 
+> Methodology notes include earlier standalone examples. Those scripts are now archived locally; use the Sen4AgriNet notebook for the current executable workflow.
+
 ## Study requirements
 
 - Target crops: **cabbage, carrot, and potato**.

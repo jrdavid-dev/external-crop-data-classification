@@ -44,4 +44,4 @@ Include notebooks with outputs cleared, source modules, tests, dependency versio
 
 Dataset access and redistribution remain subject to their own terms. No project license is assigned automatically; choose one before encouraging third-party redistribution of the code.
 
-Standalone inspection utilities are included for S4A and FranceCrops. FranceCrops utilities additionally require `pyarrow` (`python -m pip install pyarrow`). `get_field_sentinel2.py` is an earlier single-field exploration utility; the notebook is the current pilot pipeline. The one-off pasted-geometry example stays local.
+The active notebook uses `crop_workflow.py` and `observed_timelines.py`; `migrate_progress.py` supports moving PCs. Inspection and boundary extraction are implemented in the notebook itself. Older standalone inspection/visualization scripts and exploratory outputs are archived locally under `archive/legacy_2026-10-14/` and excluded from Git. They remain recoverable locally and, where previously tracked, in repository history.
