@@ -1,0 +1,33 @@
+# Large source data, imagery, generated reports and local environments
+.venv/
+venv/
+S4A/
+data/
+sen4agrinet_work/
+crop_inspection/
+francecrops_inspection/
+decoded_geometry/
+sentinel2_field/
+visual_inspection/
+sentinel2_*/
+*.nc
+*.tif
+*.tiff
+*.parquet
+*.npy
+*.npz
+*.zip
+*.pdf
+
+# Local settings, credentials, notebook output backups and temporary tools
+settings.local.json
+.env
+.env.*
+!.env.example
+.tools/
+.notebook_backups/
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+.pytest_cache/
+

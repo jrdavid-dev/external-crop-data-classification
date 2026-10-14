@@ -1,0 +1,6 @@
+{
+  "dataset_root": "D:/ground_truth",
+  "imagery_root": "D:/ground_truth/sentinel2_pilot_composites",
+  "report_root": "./sen4agrinet_work/inventory",
+  "earth_engine_project": "YOUR_EARTH_ENGINE_PROJECT"
+}
