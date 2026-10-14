@@ -43,3 +43,5 @@ Include notebooks with outputs cleared, source modules, tests, dependency versio
 - [Cloud probability and matching](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_CLOUD_PROBABILITY)
 
 Dataset access and redistribution remain subject to their own terms. No project license is assigned automatically; choose one before encouraging third-party redistribution of the code.
+
+Standalone inspection utilities are included for S4A and FranceCrops. FranceCrops utilities additionally require `pyarrow` (`python -m pip install pyarrow`). `get_field_sentinel2.py` is an earlier single-field exploration utility; the notebook is the current pilot pipeline. The one-off pasted-geometry example stays local.

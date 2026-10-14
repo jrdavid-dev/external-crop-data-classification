@@ -31,3 +31,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+
+# Local one-off pasted geometry example
+/decode_pasted_geometry.py
