@@ -1,12 +1,12 @@
 # External crop data classification
 
-Prepare external crop-reference data for exploratory crop classification in Benguet. The current Sen4AgriNet notebook implements Steps 1–8: inventory, inspection, field-fragment extraction, deduplication, balanced pixel sampling, cloud-screened semi-monthly L2A composites, quality checks, timelines and candidate green-up detection. Steps 9–15 remain methodology outlines.
+Prepare Sen4AgriNet crop-reference data and Sentinel-2 imagery for a Benguet crop-classification study. The notebook implements inventory, geometry checks, balanced sampling, cloud-screened composites, quality checks, timelines and candidate green-up detection.
 
-The pilot selects 1,000 carrot and 1,000 potato pixels across 20 conservative parcel groups per crop. It downloads 24 annual composites per region: 960 planned GeoTIFFs. SCL and cloud probability below 40 are applied before daily mosaicking and median reduction. Sampling masks distinguish selected training pixels from surrounding image context. Cabbage is not present in the inspected S4A 2020 subset; FranceCrops has a companion outline.
+The current pilot contains **1,000 carrot pixels and 1,000 potato pixels**, with 20 conservative parcel groups per crop. It plans 960 annual half-month composite GeoTIFFs. Cabbage remains a target crop, but no verified cabbage source is configured.
 
-## Setup
+## Quick setup
 
-Use Python 3.13, Git and a notebook editor such as VS Code with the Python and Jupyter extensions. From the repository folder:
+Use Python 3.13, Git and a notebook editor. From the repository folder:
 
 ```powershell
 py -3.13 -m venv .venv
@@ -14,34 +14,35 @@ py -3.13 -m venv .venv
 Copy-Item settings.example.json settings.local.json
 ```
 
-Edit `settings.local.json` with your dataset root, imagery folder and registered Earth Engine project. The dataset root is the parent of `data`, so raw 2020 files resolve to `dataset_root/data/2020/<tile>/`. Select `.venv` as the notebook kernel. Local settings are ignored by Git.
+Edit local settings with your data paths and registered Earth Engine project. Select `.venv` as the kernel, then open [the notebook](Sen4AgriNet_Workflow_Outline.ipynb). Run settings before later sections. Existing raw files do not need to be downloaded again.
 
-## Running
+## Guides
 
-Open `Sen4AgriNet_Workflow_Outline.ipynb` from this folder. Run settings first. Download cells are optional when the relevant files already exist. Run Steps 3–4 to reconstruct inventories and the balanced pilot, or restore their generated outputs from a previous machine. Step 5 requires Earth Engine authentication. Its masks, grid and temporal settings are fingerprinted; a changed cloud threshold creates a different request folder.
+- [Documentation index](docs/README.md)
+- [Study plan](docs/study_plan.md)
+- [Execution order and outputs](docs/workflow.md)
+- [Crop-label evidence](docs/label_quality.md)
+- [Moving to another PC](docs/moving_pc.md)
 
-Steps 6–8 use `crop_workflow.py` and `observed_timelines.py`. Step 6 reports missing/failed intervals, applies reflectance scaling and checks sampling alignment. Step 7 builds composite curves and optionally retrieves small actual-date vegetation summaries without more image downloads. Step 8 prefers observed summaries; composite-only green-up remains provisional. Output folders are excluded from Git.
+Steps 1–8 are implemented. Steps 9–15 remain plans. Detector outputs are candidate intervals, not verified planting dates or accepted training seasons.
 
-The detector parameters are development settings, not validated vegetable phenology rules. Outputs are candidate intervals, not planting dates or accepted training seasons. Step 9 must validate onset estimates, resolve crop-cycle label relevance and freeze parameters before final testing. Same parcel groups must stay together in later splits; their scope and independent-field identities still need verification.
+## Supporting files
 
-## Verification
+| File | Purpose |
+|---|---|
+| `crop_workflow.py` | Quality checks, scaling, indices, plots and candidate detection |
+| `observed_timelines.py` | Small actual-date summaries without more imagery downloads |
+| `migrate_progress.py` | Update saved paths after moving PCs |
+| `settings.example.json` | Portable configuration template |
+| `requirements-notebooks.txt` | Environment package versions |
+| `tests/` | Processing and detector checks |
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
+Run tests with `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`.
 
-Tests cover scaling/nodata, moved-PC paths, missing composites, weak coverage, flat signals, long onset gaps, multi-cycle ambiguity and composite-only uncertainty. They do not independently validate crop labels, cloud screening or phenology accuracy.
+## Repository contents
 
-## What belongs in this repository
+Git contains code, the notebook, tests and documents. Raw NetCDF files, GeoTIFFs, generated outputs, `.venv`, credentials and local settings are excluded. Transfer data and `sen4agrinet_work` separately when moving PCs.
 
-Include notebooks with outputs cleared, source modules, tests, dependency versions, setup examples and methodology notes. Do not upload raw NetCDF files, GeoTIFFs, generated spatial inventories, progress files, local settings, credentials or `.venv`. The public repository contains workflow code, not downloaded datasets. See `MOVING_PC.md` for the transfer checklist.
+Software tests do not validate crop identity, cloud screening or phenology accuracy. Review independent evidence before accepting field-seasons. Dataset access and redistribution remain subject to source terms; no project code license is assigned automatically.
 
-## Sources
-
-- [Sen4AgriNet](https://huggingface.co/datasets/orion-ai-lab/S4A)
-- [Sentinel-2 L2A](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED)
-- [Cloud probability and matching](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_CLOUD_PROBABILITY)
-
-Dataset access and redistribution remain subject to their own terms. No project license is assigned automatically; choose one before encouraging third-party redistribution of the code.
-
-The active notebook uses `crop_workflow.py` and `observed_timelines.py`; `migrate_progress.py` supports moving PCs. Inspection and boundary extraction are implemented in the notebook itself. Unused standalone inspection/visualization scripts and old exploratory outputs have been removed from the workspace. Previously tracked scripts remain recoverable in Git history; the deleted local archive is not part of this repository.
+[Sen4AgriNet dataset](https://huggingface.co/datasets/orion-ai-lab/S4A)
