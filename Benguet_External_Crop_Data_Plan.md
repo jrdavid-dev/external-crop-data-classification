@@ -1,6 +1,6 @@
 # External Crop Data for the Benguet Thesis
 
-> Methodology notes include earlier standalone examples. Those scripts are now archived locally; use the Sen4AgriNet notebook for the current executable workflow.
+> Methodology notes include earlier standalone examples. Those scripts have been removed from the working tree and remain in Git history; use the Sen4AgriNet notebook for the current executable workflow.
 
 ## Study requirements
 

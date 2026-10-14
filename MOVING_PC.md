@@ -29,4 +29,4 @@ Run the Step 2 settings cell, then Step 5 settings/connection/helpers/inventory.
 
 Steps 6–8 resolve masks and GeoTIFFs from current project/data roots first, so old absolute paths do not prevent local analysis. Rerun Step 6 to identify absent or invalid composites. Observed-summary checkpoints avoid repeating successful metadata retrieval. No code should treat missing bins as cloud-free observations.
 
-The local `archive/` folder is optional and is not required by the notebook. Copy it separately only if you want to retain old exploratory scripts, images or examples. It is excluded from the public repository.
+The old local archive has been deleted and is not needed for the notebook or the PC move. Previously tracked standalone scripts can be recovered from Git history if needed.

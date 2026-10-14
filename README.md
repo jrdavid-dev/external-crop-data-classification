@@ -44,4 +44,4 @@ Include notebooks with outputs cleared, source modules, tests, dependency versio
 
 Dataset access and redistribution remain subject to their own terms. No project license is assigned automatically; choose one before encouraging third-party redistribution of the code.
 
-The active notebook uses `crop_workflow.py` and `observed_timelines.py`; `migrate_progress.py` supports moving PCs. Inspection and boundary extraction are implemented in the notebook itself. Older standalone inspection/visualization scripts and exploratory outputs are archived locally under `archive/legacy_2026-10-14/` and excluded from Git. They remain recoverable locally and, where previously tracked, in repository history.
+The active notebook uses `crop_workflow.py` and `observed_timelines.py`; `migrate_progress.py` supports moving PCs. Inspection and boundary extraction are implemented in the notebook itself. Unused standalone inspection/visualization scripts and old exploratory outputs have been removed from the workspace. Previously tracked scripts remain recoverable in Git history; the deleted local archive is not part of this repository.
