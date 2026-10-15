@@ -72,8 +72,23 @@ def interval_bins(year=2020):
     return result
 
 
+
+def compatible_request(settings, year, cloud_threshold, required_version):
+    if settings.get("version") not in {3, 4}:
+        return False
+    if required_version is not None and settings.get("version") != required_version:
+        return False
+    if settings.get("cloud_probability_threshold") != cloud_threshold:
+        return False
+    if settings.get("start") != f"{year}-01-01" or settings.get("end") != f"{year + 1}-01-01":
+        return False
+    if settings["version"] == 4:
+        from satellite_workflow import RESAMPLING_POLICY
+        return settings.get("resampling") == RESAMPLING_POLICY
+    return True
+
 def quality_check(regions, progress_folder, imagery_folder, field_folder, output_folder,
-                  cloud_threshold=40, minimum_fraction=0.8, year=2020):
+                  cloud_threshold=40, minimum_fraction=0.8, year=2020, required_request_version=None):
     """Audit all 24 bins, preserving missing/failed records instead of filling."""
     progress_folder, output_folder = Path(progress_folder), Path(output_folder)
     region_map = {item["properties"]["fragment_id"]: item for item in regions}
@@ -82,9 +97,8 @@ def quality_check(regions, progress_folder, imagery_folder, field_folder, output
     for path in sorted(progress_folder.glob("*.json")):
         manifest = json.loads(path.read_text(encoding="utf-8"))
         settings = manifest.get("settings", {})
-        if (manifest["fragment_id"] in region_map and settings.get("version") == 3
-                and settings.get("cloud_probability_threshold") == cloud_threshold
-                and settings.get("start") == f"{year}-01-01" and settings.get("end") == f"{year + 1}-01-01"):
+        if manifest["fragment_id"] in region_map and compatible_request(
+                settings, year, cloud_threshold, required_request_version):
             compatible[manifest["fragment_id"]].append((path, manifest))
     quality_rows, pixel_rows, errors = [], [], []
     for region_id, region in region_map.items():
@@ -225,6 +239,24 @@ DEFAULT_DETECTOR = {"relative_threshold": 0.20, "minimum_amplitude": 0.15,
 
 
 def detect_greenup(rows, settings=None):
+    """Dispatch by recorded algorithm version so archived results remain reproducible."""
+    config = {**DEFAULT_DETECTOR, **(settings or {})}
+    method = config.get("cycle_detector", "legacy_local_peaks")
+    if method == "legacy_local_peaks":
+        return detect_greenup_legacy(rows, settings)
+    from full_cycle_detector import METHOD, detect_region
+    if method != METHOD:
+        raise ValueError("Unknown cycle detector version.")
+    if not 0 < config["relative_threshold"] < 1:
+        raise ValueError("Relative threshold must lie between 0 and 1")
+    groups = defaultdict(list)
+    for row in rows:
+        groups[row["region_id"]].append(row)
+    return [result for region_id, source_rows in groups.items()
+            for result in detect_region(region_id, source_rows, config)]
+
+
+def detect_greenup_legacy(rows, settings=None):
     """Candidate cycles only; never turn bin midpoints into observed dates."""
     config = {**DEFAULT_DETECTOR, **(settings or {})}
     if not 0 < config["relative_threshold"] < 1:

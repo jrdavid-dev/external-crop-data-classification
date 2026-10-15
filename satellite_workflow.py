@@ -16,10 +16,24 @@ from shapely.ops import transform as transform_geometry
 from crop_workflow import interval_bins, save_json
 
 
+REQUEST_VERSION = 4
+RESAMPLING_POLICY = {
+    "B3": "native",
+    "B4": "native",
+    "B8": "native",
+    "B2": "native",
+    "B5": "bilinear",
+    "B11": "bilinear",
+    "quality_masks": "nearest",
+}
+
+
 class SatelliteRetriever:
     """Keep both datasets on identical bands, masks, grids and composite definitions."""
 
-    def __init__(self, earth_engine, year, imagery_folder, report_folder, cloud_threshold=40):
+    def __init__(
+        self, earth_engine, year, imagery_folder, report_folder, cloud_threshold=40
+    ):
         if not 0 < cloud_threshold <= 100:
             raise ValueError("Cloud probability cutoff must be between 0 and 100.")
         self.ee = earth_engine
@@ -42,9 +56,14 @@ class SatelliteRetriever:
         """Create a fixed rectangular grid in the fragment's verified source CRS."""
         source_crs = CRS.from_user_input(fragment["properties"]["source_crs"])
         if not source_crs.is_projected or any(
-            (axis.unit_name.lower() not in ["metre", "meter"] for axis in source_crs.axis_info)
+            (
+                axis.unit_name.lower() not in ["metre", "meter"]
+                for axis in source_crs.axis_info
+            )
         ):
-            raise ValueError("The download grid requires a verified projected CRS in metres.")
+            raise ValueError(
+                "The download grid requires a verified projected CRS in metres."
+            )
         geometry = shape(fragment["geometry"])
         if geometry.is_empty or not geometry.is_valid:
             raise ValueError("Invalid candidate geometry.")
@@ -56,7 +75,8 @@ class SatelliteRetriever:
             * self.output_resolution
         )
         right = (
-            math.ceil((east + self.buffer_metres) / self.output_resolution) * self.output_resolution
+            math.ceil((east + self.buffer_metres) / self.output_resolution)
+            * self.output_resolution
         )
         bottom = (
             math.floor((south - self.buffer_metres) / self.output_resolution)
@@ -70,7 +90,14 @@ class SatelliteRetriever:
         height = int(round((top - bottom) / self.output_resolution))
         return {
             "crs": source_crs.to_string(),
-            "transform": [self.output_resolution, 0, left, 0, -self.output_resolution, top],
+            "transform": [
+                self.output_resolution,
+                0,
+                left,
+                0,
+                -self.output_resolution,
+                top,
+            ],
             "width": width,
             "height": height,
         }
@@ -85,11 +112,11 @@ class SatelliteRetriever:
             "nodata": self.nodata_value,
             "grid": self.make_download_grid(fragment),
             "geometry": fragment["geometry"],
-            "resampling": "nearest",
+            "resampling": RESAMPLING_POLICY,
             "partition_group": fragment["properties"].get("partition_group"),
             "sampling_mask": fragment["properties"].get("sampling_mask"),
             "reflectance_scale_to_apply_later": 0.0001,
-            "version": 3,
+            "version": REQUEST_VERSION,
             "compositing": "median of cloud-screened daily mosaics in calendar half-month bins",
             "excluded_scl_classes": self.excluded_scl_classes,
             "cloud_probability_collection": self.cloud_probability_collection,
@@ -117,14 +144,20 @@ class SatelliteRetriever:
             if not raster.transform.almost_equals(Affine(*grid["transform"])):
                 raise ValueError("Downloaded raster transform does not match the plan.")
             if any((dtype != "float32" for dtype in raster.dtypes)):
-                raise ValueError("Expected float32 medians and clear-observation counts.")
+                raise ValueError(
+                    "Expected float32 medians and clear-observation counts."
+                )
             raster.read(
-                window=rasterio.windows.Window(0, 0, min(16, raster.width), min(16, raster.height))
+                window=rasterio.windows.Window(
+                    0, 0, min(16, raster.width), min(16, raster.height)
+                )
             )
 
     def list_acquisitions(self, fragment):
         """Fetch only small metadata for original granules intersecting a fragment."""
-        footprint = self.ee.Geometry(fragment["geometry"], proj="EPSG:4326", geodesic=False)
+        footprint = self.ee.Geometry(
+            fragment["geometry"], proj="EPSG:4326", geodesic=False
+        )
         collection = (
             self.ee.ImageCollection(self.collection_name)
             .filterBounds(footprint)
@@ -138,7 +171,9 @@ class SatelliteRetriever:
                 {
                     "image_index": image.get("system:index"),
                     "timestamp_ms": image.get("system:time_start"),
-                    "date": self.ee.Date(image.get("system:time_start")).format("YYYY-MM-dd"),
+                    "date": self.ee.Date(image.get("system:time_start")).format(
+                        "YYYY-MM-dd"
+                    ),
                     "tile": image.get("MGRS_TILE"),
                     "scene_cloud_percent": image.get("CLOUDY_PIXEL_PERCENTAGE"),
                 },
@@ -156,7 +191,9 @@ class SatelliteRetriever:
 
     def find_cloud_probability_matches(self, fragment):
         """Match original granules by exact system:index, not nearest date."""
-        footprint = self.ee.Geometry(fragment["geometry"], proj="EPSG:4326", geodesic=False)
+        footprint = self.ee.Geometry(
+            fragment["geometry"], proj="EPSG:4326", geodesic=False
+        )
         clouds = (
             self.ee.ImageCollection(self.cloud_probability_collection)
             .filterBounds(footprint)
@@ -168,7 +205,9 @@ class SatelliteRetriever:
         """Combine SCL, cloud probability and valid-data masks BEFORE medians."""
         image = self.ee.Image(image)
         scl = image.select("SCL")
-        excluded = scl.remap(self.excluded_scl_classes, [1] * len(self.excluded_scl_classes), 0)
+        excluded = scl.remap(
+            self.excluded_scl_classes, [1] * len(self.excluded_scl_classes), 0
+        )
         probability = self.ee.Image(cloud_probability_image).select("probability")
         low_cloud_score = probability.lt(self.cloud_probability_threshold)
         reflectance = image.select(self.spectral_bands)
@@ -176,7 +215,15 @@ class SatelliteRetriever:
         edges_valid = image.select("B8A").mask().And(image.select("B9").mask())
         valid = excluded.eq(0).And(scl.mask()).And(all_bands_valid)
         valid = valid.And(low_cloud_score).And(probability.mask()).And(edges_valid)
-        return reflectance.updateMask(valid).copyProperties(
+        masked_image = image.updateMask(valid)
+        # Resample source observations, not a composite with no native projection.
+        # Restrict interpolation to continuous 20 m bands; masks remain categorical.
+        native_bands = masked_image.select(["B3", "B4", "B8", "B2"])
+        coarse_bands = masked_image.select(["B5", "B11"]).resample("bilinear")
+        aligned_bands = coarse_bands.reproject(crs=image.select("B3").projection())
+        reflectance = native_bands.addBands(aligned_bands).select(self.spectral_bands)
+        complete_support = reflectance.mask().reduce(self.ee.Reducer.min())
+        return reflectance.updateMask(complete_support).copyProperties(
             image, ["system:time_start", "system:index"]
         )
 
@@ -192,7 +239,8 @@ class SatelliteRetriever:
             )
             images = [
                 self.mask_acquisition(
-                    self.ee.Image(row["image_id"]), self.ee.Image(row["cloud_probability_id"])
+                    self.ee.Image(row["image_id"]),
+                    self.ee.Image(row["cloud_probability_id"]),
                 )
                 for row in same_date
             ]
@@ -207,7 +255,9 @@ class SatelliteRetriever:
                 .rename("clear_count")
                 .unmask(0, sameFootprint=False)
             )
-            result = median.unmask(self.nodata_value, sameFootprint=False).addBands(clear_count)
+            result = median.unmask(self.nodata_value, sameFootprint=False).addBands(
+                clear_count
+            )
         else:
             result = self.ee.Image.constant(
                 [self.nodata_value] * len(self.spectral_bands) + [0]
@@ -247,7 +297,10 @@ class SatelliteRetriever:
                 plans.append(self.inventory_region(region, refresh))
             except Exception as error:
                 errors.append(
-                    {"fragment_id": region["properties"]["fragment_id"], "error": str(error)}
+                    {
+                        "fragment_id": region["properties"]["fragment_id"],
+                        "error": str(error),
+                    }
                 )
         missing_matches = [
             {
@@ -259,7 +312,9 @@ class SatelliteRetriever:
             for row in plan["acquisitions"]
             if not row.get("cloud_probability_id")
         ]
-        save_json(self.report_folder / "missing_cloud_probability.json", missing_matches)
+        save_json(
+            self.report_folder / "missing_cloud_probability.json", missing_matches
+        )
         save_json(
             self.report_folder / "composite_plan.json",
             {
@@ -292,24 +347,42 @@ class SatelliteRetriever:
         grid = settings["grid"]
         expected = plan["fragment"]["properties"]["sampling_grid"]
         if grid != expected:
-            raise ValueError("Sampling-mask and retrieval grids differ; regenerate the pilot.")
+            raise ValueError(
+                "Sampling-mask and retrieval grids differ; regenerate the pilot."
+            )
         if (
             max(grid["width"], grid["height"]) >= 10000
             or grid["width"] * grid["height"] * 28 >= 30 * 1024**2
         ):
             raise ValueError("Region exceeds direct-download size limits.")
         region_id = plan["fragment_id"]
-        request_id = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[:16]
+        request_id = hashlib.sha256(
+            json.dumps(settings, sort_keys=True).encode()
+        ).hexdigest()[:16]
         folder = self.imagery_folder / region_id / request_id
         folder.mkdir(parents=True, exist_ok=True)
-        path = self.report_folder / "composite_progress" / f"{region_id}_{request_id}.json"
+        path = (
+            self.report_folder / "composite_progress" / f"{region_id}_{request_id}.json"
+        )
         manifest = (
             json.loads(path.read_text())
             if path.exists()
             else {"fragment_id": region_id, "settings": settings, "files": {}}
         )
         results = []
-        for interval in interval_bins(self.year):
+        # Timing-first plans retain the unchanged composites but request only qualified bins.
+        intervals = plan.get("download_intervals", interval_bins(self.year))
+        allowed_intervals = {
+            interval["name"]: interval for interval in interval_bins(self.year)
+        }
+        if any(
+            allowed_intervals.get(interval["name"]) != interval
+            for interval in intervals
+        ):
+            raise ValueError(
+                "Selected download intervals must match full calendar half-month bins."
+            )
+        for interval in intervals:
             result = self.download_interval(plan, interval, folder, manifest)
             save_json(path, manifest)
             results.append(result)
@@ -328,7 +401,11 @@ class SatelliteRetriever:
         destination = folder / f"{interval['name']}.tif"
         previous = manifest["files"].get(interval["name"])
         if self.reusable_file(destination, previous, plan["settings"]["grid"]):
-            return {"region_id": plan["fragment_id"], "name": interval["name"], "status": "reused"}
+            return {
+                "region_id": plan["fragment_id"],
+                "name": interval["name"],
+                "status": "reused",
+            }
         granules = [
             row
             for row in plan["acquisitions"]
@@ -355,7 +432,11 @@ class SatelliteRetriever:
             status = "failed"
         manifest["files"][interval["name"]] = record
         print(plan["fragment_id"], interval["name"], status)
-        return {"region_id": plan["fragment_id"], "name": interval["name"], "status": status}
+        return {
+            "region_id": plan["fragment_id"],
+            "name": interval["name"],
+            "status": status,
+        }
 
     def fetch_composite(self, plan, interval, granules, destination):
         grid = plan["settings"]["grid"]

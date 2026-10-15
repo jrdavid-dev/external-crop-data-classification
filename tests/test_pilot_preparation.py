@@ -19,7 +19,7 @@ from shapely.ops import transform as transform_geometry
 import crop_workflow
 import francecrops_workflow as france
 import pilot_sampling as sampling
-from satellite_workflow import SatelliteRetriever
+from satellite_workflow import SatelliteRetriever, REQUEST_VERSION, RESAMPLING_POLICY
 
 
 def candidate_catalog(crop="carrot", group_count=60, pixels_per_group=60):
@@ -73,11 +73,11 @@ class PixelBudgetTests(unittest.TestCase):
         references, selected, summary = sampling.trim_usable_pixels(
             supported, estimates + alternate_season
         )
-        self.assertEqual(len(references) + len(selected), 1000)
+        self.assertEqual(len(references) + len(selected), 500)
         self.assertEqual(references[0]["x"], 0)
         self.assertEqual(summary[0]["available_usable_pixels"], 1500)
-        self.assertEqual(summary[1]["shortfall_pixels"], 1000)
-        self.assertEqual(len({sampling.pixel_location(row) for row in references + selected}), 1000)
+        self.assertEqual(summary[1]["shortfall_pixels"], 500)
+        self.assertEqual(len({sampling.pixel_location(row) for row in references + selected}), 500)
 
     def test_trimming_is_balanced_across_fields_and_input_order_independent(self):
         rows = complete_rows()
@@ -321,6 +321,8 @@ class SourceHandoffTests(unittest.TestCase):
                 sources.append(
                     {
                         "source_name": name,
+                        "request_version": REQUEST_VERSION,
+                        "resampling": RESAMPLING_POLICY,
                         "year": year,
                         "field_folder": str(source_folder),
                         "imagery_folder": str(source_folder),

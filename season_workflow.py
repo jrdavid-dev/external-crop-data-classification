@@ -17,6 +17,11 @@ from pathlib import Path
 from crop_workflow import interval_bins, ratio, save_json, write_table
 
 
+EARTH_ENGINE_FOREST = {"number_of_trees": 1000, "seed": 42,
+                       "minimum_leaf_population": 2, "bag_fraction": 0.5,
+                       "variables_per_split": "square_root",
+                       "weighting": "field_confidence_bootstrap"}
+
 FEATURE_BANDS = ("B3", "B4", "B5", "B8", "B11")
 FEATURE_INDICES = ("NDVI", "NDRE", "NDMI")
 REVIEW_COLUMNS = [
@@ -77,8 +82,9 @@ def prepare_review_files(candidates, regions, detector_settings, output_folder):
         "window_rule": "onset_month_plus_three", "missing_data_policy": "complete_only",
         "window_policy": "reference_supported_only",
         "minimum_valid_fraction": 0.8, "random_seed": 42,
-        "forest_parameters": {"n_estimators": 300, "min_samples_leaf": 2,
+        "forest_parameters": {"n_estimators": 1000, "min_samples_leaf": 2,
                               "class_weight": None, "n_jobs": -1},
+        "earth_engine_forest": dict(EARTH_ENGINE_FOREST),
         "confidence_weights": {"confirmed": 1.0, "reported": 0.5},
         "limitations": ["Administrative crop labels require independent local validation.",
                         "Green-up is not a verified planting date."],
@@ -98,6 +104,8 @@ def validate_configuration(configuration, require_frozen=True):
     if configuration.get("window_policy", "reference_supported_only") not in {
             "reference_supported_only", "exploratory_external_estimates"}:
         raise ValueError("Unknown window_policy; choose reference_supported_only or exploratory_external_estimates.")
+    if configuration.get("cycle_selection_policy", "single_supported_cycle") not in {"single_supported_cycle", "earliest_complete"}:
+        raise ValueError("Unknown cycle_selection_policy.")
     minimum_fraction = configuration["minimum_valid_fraction"]
     if not 0 < minimum_fraction <= 1:
         raise ValueError("minimum_valid_fraction must be in (0, 1].")
@@ -121,7 +129,7 @@ def review_problem(review, candidate, properties, configuration):
     if review.get("decision") not in {"accept", "accept_reference"}:
         return "review_" + (review.get("decision") or "pending")
     if candidate.get("status") == "rejected":
-        return "detector_rejected_requires_new_detection"
+        return candidate.get("reason", "detector_rejected_requires_new_detection") if candidate.get("cycle_detector") == "full_growth_cycles_v1" else "detector_rejected_requires_new_detection"
     required = ("season_id", "reviewer", "review_notes", "label_evidence",
                 "timing_evidence", "cycle_evidence")
     if any(not review.get(column, "").strip() for column in required):
@@ -214,6 +222,7 @@ def construct_season(candidate, review, properties, window_status="reference_sup
               "selected_pixels": properties["selected_pixels"],
               "source_dataset": properties.get("source_dataset", "unspecified"),
               "source_year": properties.get("source_year", ""),
+              "imagery_request_version": properties.get("imagery_request_version", ""),
               "dataset_revision": properties.get("dataset_revision", ""),
               "window_status": window_status,
               "window_selection_reason": review.get("window_selection_reason") or "reference_crop_cycle_review",
@@ -304,7 +313,7 @@ def estimated_window_problem(candidate, review, properties, plausible_count, con
     if decision == "accept_estimate":
         required = ("season_id", "reviewer", "review_notes", "timing_evidence", "detector_fingerprint")
         return "missing_timing_review_evidence" if any(not review.get(column, "").strip() for column in required) else ""
-    if plausible_count != 1 or candidate["status"] == "ambiguous":
+    if (plausible_count != 1 or candidate["status"] == "ambiguous") and configuration.get("cycle_selection_policy") != "earliest_complete":
         return "multiple_cycles_require_timing_review"
     if candidate.get("source_kind") != "observed_daily":
         return "composite_only_requires_timing_review"
@@ -316,6 +325,7 @@ def estimated_window_problem(candidate, review, properties, plausible_count, con
 def make_estimated_review(candidate, review, configuration):
     reviewed = review.get("decision") == "accept_estimate"
     return {**review,
+            "cycle_selection_policy": configuration.get("cycle_selection_policy", "single_supported_cycle"),
             "season_id": review.get("season_id") or "estimate_" + candidate["candidate_id"][:12],
             "label_status": "reported",
             "label_evidence": review.get("label_evidence") or "Source region crop label; crop-cycle relevance unverified",
@@ -333,7 +343,8 @@ def qualify_estimated_windows(windows, audit, observations, configuration):
     from timing_quality import assess_timing
 
     assessments = assess_timing(windows, observations, configuration["detector_parameters"],
-                                configuration.get("automatic_timing_policy"))
+                                configuration.get("automatic_timing_policy"),
+                                configuration.get("cycle_selection_policy", "single_supported_cycle"))
     assessment_map = {row["candidate_id"]: row for row in assessments}
     qualified, outcomes = [], {}
     for window in windows:
@@ -643,7 +654,9 @@ def validate_automatic_policy(row, configuration):
     if row.get("timing_review_status") != "automated_pass":
         return
     policy = configuration.get("automatic_timing_policy")
-    expected = record_fingerprint({"quality_policy": policy, "detector_parameters": configuration["detector_parameters"]})
+    from timing_quality import timing_policy_fingerprint
+    expected = timing_policy_fingerprint(policy, configuration["detector_parameters"],
+                                         configuration.get("cycle_selection_policy", "single_supported_cycle"))
     if not policy or row.get("automatic_policy_fingerprint") != expected:
         raise ValueError("Automatic timing evidence uses a different policy; rerun preprocessing before training.")
 
@@ -824,7 +837,7 @@ def package_run(output_folder, configuration, input_paths, artifact_paths, cover
     inputs = artifact_inventory(input_paths)
     artifacts = artifact_inventory(artifact_paths)
     packages = {}
-    for package in ("numpy", "rasterio", "scikit-learn", "joblib"):
+    for package in ("numpy", "scipy", "rasterio", "scikit-learn", "joblib"):
         try:
             packages[package] = version(package)
         except PackageNotFoundError:

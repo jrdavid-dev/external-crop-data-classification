@@ -77,7 +77,7 @@ def normalize_observations(rows):
     return sorted(normalized, key=lambda row: (row["region_id"], row["date"]))
 
 
-def assess_timing(windows, observation_rows, detector_settings, policy=None):
+def assess_timing(windows, observation_rows, detector_settings, policy=None, cycle_selection_policy="single_supported_cycle"):
     """Assess each proposal using fixed rules and threshold sensitivity reruns."""
     settings = {**DEFAULT_TIMING_POLICY, **(policy or {})}
     validate_policy(settings)
@@ -89,9 +89,9 @@ def assess_timing(windows, observation_rows, detector_settings, policy=None):
     for row in observations:
         by_region[row["region_id"]].append(row)
     sensitivity = run_threshold_checks(observations, detector_settings, settings)
-    policy_fingerprint = fingerprint({"quality_policy": settings, "detector_parameters": detector_settings})
+    policy_fingerprint = timing_policy_fingerprint(settings, detector_settings, cycle_selection_policy)
     return [assess_window(window, by_region[window["region_id"]], sensitivity,
-                          detector_settings, settings, policy_fingerprint) for window in windows]
+                          detector_settings, settings, policy_fingerprint, cycle_selection_policy) for window in windows]
 
 
 def run_threshold_checks(observations, detector_settings, policy):
@@ -106,12 +106,12 @@ def run_threshold_checks(observations, detector_settings, policy):
     return results
 
 
-def assess_window(window, observations, sensitivity, detector_settings, policy, policy_fingerprint):
+def assess_window(window, observations, sensitivity, detector_settings, policy, policy_fingerprint, cycle_selection_policy="single_supported_cycle"):
     detector = {**DEFAULT_DETECTOR, **detector_settings}
     eligible = [row for row in observations if row["NDVI"] is not None
                 and detector["minimum_valid_fraction"] <= row["valid_fraction"] <= 1]
     failures, metrics = observation_support(window, eligible, detector, policy)
-    stability_failures, details = threshold_stability(window, sensitivity, policy)
+    stability_failures, details = threshold_stability(window, sensitivity, policy, cycle_selection_policy)
     failures.extend(stability_failures)
     return {"candidate_id": window["candidate_id"], "region_id": window["region_id"],
             "automatic_timing_status": "passed" if not failures else "failed",
@@ -190,22 +190,38 @@ def sustained_growth(before, after, onset_end, threshold, policy):
                       "ndmi_change": index_change(before, after, "NDMI")}
 
 
-def threshold_stability(window, sensitivity, policy):
+def threshold_stability(window, sensitivity, policy, cycle_selection_policy="single_supported_cycle"):
     failures, details = [], {}
     for threshold, by_region in sensitivity.items():
         candidates = by_region.get(window["region_id"], [])
-        reason = threshold_problem(window, candidates, policy)
+        reason = threshold_problem(window, candidates, policy, cycle_selection_policy)
         details[str(threshold)] = reason or "same_cycle_and_onset_month"
         if reason:
             failures.append(f"threshold_{threshold:g}_{reason}")
     return failures, details
 
 
-def threshold_problem(window, candidates, policy):
+def timing_policy_fingerprint(policy, detector_settings, cycle_selection_policy="single_supported_cycle"):
+    """Bind per-cycle matching to its evidence without changing numerical thresholds."""
+    payload = {"quality_policy": policy, "detector_parameters": detector_settings}
+    if cycle_selection_policy != "single_supported_cycle":
+        payload["cycle_selection_policy"] = cycle_selection_policy
+    return fingerprint(payload)
+
+
+def threshold_problem(window, candidates, policy, cycle_selection_policy="single_supported_cycle"):
+    multiple_cycles = cycle_selection_policy == "earliest_complete"
+    if multiple_cycles:
+        # Match this peak across thresholds; another season elsewhere in the year
+        # must not invalidate it or substitute for a cycle that disappeared.
+        candidates = [candidate for candidate in candidates
+                      if abs((date.fromisoformat(candidate["peak_date"]) - date.fromisoformat(window["peak_date"])).days)
+                      <= policy["maximum_peak_shift_days"]]
     if len(candidates) != 1:
         return "no_unique_supported_cycle"
     candidate = candidates[0]
-    if candidate["status"] != "candidate" or candidate.get("source_kind") != "observed_daily":
+    allowed_statuses = {"candidate", "ambiguous"} if multiple_cycles else {"candidate"}
+    if candidate["status"] not in allowed_statuses or candidate.get("source_kind") != "observed_daily":
         return "cycle_not_supported_by_actual_observations"
     month = window["window_start"][:7]
     if candidate["onset_interval_start"][:7] != month or candidate["onset_interval_end"][:7] != month:

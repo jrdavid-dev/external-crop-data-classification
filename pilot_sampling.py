@@ -15,7 +15,7 @@ from shapely.ops import transform as transform_geometry, unary_union
 from crop_workflow import save_json, write_table
 
 CANDIDATE_PIXELS_PER_CROP = 3000
-USABLE_PIXELS_PER_CROP = 1000
+USABLE_PIXELS_PER_CROP = 500
 
 
 def stable_rank(value, seed=42):
@@ -226,7 +226,7 @@ def save_candidate_pilot(selected_pixels, field_folder, seed=42):
 def trim_usable_pixels(
     reference_rows,
     estimated_rows,
-    target_per_crop=1000,
+    target_per_crop=USABLE_PIXELS_PER_CROP,
     seed=42,
     crops=("carrot", "cabbage", "potato"),
 ):
@@ -305,7 +305,7 @@ def trim_external_pilot(
     reference_rows,
     estimated_rows,
     registry=(),
-    target_per_crop=1000,
+    target_per_crop=USABLE_PIXELS_PER_CROP,
     seed=42,
     crops=("carrot", "cabbage", "potato"),
 ):

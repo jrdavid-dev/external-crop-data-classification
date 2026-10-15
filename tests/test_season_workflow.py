@@ -415,6 +415,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             namespace = {"json": json, "Path": Path, "Counter": Counter, "importlib": importlib,
                          "crop_workflow": crop_workflow, "analysis_folder": analysis_folder,
                          "source_manifest_paths": [],
+                         "sources": [{"request_version": 3, "resampling": "nearest"}],
                          "greenup_folder": analysis_folder / "greenup", "field_folder": analysis_folder / "fields",
                          "regions": [region], "greenup_results": [candidate],
                          "detector_settings": configuration["detector_parameters"],
@@ -474,6 +475,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             namespace = {"json": json, "Path": Path, "Counter": Counter, "importlib": importlib,
                          "crop_workflow": crop_workflow, "analysis_folder": analysis_folder,
                          "source_manifest_paths": [],
+                         "sources": [{"request_version": 3, "resampling": "nearest"}],
                          "greenup_folder": analysis_folder / "greenup", "field_folder": analysis_folder / "fields",
                          "regions": regions, "greenup_results": candidates,
                          "detector_settings": configuration["detector_parameters"],
@@ -508,7 +510,8 @@ def execute_training_notebook(handoff_path):
     namespace = {}
     exec("".join(executable_cells[0]["source"]), namespace)
     # The settings cell explicitly supports choosing a different input bundle.
-    namespace.update(handoff_path=handoff_path, training_output_folder=handoff_path.parent.parent)
+    namespace.update(handoff_path=handoff_path, training_output_folder=handoff_path.parent.parent,
+                     allow_legacy_band_comparison=True, training_mode="production")
     for cell in executable_cells[1:]:
         exec("".join(cell["source"]), namespace)
     return namespace

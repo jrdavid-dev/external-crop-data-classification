@@ -1,11 +1,23 @@
-# Documentation
+# Prototype guides
 
-Start with the root [README](../README.md) for installation and notebook order.
+The goal is a repeatable workflow: **labelled parcels → satellite observations → usable windows → features → models → saved evaluation**. Larger or better datasets can be added later.
 
-| Guide | Use it to |
+| Guide | Read it for |
 |---|---|
-| [Workflow](workflow.md) | Run the four notebooks and find their outputs |
-| [Methodology](methodology.md) | Understand imagery quality, timing rules and pixel selection |
-| [Training and evaluation](training.md) | Prepare field partitions and model inputs, then assess results |
+| [Setup](../README.md#setup) | Install dependencies and configure local folders |
+| [Workflow](workflow.md) | Run the notebooks in order, find outputs and resolve common errors |
+| [Processing rules](methodology.md) | Understand sampling, cloud masks, timing and usable pixels |
+| [Feature designs](feature_experiments.md) | Understand the three model inputs |
+| [Training](training.md) | Understand parcel splits, model outputs and later production requirements |
 
-The notebook Markdown explains individual outputs beside the relevant code. These guides describe the shared workflow and requirements without repeating each cell.
+## Terms used in the notebooks
+
+| Term | Meaning |
+|---|---|
+| Candidate pixel | A selected location that still needs timing and quality checks |
+| Usable pixel | A selected location with all required values in its chosen window |
+| Parcel group | The source identity kept together when splitting data |
+| Handoff | A saved file describing inputs for the next notebook |
+| Pending | A requirement is not ready; inspect its explanation before proceeding |
+
+The active run is `bilinear_expanded`. Old runs remain separate. Local exploratory training works from complete pixel tables; formal production exports have additional evidence and freeze requirements.

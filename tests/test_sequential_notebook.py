@@ -14,7 +14,9 @@ from shapely.geometry import box, mapping
 from shapely.ops import transform as transform_geometry
 
 
-NOTEBOOK_PATH = Path(__file__).resolve().parents[1] / "Sen4AgriNet_Satellite_Preparation.ipynb"
+NOTEBOOK_PATH = (
+    Path(__file__).resolve().parents[1] / "Sen4AgriNet_Satellite_Preparation.ipynb"
+)
 
 
 def prepare_saved_fields(folder):
@@ -38,7 +40,7 @@ def prepare_saved_fields(folder):
 
 def make_crop_fields(projector, crop, crop_number):
     features = []
-    for group_number in range(60):
+    for group_number in range(120):
         left = 500000 + group_number * 200
         bottom = 5200000 + crop_number * 1000
         geometry = transform_geometry(
@@ -67,9 +69,15 @@ def execute_without_remote_services(folder):
     retriever = MagicMock()
     retriever.year = 2020
     retriever.build_plans.return_value = ([], [])
-    retriever.download_composites.return_value = {"downloaded": 0, "reused": 0, "failed": 0}
+    retriever.download_composites.return_value = {
+        "downloaded": 0,
+        "reused": 0,
+        "failed": 0,
+    }
     namespace = {}
-    forbidden = AssertionError("Default Run All attempted a raw-data or network operation")
+    forbidden = AssertionError(
+        "Default Run All attempted a raw-data or network operation"
+    )
     with (
         chdir(folder),
         patch.dict("os.environ", {"S4A_ROOT": str(folder / "absent_raw_data")}),
@@ -86,7 +94,18 @@ def execute_without_remote_services(folder):
     ):
         for cell in notebook["cells"]:
             if cell["cell_type"] == "code":
-                exec(compile("".join(cell["source"]), str(NOTEBOOK_PATH), "exec"), namespace)
+                # Exercise explicit offline reuse while collection defaults are enabled.
+                source = "".join(cell["source"])
+                for flag in (
+                    "retrieve_daily_summaries",
+                    "download_satellite_imagery",
+                    "authenticate_now",
+                ):
+                    source = source.replace(f"{flag} = True", f"{flag} = False")
+                exec(
+                    compile(source, str(NOTEBOOK_PATH), "exec"),
+                    namespace,
+                )
     return namespace
 
 
@@ -101,13 +120,20 @@ class SequentialNotebookTests(unittest.TestCase):
             self.assertFalse(namespace["dataset_folder"].exists())
             self.assertEqual(
                 Counter(row["crop"] for row in namespace["selected_pixels"]),
-                {"carrot": 3000, "potato": 3000},
+                {"carrot": 3400, "potato": 10000},
             )
-            self.assertTrue(namespace["source_handoff_path"].is_file())
+            self.assertFalse(namespace["source_handoff_path"].is_file())
+            retriever_flags = (
+                namespace["retrieve_daily_summaries"],
+                namespace["download_satellite_imagery"],
+            )
+            self.assertEqual(retriever_flags, (False, False))
 
     def test_missing_saved_inventory_stops_before_any_optional_raw_steps(self):
         with tempfile.TemporaryDirectory() as temporary:
-            with self.assertRaisesRegex(FileNotFoundError, "Saved field inventory is missing"):
+            with self.assertRaisesRegex(
+                FileNotFoundError, "Saved field inventory is missing"
+            ):
                 execute_without_remote_services(Path(temporary))
 
 

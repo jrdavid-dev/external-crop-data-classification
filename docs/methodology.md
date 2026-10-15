@@ -1,80 +1,73 @@
-# Processing rules and limitations
+# Data and processing rules
+
+These rules explain what a usable sample means. The exact timing cutoffs are development choices; they have not been validated as crop-specific planting or harvesting rules.
 
 ## Reference sources
 
-| Source | Labels used | Reference year |
-|---|---|---|
-| [Sen4AgriNet](https://huggingface.co/datasets/orion-ai-lab/S4A) | Carrot and potato parcel labels | 2020 |
-| [FranceCrops](https://huggingface.co/datasets/saget-antoine/francecrops) | `CHU` cabbage labels from the training split | 2022 |
+| Dataset | Labels used | Year |
+|---|---|---:|
+| [Sen4AgriNet](https://huggingface.co/datasets/orion-ai-lab/S4A) | Carrot and potato | 2020 |
+| [FranceCrops](https://huggingface.co/datasets/saget-antoine/francecrops) | `CHU` cabbage labels from its training split | 2022 |
 
-FranceCrops is pinned to revision `6b6c51b780d8579138593f92738ed52f2528096e`. The loader verifies the class map, joins labels to WGS84 parcel footprints by `parcel_id`, and excludes invalid footprints with an audit. Its validation and test parcels are not sampled. A 10 m inward buffer reduces boundary mixing.
+FranceCrops is pinned to revision `6b6c51b780d8579138593f92738ed52f2528096e`. Labels are joined to parcel boundaries by `parcel_id`; invalid boundaries are excluded. Its original validation/test parcels are not sampled. A 10 m inward buffer reduces boundary mixing.
 
-Annual administrative crop declarations are reported labels. They do not independently establish which crop occupied every date in a selected four-month cycle. Satellite curves cannot confirm crop identity by themselves.
+Preserve source revisions and attribution. FranceCrops credits include Antoine Saget (CC BY 4.0), Copernicus Sentinel-2 and IGN RPG 2022. Follow Sen4AgriNet's source terms as well.
 
-Attribute FranceCrops / Antoine Saget (CC BY 4.0), Copernicus Sentinel-2 and IGN RPG 2022 as described in the source release. Preserve Sen4AgriNet's dataset revision and source terms as well.
+An annual crop label identifies the reported crop, but does not prove which crop occupied every detected cycle.
 
 ## Candidate sampling and imagery
 
-Select **3,000 unique candidate pixels per crop**. Prefer 60 geographically spread parcel groups; add groups when small parcels limit capacity, with at most 100 candidates per group. Parcel groups are conservative identity groups, not automatically verified independent fields.
+Targets are **3,400 carrot, 7,000 cabbage and 10,000 potato candidates**, with at most **100 per source parcel group**. Sampling favours broad parcel coverage. Only selected sampling-mask pixels can enter training; surrounding pixels in downloaded images are excluded.
 
-Both source notebooks use the same Sentinel-2 processing:
+Both sources use Sentinel-2 surface reflectance from `COPERNICUS/S2_SR_HARMONIZED`:
 
-- Surface reflectance from `COPERNICUS/S2_SR_HARMONIZED` on fixed 10 m grids.
-- SCL, exact cloud-probability matches with a cutoff of 40, and valid scene-edge masks applied before compositing.
-- One mosaic per acquisition date, followed by a median over dates in each calendar half-month.
-- Six stored spectral bands: B3, B4, B5, B8, B11 and B2, plus `clear_count`.
-- Missing spectral values remain nodata; empty and failed intervals stay explicit.
+- Mask unsuitable SCL classes, cloud probability at the configured cutoff of 40, and invalid scene edges. Missing cloud-probability matches are not treated as clear.
+- Align B5/B11 to the 10 m grid using bilinear interpolation before compositing. Quality masks use nearest-neighbor resampling.
+- Mosaic observations by date, then take the median across dates in each calendar half-month.
+- Scale spectral values by 0.0001 before calculating indices. Do not scale observation counts.
 
-Scale valid spectral values by 0.0001 before feature calculation. Never scale observation counts. Resampling originally 20 m bands onto a 10 m grid does not add spatial detail. Only pixels marked in the sampling masks belong to the pilot.
+Resampling does not create new spatial detail. Missing observations remain explicit.
 
 ## Four-month windows
 
-A window begins on the first day of the supported green-up month and includes the next three calendar months. An October start ends on February 1 of the following year, exclusive. The window requires **eight half-month bins**; missing adjacent-year imagery is not substituted with another year's data.
+Daily summaries retain actual observation dates for timing checks. Half-month median composites provide stable model inputs.
+
+A supported rise in April gives an April–July window: April 1 through August 1, with the end excluded. Each window needs **eight half-month intervals**. Cross-year cycles are logged separately during collection; they do not discard valid in-year alternatives or trigger adjacent-year downloads.
 
 | Outcome | Meaning |
 |---|---|
-| Reference-supported | Recorded crop-cycle and timing evidence supports the selected window |
-| Satellite-estimated | Timing is supported by algorithmic checks or an explicit human override; crop-cycle relevance remains unverified |
-| Unresolved | Support is insufficient, competing cycles exist, or the onset month cannot be established |
+| Reference-supported | Specific crop-cycle and timing evidence supports the window |
+| Satellite-estimated | The timing passes automatic checks or an explicit review override; crop-cycle relevance remains unverified |
+| Unresolved | The available observations do not support a stable timing estimate |
 
-Green-up is an estimated growth transition, not a verified planting date. A decline is not automatically a harvest date.
+A vegetation rise is not a verified planting date; a decline is not a verified harvest date.
 
 ## Automatic timing assessment
 
-Manual curve review is not required for exploratory estimates. The default rules require:
+Each cycle is checked separately. Exploratory timing does not require manual curve review.
 
-| Check | Development rule |
+| Check | Current rule |
 |---|---|
-| Initial candidate | One supported actual-date cycle with onset inside one month |
-| Observation coverage | Initially at least 80% valid selected pixels |
-| Onset support | Actual observations bracket the NDVI threshold; onset gap at most 20 days |
-| Nearby baseline | At least two usable observations in the preceding 30 days |
-| Sustained growth | At least two later observations above threshold within 30 days; at least 75% of usable observations above threshold |
+| Observation coverage | At least 80% valid selected pixels for usable observations |
+| Onset | Observations bracket the threshold within 20 days and one month |
+| Baseline | At least two usable observations in the preceding 30 days |
+| Growth support | At least two later observations above threshold within 30 days; at least 75% of usable confirmation observations above threshold |
 | Support gaps | At most 20 days between growth-confirming observations |
 | NDRE agreement | Median post-onset increase of at least 0.02 |
-| Threshold stability | Unique supported cycle at 15%, 20% and 25% relative amplitude, same onset month, peak dates within 15 days |
+| Sensitivity | Match the same cycle at 15%, 20% and 25% amplitude; stable onset month and peaks within 15 days |
 
-NDMI change is diagnostic, not a required increase. Passing estimates retain `timing_review_status=automated_pass`, `timing_validation=algorithmic_consistency_only` and `label_relevance=unverified`.
-
-These cutoffs are development choices, not universal vegetable thresholds. Freeze them before final evaluation. Amplitude-based phenology and uncertainty flags have a methodological basis in [Copernicus phenology products](https://land.copernicus.eu/en/products/vegetation?tab=vegetation_phenology_and_productivity_parameters), but that does not validate this project's NDVI/NDRE rules for the target crops.
+NDMI change is diagnostic, not a required increase. Passing timing checks establishes algorithmic consistency, not independently validated crop phenology. Amplitude-based detection has precedent in [Copernicus phenology methods](https://land.copernicus.eu/en/products/vegetation?tab=vegetation_phenology_and_productivity_parameters); that does not validate these exact cutoffs.
 
 ## Complete features and final selection
 
-Each usable pixel needs five bands—B3, B4, B5, B8 and B11—and three indices—NDVI, NDRE and NDMI—in all eight bins: **64 finite features**. The band-only comparison uses 40 features. B2 and clear counts support inspection and quality checks; they are not classifier features.
+For each parcel, evaluate qualified windows chronologically. Keep the **earliest window with at least one complete usable pixel**; try the next if the earlier window has none. All fragments share that date range. Do not combine cycles to fill gaps or select the window with the most pixels.
 
-Missing bins, low coverage, invalid counts and zero index denominators cause exclusion. The baseline does not fill or reconstruct missing observations.
+A complete pixel needs five bands—B3, B4, B5, B8, B11—and NDVI, NDRE and NDMI in every interval: **64 finite base features**. Missing bins, low coverage, invalid observation counts and zero index denominators cause exclusion. No imputation is used.
 
-After quality filtering:
+Preserve the complete pool in `all_complete_features.csv`, then select up to **500 usable unique external pixels per crop** across both window policies, spreading selection across parcels. Reference-supported rows take precedence for duplicate locations. Registered local evaluation rows remain preserved. Report any shortfall instead of duplicating pixels.
 
-1. Preserve every complete window in `all_complete_features.csv`.
-2. Keep one window per physical pixel, preferring reference-supported windows for duplicate locations.
-3. Select reproducibly across parcel groups, up to **1,000 external pixels per crop across both window policies together**.
-4. Preserve registered local evaluation rows and record crop-level shortfalls in `usable_pixel_selection.csv`.
-
-`complete_features.csv` contains selected rows. Quality-loss reports describe the pool before trimming; budget trimming is not a cloud-quality failure. Three thousand candidates do not guarantee one thousand usable pixels.
+The timing, cycle-selection and usable-selection audits explain losses at each stage. Budget trimming is separate from a quality failure. More candidates do not guarantee 500 usable pixels.
 
 ## Scope of the prototype
 
-A three-class classifier assigns inputs to carrot, cabbage or potato. Evaluate it on parcels known to contain those crops. General land-cover mapping requires additional classes and labeled examples.
-
-Different regions and years can introduce differences unrelated to crop identity. Independent local evaluation is necessary. Passing software tests or timing checks is not evidence of classification accuracy.
+This is a three-class pipeline for known carrot, cabbage and potato parcels. General land-cover mapping needs additional classes. Source/year differences and nearby-parcel similarity can influence accuracy. Independent local evaluation is needed before making claims about Benguet.

@@ -1,78 +1,74 @@
 # Training and evaluation
 
-Run [four-month window preparation](../Crop_Four_Month_Windows.ipynb) before opening [model training](../Crop_Model_Training.ipynb). Features alone are not sufficient: model comparisons also require field identities, frozen settings and independent local test labels.
+The prototype checks that data can move reliably from selected windows to saved models and evaluation. Better data can be added later. Accuracy is useful for diagnosing the pipeline; it is not yet evidence of performance in Benguet.
 
-## Required preparation
+## Current files: exploratory accuracy evaluation
 
-Step 9 creates templates under `analysis/pilot_3000/seasons/review/`:
+Run [Model Training](../Crop_Model_Training.ipynb) in a fresh `.venv` kernel with the saved defaults:
 
-| Template | Completed file | Required for |
-|---|---|---|
-| `field_registry.template.csv` | `field_registry.csv` | Assigning independent fields and partitions |
-| `frozen_configuration.template.json` | `frozen_configuration.json` | Reference-supported acceptance and model training |
-| `season_reviews.template.csv` | `season_reviews.csv` | Reference-supported acceptance or optional human timing overrides |
+```python
+training_mode = "existing_parcel_exploratory"
+analysis_run_name = "bilinear_expanded"
+```
 
-Automatic exploratory timing does not require a completed manual review CSV. Templates can be regenerated without replacing completed files.
+This mode reads the new run's complete pixel tables and builds features locally. It does not download imagery or contact Earth Engine. Formal feature handoffs may remain pending; they are not required for this mode.
+
+### How the data is split
+
+Each crop needs at least **five source parcel groups**. This is an execution minimum, not a recommendation for a final study.
+
+| Split | Approximate share of parcel groups | Purpose |
+|---|---:|---|
+| Training | 60% | Fit the models |
+| Validation | 20% | Choose the feature design |
+| Test | 20% | Evaluate held-out predictions |
+
+All pixels and fragments from one source parcel stay together. Pixel percentages may differ because parcels have different sizes. Missing identities, conflicting labels and shared locations across groups stop training.
+
+The split uses seed 42 and is saved with input-file hashes before fitting. If inputs change, use a new output folder rather than replacing the locked split.
+
+### What gets trained
+
+Three local Random Forests compare the [feature designs](feature_experiments.md). Each uses 1,000 trees, seed 42, square-root feature selection, minimum leaf size 2 and 50% bootstrap samples. Training weights reduce domination by parcels with many pixels.
+
+Validation macro-F1 selects the design before test scoring. All designs use the same test samples. Do not choose a design or tune settings using test scores.
+
+### What gets saved
+
+Outputs are under `analysis/bilinear_expanded/seasons/existing_parcel_exploratory_bilinear/`, relative to the parent of `report_root`.
+
+| File | Purpose |
+|---|---|
+| `exploratory_input.json` | Input hashes and locked group assignments |
+| `parcel_split.csv` | Parcel membership in each split |
+| `partitioned_features.csv` | Features with their split assignments |
+| `configuration.json` | Recorded training settings |
+| `feature_selection.json` | Validation-based design selection |
+| `experiment_metrics.json` | Scores, crop-level results and confusion matrices |
+| `<design>/model.joblib` | Fitted model and ordered predictors |
+| `<design>/*_predictions.csv` | Validation and test predictions |
+| `training_package/` | File inventory and provenance for the run |
+
+Read accuracy, macro-F1, per-crop precision/recall and parcel counts together. Nearby parcels can remain similar despite separate identities. Cabbage also comes from a different source/year, which can influence scores. These are external-source results, not independent local accuracy.
 
 ## Local data and field partitions
 
-Use this registry schema:
+This section applies to the later **production** study. Source notebooks do not automatically collect or label local evaluation data.
 
-```csv
-partition_group,field_id,source,partition,identity_evidence
-source_parcel_1,external_field_1,external,train,Reviewed parcel identity and boundary
-local_parcel_1,local_field_1,local,train,Reviewed local field boundary
-local_parcel_2,local_field_2,local,test,Reserved independent labeled field
-```
+Prepare local observations with the same imagery and feature rules. Before the window notebook's field-partition step, add the local reference-supported feature rows once and record their input paths in the export provenance.
 
-This is a schema example, not an adequate experiment. Allowed sources are `external` and `local`; partitions are `train`, `validation` and `test`.
+Complete `seasons/review/field_registry.csv` using the generated template. Keep every fragment, season and pixel of the same reviewed field in one partition. Sources are `external` or `local`; partitions are `train`, `validation` or `test`. Independent local test fields require confirmed crop labels and reference-supported windows.
 
-Keep every fragment, season and pixel from the same independent field in the same source and partition. Do not randomly split pixels within a field. Final test fields must be local, independently labeled, and have confirmed crop labels and reference-supported windows. Resolve field overlap across coordinate systems during identity review; coordinate checks alone do not establish independence.
+## Production requirements
 
-Process local data with the same imagery and feature rules. Before Step 13, combine its reference-supported feature rows with the selected external `feature_rows`:
+Use `training_mode = "production"` only when the following are ready:
 
-```python
-local_feature_rows = season_workflow.read_table(local_complete_features_path)
-feature_rows = feature_rows + local_feature_rows
-```
+1. Reviewed field identities and independent local test labels.
+2. Supported crop-cycle evidence in `season_reviews.csv` for reference-supported windows.
+3. A frozen window configuration with recorded development evidence.
+4. A frozen feature recipe and its development evidence.
+5. Hash-verified feature bundles and all configured crops in the required splits.
 
-Add local rows only once per run. Include their input paths and losses in Step 14's provenance. The source notebooks do not automatically collect or label local test data.
+Use the generated templates for exact evidence fields. Do not mark a decision frozen merely to clear a pending status. Choose settings using development data, then re-export windows and features if their inputs change.
 
-## Freeze the configuration
-
-Record the development decision in `development_evidence`; keep `detector_parameters` equal to the settings used to generate candidates. Specify the study classes, quality threshold, timing policy, random seed, confidence weights and forest parameters, then set `frozen` to `true`.
-
-Record dataset revisions, source terms, map reference period and limitations. The supported policies are `window_rule=onset_month_plus_three` and `missing_data_policy=complete_only`. Choose rules using development fields, never final test performance.
-
-## Reference evidence and optional overrides
-
-For `accept_reference`, supply `season_id`, `crop`, `label_status`, `label_evidence`, `timing_evidence`, `cycle_evidence`, `reviewer` and `review_notes`. Retain the template's candidate ID and detector fingerprint. If onset spans two months, also supply `resolved_onset_month` and `month_resolution_evidence`.
-
-An optional `accept_estimate` override needs a season ID, reviewer, notes and timing evidence; month-boundary resolution also needs supporting evidence. It remains an estimated window with reported crop labels. `reject` excludes the candidate; legacy `accept` means reference-supported acceptance.
-
-Nonempty evidence fields are not proof of scientific correctness. A crop declaration or dated visit does not automatically verify the entire four-month cycle. Changed detector settings or candidates invalidate earlier reviews.
-
-## Export and choose model inputs
-
-Run preprocessing Steps 9–14 again after updating reviews or configuration. Step 14 exports:
-
-| Bundle | Allowed rows |
-|---|---|
-| `seasons/training_input/` | Reference-supported windows |
-| `seasons/exploratory_training_input/` | Supported rows plus timing-qualified external training estimates |
-
-Each bundle contains `training_handoff.json`, `partitioned_features.csv`, `configuration.json` and `coverage.json`. Keep them together. Training verifies file hashes; re-export after changing bundle inputs.
-
-The training notebook defaults to the primary bundle. To use qualified satellite estimates, set `handoff_path` to the exploratory bundle explicitly. Exploratory outputs are saved under `seasons/exploratory_estimated/`. Estimated windows cannot become local training or test truth.
-
-An empty export is marked `pending_inputs`; it does not fit a model.
-
-## Fit and assess the models
-
-Run the training notebook sequentially in a fresh kernel. The current design trains external-only, local-only and combined Random Forests for both 40- and 64-feature inputs: six models total.
-
-**Every configured crop must appear in external training, local training and the shared local test set.** The combined experiment reuses the same local training rows as the local-only experiment. Validation rows are reserved and excluded from fitting and final scoring.
-
-A field's confidence budget is divided across its rows and seasons. Default confidence weights distinguish confirmed and reported labels; they are development settings, not probabilities of correctness. Weighting cannot fix incorrect labels or missing classes.
-
-Inspect per-crop precision, recall and F1, macro-F1, balanced accuracy and the confusion matrix. Report independent-field counts alongside pixel counts because pixels within a field are correlated. Preserve models, predictions, configuration and the generated run manifests. Field-level uncertainty analysis and full-area mapping are separate work.
+Production uses Earth Engine to compare external-only, local-only and combined training across the three designs: nine models. The shared local test set remains separate from fitting and design selection. Estimated external windows may support exploratory training, but cannot become independent local test truth. Earth Engine's bootstrap weighting differs from local scikit-learn weighting; the two implementations are not identical.
