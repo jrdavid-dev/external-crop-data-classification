@@ -75,4 +75,4 @@ Predictions can prioritize review but are not independent label confirmation. If
 
 Collect specific field-season evidence, check declaration meaning, reserve independent confirmed Benguet test fields and validate timing. Accept windows only when crop-to-cycle correspondence is supported.
 
-See the [study plan](study_plan.md) and [workflow](workflow.md). Confidence weighting and final training are planned work, not completed results.
+See the [study plan](study_plan.md), [workflow](workflow.md) and [review and training guide](remaining_steps.md). Confidence weighting and model comparison are implemented in `season_workflow.py`; real study results still require reviewed seasons and independent local test fields.

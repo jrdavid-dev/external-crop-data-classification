@@ -1,6 +1,6 @@
 # Notebook workflow
 
-Open [the notebook](../Sen4AgriNet_Workflow_Outline.ipynb) from the repository folder. Read each explanation before running its code. **Steps 1–8 are implemented; Steps 9–15 are plans.**
+Open [the notebook](../Sen4AgriNet_Workflow_Outline.ipynb) from the repository folder. Read each explanation before running its code. **Steps 1–15 are implemented.** Steps 9–15 require completed evidence inputs before accepting seasons and training.
 
 ## Before running
 
@@ -69,19 +69,21 @@ The detector prefers observed daily summaries and falls back to composites where
 
 These are experimental settings. Composite-only outcomes remain provisional. Long gaps, weak signals and insufficient confirmations can cause rejection. Multiple plausible cycles are flagged. Preserve intervals and month-boundary uncertainty; do not report exact planting dates.
 
-## Remaining steps
+## Review, features and training
 
-| Step | Work still required |
+| Step | Implemented work |
 |---|---|
-| 9 | Validate timing, crop-label relevance and parameters |
-| 10 | Select four consecutive months using the frozen rule |
-| 11 | Select the matching eight existing composites and derive indices |
-| 12 | Apply missing-data rules and report sample losses |
-| 13 | Build tables and independent-field partitions |
-| 14 | Train/evaluate the three training-source comparisons |
-| 15 | Record versions, parameters, splits, exports and limitations |
+| 9 | Create review templates; check evidence and frozen settings; compare independent green-up intervals |
+| 10 | Select four consecutive months; retain unresolved month exclusions |
+| 11 | Select eight existing composites and derive 64/40 features |
+| 12 | Require complete features; report pixel and bin losses |
+| 13 | Apply reviewed independent-field partitions and check duplicate locations |
+| 14 | Train three source comparisons for both feature sets; export models, predictions and metrics |
+| 15 | Record versions, parameters, file hashes, coverage and limitations |
 
 Step 11 selects existing medians; do not composite them again. Begin with complete-data samples. Any gap treatment must preserve reconstruction flags and avoid inventing onset evidence.
+
+Follow [Review and training](remaining_steps.md) for CSV columns, configuration, local-data preparation and outputs. The implemented baseline has no gap reconstruction. Supplying evidence and collecting local test fields remain research work; the code does not fabricate those inputs. Optional cells compare saved coverage thresholds and one-bin window shifts separately from the primary baseline.
 
 ## Folders and helper modules
 
@@ -94,7 +96,7 @@ Step 11 selects existing medians; do not composite them again. Begin with comple
 | Project: `sen4agrinet_work/l2a/2020/` | Acquisition inventory and progress |
 | Project: `sen4agrinet_work/analysis/2020/` | Quality, timelines and candidate results |
 
-`crop_workflow.py` handles quality, indices, plots and detection. `observed_timelines.py` retrieves dated summaries. `migrate_progress.py` updates local paths. Generated data and reports are excluded from Git; preserve them separately.
+`crop_workflow.py` handles quality, indices, plots and detection. `observed_timelines.py` retrieves dated summaries. `season_workflow.py` implements review through model packaging. `migrate_progress.py` updates local paths. Generated data and reports are excluded from Git; preserve them separately.
 
 ## References
 

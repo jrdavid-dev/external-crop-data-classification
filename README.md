@@ -24,13 +24,14 @@ Edit local settings with your data paths and registered Earth Engine project. Se
 - [Crop-label evidence](docs/label_quality.md)
 - [Moving to another PC](docs/moving_pc.md)
 
-Steps 1–8 are implemented. Steps 9–15 remain plans. Detector outputs are candidate intervals, not verified planting dates or accepted training seasons.
+Steps 1–15 have executable code. Steps 9–15 cover evidence review, four-month features, complete-data filtering, independent-field partitions, Random Forest comparisons and run packaging. Follow the [review and training guide](docs/remaining_steps.md) to supply evidence and independent local data. Detector outputs remain candidates until reviewed; no real training result is implied by implementing these steps.
 
 ## Supporting files
 
 | File | Purpose |
 |---|---|
 | `crop_workflow.py` | Quality checks, scaling, indices, plots and candidate detection |
+| `season_workflow.py` | Season review, 40/64 features, field partitions, models and provenance |
 | `observed_timelines.py` | Small actual-date summaries without more imagery downloads |
 | `migrate_progress.py` | Update saved paths after moving PCs |
 | `settings.example.json` | Portable configuration template |
