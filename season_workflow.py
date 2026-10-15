@@ -73,27 +73,31 @@ def prepare_review_files(candidates, regions, detector_settings, output_folder):
     configuration = {
         "frozen": False, "detector_parameters": detector_settings,
         "development_evidence": "", "dataset_revisions": {}, "source_terms": {},
-        "map_reference_period": "", "study_classes": ["carrot", "potato"],
+        "map_reference_period": "", "study_classes": ["carrot", "cabbage", "potato"],
         "window_rule": "onset_month_plus_three", "missing_data_policy": "complete_only",
+        "window_policy": "reference_supported_only",
         "minimum_valid_fraction": 0.8, "random_seed": 42,
         "forest_parameters": {"n_estimators": 300, "min_samples_leaf": 2,
                               "class_weight": None, "n_jobs": -1},
         "confidence_weights": {"confirmed": 1.0, "reported": 0.5},
-        "limitations": ["Cabbage has no configured verified source.",
+        "limitations": ["Administrative crop labels require independent local validation.",
                         "Green-up is not a verified planting date."],
     }
     save_json(output_folder / "frozen_configuration.template.json", configuration)
     return review_rows
 
 
-def validate_configuration(configuration):
+def validate_configuration(configuration, require_frozen=True):
     """Require an explicit development freeze before accepting training seasons."""
-    if configuration.get("frozen") is not True or not configuration.get("development_evidence"):
+    if require_frozen and (configuration.get("frozen") is not True or not configuration.get("development_evidence")):
         raise ValueError("Freeze settings with development_evidence before accepting seasons.")
     if configuration.get("window_rule") != "onset_month_plus_three":
         raise ValueError("Only the four-calendar-month onset rule is implemented.")
     if configuration.get("missing_data_policy") != "complete_only":
         raise ValueError("Only complete-data features are accepted; no imputation is applied.")
+    if configuration.get("window_policy", "reference_supported_only") not in {
+            "reference_supported_only", "exploratory_external_estimates"}:
+        raise ValueError("Unknown window_policy; choose reference_supported_only or exploratory_external_estimates.")
     minimum_fraction = configuration["minimum_valid_fraction"]
     if not 0 < minimum_fraction <= 1:
         raise ValueError("minimum_valid_fraction must be in (0, 1].")
@@ -114,7 +118,7 @@ def add_calendar_months(first_day, month_count):
 
 def review_problem(review, candidate, properties, configuration):
     """Return one actionable exclusion reason instead of guessing missing evidence."""
-    if review.get("decision") != "accept":
+    if review.get("decision") not in {"accept", "accept_reference"}:
         return "review_" + (review.get("decision") or "pending")
     if candidate.get("status") == "rejected":
         return "detector_rejected_requires_new_detection"
@@ -195,7 +199,7 @@ def accept_seasons(candidates, reviews, regions, configuration):
     return accepted, audit
 
 
-def construct_season(candidate, review, properties):
+def construct_season(candidate, review, properties, window_status="reference_supported"):
     try:
         window_start = choose_onset_month(review, candidate)
         validation = timing_validation(review, candidate)
@@ -208,9 +212,159 @@ def construct_season(candidate, review, properties):
               "season_key": candidate["region_id"] + "|" + review["season_id"],
               "window_start": window_start.isoformat(), "window_end": window_end.isoformat(),
               "selected_pixels": properties["selected_pixels"],
+              "source_dataset": properties.get("source_dataset", "unspecified"),
+              "source_year": properties.get("source_year", ""),
+              "dataset_revision": properties.get("dataset_revision", ""),
+              "window_status": window_status,
+              "window_selection_reason": review.get("window_selection_reason") or "reference_crop_cycle_review",
+              "timing_review_status": review.get("timing_review_status", "reviewed"),
+              "label_relevance": "reference_supported" if window_status == "reference_supported" else "unverified",
               "month_boundary_uncertain": candidate["onset_interval_start"][:7]
               != candidate["onset_interval_end"][:7]}
     return season, {**season, "decision": "accepted", "exclusion_reason": ""}
+
+
+def select_season_windows(candidates, reviews, regions, configuration):
+    """Keep usable timing estimates visible without promoting annual crop labels.
+
+    Only reference-supported acceptance needs a development freeze here. Draft
+    estimates can be inspected before freezing, but training keeps its own gates.
+    """
+    validate_configuration(configuration, require_frozen=False)
+    identified = identify_candidates(candidates)
+    review_map = unique_records(reviews, "candidate_id")
+    if set(review_map) - {candidate["candidate_id"] for candidate in identified}:
+        raise ValueError("Stale reviews do not match current detector outcomes.")
+    properties_by_region = {region["properties"]["fragment_id"]: region["properties"] for region in regions}
+    plausible_counts = Counter(candidate["region_id"] for candidate in identified
+                               if candidate["status"] in {"candidate", "provisional", "ambiguous"})
+    supported, estimated, audit = [], [], []
+    for candidate in identified:
+        review = review_map.get(candidate["candidate_id"], {})
+        properties = properties_by_region[candidate["region_id"]]
+        season, outcome = select_candidate_window(
+            candidate, review, properties, plausible_counts[candidate["region_id"]], configuration)
+        audit.append(outcome)
+        if season is None:
+            continue
+        destination = supported if season["window_status"] == "reference_supported" else estimated
+        destination.append(season)
+    unique_records(supported + estimated, "season_key")
+    return supported, estimated, audit
+
+
+def unresolved_window(candidate, review, properties, reason):
+    return None, {**review, **candidate, "crop": properties["crop"],
+                  "partition_group": properties["partition_group"],
+                  "window_status": "unresolved", "decision": "excluded", "exclusion_reason": reason}
+
+
+def select_candidate_window(candidate, review, properties, plausible_count, configuration):
+    decision = review.get("decision") or "pending"
+    if decision in {"accept", "accept_reference"}:
+        return select_reference_window(candidate, review, properties, configuration)
+    problem = estimated_window_problem(candidate, review, properties, plausible_count, configuration)
+    if problem:
+        return unresolved_window(candidate, review, properties, problem)
+    estimated_review = make_estimated_review(candidate, review, configuration)
+    season, outcome = construct_season(candidate, estimated_review, properties, "satellite_estimated")
+    if season is None:
+        return unresolved_window(candidate, review, properties, outcome["exclusion_reason"])
+    return season, {**outcome, "decision": "satellite_estimated"}
+
+
+def select_reference_window(candidate, review, properties, configuration):
+    if configuration.get("frozen") is not True or not configuration.get("development_evidence"):
+        return unresolved_window(candidate, review, properties, "reference_settings_not_frozen")
+    problem = review_problem(review, candidate, properties, configuration)
+    if problem:
+        return unresolved_window(candidate, review, properties, problem)
+    season, outcome = construct_season(candidate, review, properties)
+    if season is None:
+        return unresolved_window(candidate, review, properties, outcome["exclusion_reason"])
+    return season, {**outcome, "decision": "reference_supported"}
+
+
+def estimated_window_problem(candidate, review, properties, plausible_count, configuration):
+    """Never resolve competing cycles by peak height or the target crop name."""
+    decision = review.get("decision") or "pending"
+    if decision == "reject":
+        return "review_rejected"
+    if decision not in {"pending", "accept_estimate"}:
+        return "unknown_review_decision"
+    if candidate["status"] not in {"candidate", "provisional", "ambiguous"}:
+        return "detector_rejected_requires_new_detection"
+    if properties["crop"] not in configuration["study_classes"]:
+        return "crop_outside_study"
+    if review.get("crop") and review["crop"] != properties["crop"]:
+        return "crop_conflict"
+    fingerprint = review.get("detector_fingerprint")
+    if fingerprint and fingerprint != record_fingerprint(configuration["detector_parameters"]):
+        return "review_uses_different_detector_settings"
+    if decision == "accept_estimate":
+        required = ("season_id", "reviewer", "review_notes", "timing_evidence", "detector_fingerprint")
+        return "missing_timing_review_evidence" if any(not review.get(column, "").strip() for column in required) else ""
+    if plausible_count != 1 or candidate["status"] == "ambiguous":
+        return "multiple_cycles_require_timing_review"
+    if candidate.get("source_kind") != "observed_daily":
+        return "composite_only_requires_timing_review"
+    if candidate.get("onset_interval_start", "")[:7] != candidate.get("onset_interval_end", "")[:7]:
+        return "month_boundary_requires_timing_review"
+    return ""
+
+
+def make_estimated_review(candidate, review, configuration):
+    reviewed = review.get("decision") == "accept_estimate"
+    return {**review,
+            "season_id": review.get("season_id") or "estimate_" + candidate["candidate_id"][:12],
+            "label_status": "reported",
+            "label_evidence": review.get("label_evidence") or "Source region crop label; crop-cycle relevance unverified",
+            "timing_review_status": "reviewed" if reviewed else "pending",
+            "window_selection_reason": "human_reviewed_satellite_timing" if reviewed else "single_supported_observed_rise",
+            "detector_fingerprint": record_fingerprint(configuration["detector_parameters"])}
+
+
+def qualify_estimated_windows(windows, audit, observations, configuration):
+    """Replace the mandatory visual gate with an auditable algorithmic gate.
+
+    Failed automatic proposals stay in the assessment report. A previously
+    supplied human timing decision remains explicit and is never fabricated.
+    """
+    from timing_quality import assess_timing
+
+    assessments = assess_timing(windows, observations, configuration["detector_parameters"],
+                                configuration.get("automatic_timing_policy"))
+    assessment_map = {row["candidate_id"]: row for row in assessments}
+    qualified, outcomes = [], {}
+    for window in windows:
+        assessment = assessment_map[window["candidate_id"]]
+        result = qualify_timing_window(window, assessment)
+        outcomes[window["candidate_id"]] = result
+        if result["window_status"] == "satellite_estimated":
+            qualified.append(result)
+    updated_audit = [outcomes.get(row["candidate_id"], row) for row in audit]
+    return qualified, assessments, updated_audit
+
+
+def qualify_timing_window(window, assessment):
+    result = {**window, **assessment, "decision": "satellite_estimated", "exclusion_reason": ""}
+    if window["timing_review_status"] == "reviewed":
+        return result
+    if assessment["automatic_timing_status"] != "passed":
+        return {**result, "window_status": "unresolved", "decision": "excluded",
+                "timing_review_status": "automated_failed",
+                "exclusion_reason": assessment["automatic_timing_reasons"]}
+    return {**result, "timing_review_status": "automated_pass",
+            "window_selection_reason": "predefined_automatic_timing_checks_passed",
+            "timing_validation": "algorithmic_consistency_only"}
+
+
+def timing_is_qualified(row):
+    if row.get("timing_review_status") == "reviewed":
+        return True
+    return (row.get("timing_review_status") == "automated_pass"
+            and row.get("automatic_timing_status") == "passed"
+            and bool(row.get("automatic_policy_fingerprint")))
 
 
 def unique_records(records, key):
@@ -365,6 +519,8 @@ def build_season_features(season, indexed_pixels, quality_map, minimum_fraction,
     metadata = {column: season[column] for column in
                 ("season_key", "region_id", "partition_group", "crop", "selected_pixels",
                  "window_variant", "window_start", "window_end")}
+    metadata.update(window_status=season.get("window_status", "unspecified"),
+                    timing_review_status=season.get("timing_review_status", "pending"))
     losses = {**metadata, "accepted_pixels": len(accepted),
               "excluded_pixels": selected_count - len(accepted),
               "pixels_without_records": unlocated_count}
@@ -444,11 +600,52 @@ def assign_partitions(feature_rows, registry):
             raise ValueError("A duplicate location has conflicting independent-field identities.")
         if identity["partition"] == "test" and row["label_status"] != "confirmed":
             raise ValueError("Final test rows require confirmed field-season crop labels.")
+        if identity["partition"] == "test" and row.get("window_status") != "reference_supported":
+            raise ValueError("Final test rows require reference-supported windows; estimates cannot be test truth.")
         partitioned.append({**row, **identity})
     identifiers = [(row["field_id"], row["season_id"], coordinate_key(row)) for row in partitioned]
     if len(identifiers) != len(set(identifiers)):
         raise ValueError("Duplicate field-season pixels; deduplicate footprints before training.")
     return partitioned
+
+
+def prepare_exploratory_rows(reference_rows, estimated_rows, registry):
+    """Add only timing-qualified external training estimates to a separate experiment."""
+    reviewed_estimates = [row for row in estimated_rows if timing_is_qualified(row)]
+    if not reviewed_estimates:
+        return list(reference_rows)
+    partitioned_estimates = assign_partitions(reviewed_estimates, registry)
+    if any(row["source"] != "external" or row["partition"] != "train" for row in partitioned_estimates):
+        raise ValueError("Estimated windows are limited to external training fields in the exploratory experiment.")
+    combined_rows = reference_rows + partitioned_estimates
+    return assign_partitions(combined_rows, registry)
+
+
+def validate_training_window_policy(rows, configuration):
+    """Prevent exploratory estimates from silently entering primary models or tests."""
+    policy = configuration.get("window_policy", "reference_supported_only")
+    for row in rows:
+        status = row.get("window_status")
+        if status == "reference_supported":
+            continue
+        if status != "satellite_estimated":
+            raise ValueError("Training rows need an explicit window_status; re-export reviewed preprocessing data.")
+        if policy != "exploratory_external_estimates":
+            raise ValueError("Estimated windows need the separate exploratory_external_estimates experiment.")
+        if row["source"] != "external" or row["partition"] != "train":
+            raise ValueError("Estimated windows may be used only for external training, never as local test truth.")
+        if not timing_is_qualified(row) or row.get("label_status") != "reported":
+            raise ValueError("Exploratory estimates require reviewed timing or an automated pass, with reported crop-label status.")
+        validate_automatic_policy(row, configuration)
+
+
+def validate_automatic_policy(row, configuration):
+    if row.get("timing_review_status") != "automated_pass":
+        return
+    policy = configuration.get("automatic_timing_policy")
+    expected = record_fingerprint({"quality_policy": policy, "detector_parameters": configuration["detector_parameters"]})
+    if not policy or row.get("automatic_policy_fingerprint") != expected:
+        raise ValueError("Automatic timing evidence uses a different policy; rerun preprocessing before training.")
 
 
 def field_sample_weights(rows, confidence_weights):
@@ -461,8 +658,10 @@ def field_sample_weights(rows, confidence_weights):
 def sample_counts(rows):
     groups = defaultdict(list)
     for row in rows:
-        groups[(row["source"], row["partition"], row["crop"], row["label_status"])].append(row)
+        groups[(row["source"], row["partition"], row["crop"], row["label_status"],
+                row.get("window_status", "unspecified"), row.get("timing_review_status", "pending"))].append(row)
     return [{"source": key[0], "partition": key[1], "crop": key[2], "label_status": key[3],
+             "window_status": key[4], "timing_review_status": key[5],
              "pixels": len(entries), "independent_fields": len({row["field_id"] for row in entries})}
             for key, entries in sorted(groups.items())]
 
@@ -474,10 +673,11 @@ def require_class_coverage(rows, classes, description):
 
 
 def train_comparisons(rows, configuration, output_folder, include_indices=True):
-    """Step 14: fit three fresh forests against the same untouched local test rows."""
+    """Fit three fresh forests against the same untouched local test rows."""
     validate_configuration(configuration)
     if not rows:
         raise ValueError("No complete, reviewed feature rows are available for training.")
+    validate_training_window_policy(rows, configuration)
     # Revalidate imported CSV tables, not only tables built in this process.
     registry = {row["partition_group"]: {column: row[column] for column in FIELD_COLUMNS}
                 for row in rows}
@@ -523,6 +723,7 @@ def fit_comparisons(training_sets, test_rows, configuration, output_folder, colu
         precision, recall, scores, support = precision_recall_fscore_support(
             test_labels, predictions, labels=classes, zero_division=0)
         metrics[name] = {
+            "window_policy": configuration.get("window_policy", "reference_supported_only"),
             "classes": classes, "confusion_matrix": confusion_matrix(test_labels, predictions, labels=classes).tolist(),
             "macro_f1": float(scores.mean()),
             "balanced_accuracy": float(balanced_accuracy_score(test_labels, predictions)),
@@ -558,8 +759,67 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
+def export_training_handoff(output_folder, rows, configuration, coverage):
+    """Snapshot prepared inputs so training can start in a separate Python kernel.
+
+    Relative filenames keep the bundle portable. Hashes prevent mixing a table
+    from one preprocessing run with settings or coverage from another.
+    """
+    output_folder = Path(output_folder)
+    filenames = {"features": "partitioned_features.csv",
+                 "configuration": "configuration.json", "coverage": "coverage.json"}
+    write_records(output_folder / filenames["features"], rows)
+    save_json(output_folder / filenames["configuration"], configuration)
+    save_json(output_folder / filenames["coverage"], coverage)
+    manifest = {
+        "format_version": 1,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "status": "prepared" if rows and configuration.get("frozen") is True else "pending_inputs",
+        "row_count": len(rows), "feature_columns": feature_columns(),
+        "window_policy": configuration.get("window_policy", "reference_supported_only"),
+        "window_status_counts": dict(Counter(row.get("window_status", "unspecified") for row in rows)),
+        "files": {name: {"filename": filename, "sha256": file_sha256(output_folder / filename)}
+                  for name, filename in filenames.items()},
+    }
+    manifest_path = output_folder / "training_handoff.json"
+    save_json(manifest_path, manifest)
+    return manifest_path
+
+
+def load_training_handoff(manifest_path):
+    """Load the exact saved feature table and settings without preprocessing state."""
+    manifest_path = Path(manifest_path)
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Training handoff missing: {manifest_path}. Run the preprocessing notebook's export step first.")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("format_version") != 1 or manifest.get("feature_columns") != feature_columns():
+        raise ValueError("Unsupported training handoff format or feature schema.")
+    paths = validate_handoff_files(manifest_path.parent, manifest["files"])
+    rows = read_table(paths["features"])
+    if len(rows) != manifest["row_count"]:
+        raise ValueError("Training handoff row count differs from the exported table.")
+    configuration = json.loads(paths["configuration"].read_text(encoding="utf-8"))
+    coverage = json.loads(paths["coverage"].read_text(encoding="utf-8"))
+    return rows, configuration, coverage, manifest
+
+
+def validate_handoff_files(folder, records):
+    if set(records) != {"features", "configuration", "coverage"}:
+        raise ValueError("Training handoff requires features, configuration and coverage files.")
+    paths = {}
+    for name, record in records.items():
+        path = folder / record["filename"]
+        if not path.is_file():
+            raise FileNotFoundError(f"Training handoff file missing: {path}")
+        if file_sha256(path) != record["sha256"]:
+            raise ValueError(f"Training handoff file changed: {path}. Export a fresh bundle after preprocessing.")
+        paths[name] = path
+    return paths
+
+
 def package_run(output_folder, configuration, input_paths, artifact_paths, coverage):
-    """Step 15: inventory actual files; never imply an unrun export completed."""
+    """Inventory actual files; never imply an unrun export completed."""
     output_folder = Path(output_folder)
     inputs = artifact_inventory(input_paths)
     artifacts = artifact_inventory(artifact_paths)
@@ -574,7 +834,7 @@ def package_run(output_folder, configuration, input_paths, artifact_paths, cover
                 "configuration": configuration, "configuration_fingerprint": record_fingerprint(configuration),
                 "inputs": inputs, "artifacts": artifacts, "coverage": coverage,
                 "missing_files": [record["path"] for record in inputs + artifacts if not record["exists"]],
-                "mapping_status": "No wall-to-wall mapping or imagery export is performed by Steps 9–15."}
+                "mapping_status": "These notebooks do not perform wall-to-wall mapping or imagery exports."}
     save_json(output_folder / "run_manifest.json", manifest)
     summary = ("# Run record\n\n"
                f"- Created: {manifest['created_at_utc']}\n"

@@ -1,12 +1,25 @@
 # External crop data classification
 
-Prepare Sen4AgriNet crop-reference data and Sentinel-2 imagery for a Benguet crop-classification study. The notebook implements inventory, geometry checks, balanced sampling, cloud-screened composites, quality checks, timelines and candidate green-up detection.
+Prepare Sentinel-2 data for a three-crop prototype: **carrot, cabbage and potato**. Select **3,000 candidate pixels per crop**, then retain **up to 1,000 usable unique pixels per crop** after quality and four-month window checks.
 
-The current pilot contains **1,000 carrot pixels and 1,000 potato pixels**, with 20 conservative parcel groups per crop. It plans 960 annual half-month composite GeoTIFFs. Cabbage remains a target crop, but no verified cabbage source is configured.
+| Crop | Reference dataset | Imagery year |
+|---|---|---|
+| Carrot and potato | Sen4AgriNet | 2020 |
+| Cabbage | FranceCrops | 2022 |
 
-## Quick setup
+## Setup
 
-Use Python 3.13, Git and a notebook editor. From the repository folder:
+Use Python 3.13 and a notebook editor. Run commands from the repository folder.
+
+**macOS / Linux**
+
+```bash
+python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements-notebooks.txt
+cp settings.example.json settings.local.json
+```
+
+**Windows PowerShell**
 
 ```powershell
 py -3.13 -m venv .venv
@@ -14,36 +27,35 @@ py -3.13 -m venv .venv
 Copy-Item settings.example.json settings.local.json
 ```
 
-Edit local settings with your data paths and registered Earth Engine project. Select `.venv` as the kernel, then open [the notebook](Sen4AgriNet_Workflow_Outline.ipynb). Run settings before later sections. Existing raw files do not need to be downloaded again.
+Edit `settings.local.json` with your data folders and registered Earth Engine project. Select `.venv` as the notebook kernel. Earth Engine access is required for satellite retrieval; window preparation and training use saved files.
 
-## Guides
+## Notebook order
 
-- [Documentation index](docs/README.md)
-- [Study plan](docs/study_plan.md)
-- [Execution order and outputs](docs/workflow.md)
-- [Crop-label evidence](docs/label_quality.md)
-- [Moving to another PC](docs/moving_pc.md)
+| Order | Notebook | Purpose |
+|---|---|---|
+| 1 | [Sen4AgriNet preparation](Sen4AgriNet_Satellite_Preparation.ipynb) | Prepare carrot/potato candidates and retrieve imagery |
+| 2 | [FranceCrops preparation](FranceCrops_Satellite_Preparation.ipynb) | Prepare cabbage candidates and retrieve imagery |
+| 3 | [Four-month windows](Crop_Four_Month_Windows.ipynb) | Check quality, select windows and usable pixels, export features |
+| 4 | [Model training](Crop_Model_Training.ipynb) | Load prepared inputs, train and evaluate |
 
-Steps 1–15 have executable code. Steps 9–15 cover evidence review, four-month features, complete-data filtering, independent-field partitions, Random Forest comparisons and run packaging. Follow the [review and training guide](docs/remaining_steps.md) to supply evidence and independent local data. Detector outputs remain candidates until reviewed; no real training result is implied by implementing these steps.
+The first two notebooks prepare independent sources. Complete both before preparing the full three-crop pilot. Each notebook can start in a fresh kernel; run its cells in order.
 
-## Supporting files
+**Sen4AgriNet defaults to reusing saved fields.** Run All leaves NetCDF downloads and field rebuilding disabled. A new user without the saved inventory must obtain the source files and build the inventory first. See [workflow](docs/workflow.md).
 
-| File | Purpose |
-|---|---|
-| `crop_workflow.py` | Quality checks, scaling, indices, plots and candidate detection |
-| `season_workflow.py` | Season review, 40/64 features, field partitions, models and provenance |
-| `observed_timelines.py` | Small actual-date summaries without more imagery downloads |
-| `migrate_progress.py` | Update saved paths after moving PCs |
-| `settings.example.json` | Portable configuration template |
-| `requirements-notebooks.txt` | Environment package versions |
-| `tests/` | Processing and detector checks |
+## Essential guides
 
-Run tests with `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`.
+- [Workflow](docs/workflow.md): run modes, notebook steps, saved files and common problems.
+- [Methodology](docs/methodology.md): imagery rules, four-month timing, usable pixels and limitations.
+- [Training and evaluation](docs/training.md): field partitions, required evidence, model inputs and metrics.
 
-## Repository contents
+## Development
 
-Git contains code, the notebook, tests and documents. Raw NetCDF files, GeoTIFFs, generated outputs, `.venv`, credentials and local settings are excluded. Transfer data and `sen4agrinet_work` separately when moving PCs.
+Run the test suite:
 
-Software tests do not validate crop identity, cloud screening or phenology accuracy. Review independent evidence before accepting field-seasons. Dataset access and redistribution remain subject to source terms; no project code license is assigned automatically.
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
 
-[Sen4AgriNet dataset](https://huggingface.co/datasets/orion-ai-lab/S4A)
+On Windows, use `.\.venv\Scripts\python.exe` instead. Tests verify software behavior; they do not establish crop-label or phenology accuracy.
+
+Code, four notebooks, tests and documentation belong in Git. Raw data, imagery, generated results, credentials, `.venv` and local settings are excluded. Attribute the upstream datasets when using their data; their licenses do not assign a license to this project's code.

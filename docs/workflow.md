@@ -1,106 +1,95 @@
-# Notebook workflow
+# Run the workflow
 
-Open [the notebook](../Sen4AgriNet_Workflow_Outline.ipynb) from the repository folder. Read each explanation before running its code. **Steps 1–15 are implemented.** Steps 9–15 require completed evidence inputs before accepting seasons and training.
+Install the requirements, configure `settings.local.json`, and select `.venv` as the kernel. Run notebooks from the repository folder so helper imports and relative paths resolve correctly.
 
-## Before running
+## 1. Sen4AgriNet: carrot and potato
 
-Follow the root [README](../README.md), configure `settings.local.json`, and select `.venv` as the kernel. The dataset root is the parent of `data`: `E:/ground_truth` resolves to `E:/ground_truth/data/2020`. Collaborators set their own paths.
+Open [Sen4AgriNet_Satellite_Preparation.ipynb](../Sen4AgriNet_Satellite_Preparation.ipynb).
 
-Run settings and helper cells before later cells. Skip Step 2's preview/download cells when raw files already exist. When restoring existing data, use the [moving-PC guide](moving_pc.md).
+If the saved field inventory exists, leave the first settings cell at:
 
-## Implemented steps
+```python
+download_netcdf_files = False
+rebuild_field_inventory = False
+install_dependencies = False
+```
 
-| Step | Work | Output |
-|---|---|---|
-| 1 | Define scope and open decisions | Study specification |
-| 2 | Download one raw-data batch | File plan and batch CSV |
-| 3 | Inspect all local 2020 files sequentially | Counts, checkpoints and candidate patches |
-| 4 | Review imagery, extract geometry, deduplicate and sample | Polygons, review records, pilot regions and masks |
-| 5 | Retrieve cloud-screened half-month medians | GeoTIFFs and download progress |
-| 6 | Check quality, scale bands and verify grids | Quality and selected-pixel tables |
-| 7 | Calculate curves and retrieve daily summaries | Timelines, checkpoints and plots |
-| 8 | Detect candidate green-up | Onset records, sensitivity results and plots |
+Use **Run All**. The optional raw-data section comes first and prints intentional skip messages. The remaining cells:
 
-### Batches and field groups
+1. Load `fields/2020/download_candidates.geojson`.
+2. Select 3,000 candidates per crop and save masks and footprints.
+3. Connect to Earth Engine, inventory acquisitions and download composites.
+4. Retrieve actual-date vegetation summaries.
+5. Save the source handoff.
 
-Download batches control workload; they are not analysis or training partitions. Step 3 scans every downloaded 2020 file. Step 4 selects the pilot separately.
+For a first run without saved fields, enable raw downloading for the chosen tile/batch and enable field rebuilding. If raw files already exist, enable rebuilding without downloading. One batch may not supply enough crop coverage for the candidate budget.
 
-Remove redundant footprints only when country, year, crop, parcel ID and geometry agree. Keep different footprints sharing an ID for review. Preserve removed-to-retained links.
+## 2. FranceCrops: cabbage
 
-The pilot uses equal pixel and group budgets for carrot and potato. A partition group combines country, year and parcel ID to keep possible field fragments together. It does not prove independent-field identity. Later splits must be field-based, never random pixels.
+Run [FranceCrops_Satellite_Preparation.ipynb](../FranceCrops_Satellite_Preparation.ipynb) from Step 1 through Step 9.
 
-### Cloud screening before medians
-
-Apply these checks to each acquisition:
-
-1. Exclude SCL classes 0, 1, 3, 8, 9, 10 and 11: invalid pixels, saturation, shadows, clouds, cirrus and snow.
-2. Retain cloud-probability scores below 40. This is an exploratory per-pixel cutoff, not whole-scene cloud coverage.
-3. Require valid spectral bands, probability pixels and B8A/B9 edge masks.
-4. Exclude and report acquisitions without an exact cloud-probability match.
-
-Retain bare soil for low-to-growth detection. Shadows are screened using SCL; a separate projected-shadow detector is not implemented.
-
-Mask granules first, then mosaic each date. Sorted image-index order gives the last valid granule priority in overlaps. Median-composite distinct dates with equal weight. This deterministic ordering is not cloud-score ranking.
-
-Each GeoTIFF contains B3, B4, B5, B8, B11, B2 and `clear_count`. Spectral medians are unscaled float32 values; missing values are −9999. Count zero remains valid quality information. Empty bins are retained, not filled or dropped.
-
-Use a fixed 10 m grid. Resampling originally 20 m bands does not add detail. Use only pixels marked 1 in sampling masks for pilot training; surrounding pixels are context.
-
-### Quality and curves
-
-Step 6 initially requires valid values at 80% of selected pixels for an interval to pass. Calibrate this development rule. Preserve missing, invalid and low-coverage records. Multiply spectral bands by 0.0001 after nodata handling; never scale counts.
-
-Calculate indices from median bands, then summarize selected pixels. An index of median bands differs from a median of acquisition-level indices; the feature design uses the former.
-
-Composite midpoints are display dates. Step 7 also retrieves small summaries at actual observation dates, with the same masks and footprints. These are sample-region summaries, not whole-field averages.
-
-### Candidate detector
-
-The detector prefers observed daily summaries and falls back to composites where necessary. Development defaults are:
-
-| Setting | Value |
-|---|---:|
-| Relative-amplitude crossing | 20% |
-| Minimum NDVI amplitude | 0.15 |
-| Maximum onset gap | 30 days |
-| Later confirmations | 2 within 30 days |
-| Baseline lookback | 120 days |
-| Minimum valid fraction | 80% |
-
-These are experimental settings. Composite-only outcomes remain provisional. Long gaps, weak signals and insufficient confirmations can cause rejection. Multiple plausible cycles are flagged. Preserve intervals and month-boundary uncertainty; do not report exact planting dates.
-
-## Review, features and training
-
-| Step | Implemented work |
+| Steps | Work |
 |---|---|
-| 9 | Create review templates; check evidence and frozen settings; compare independent green-up intervals |
-| 10 | Select four consecutive months; retain unresolved month exclusions |
-| 11 | Select eight existing composites and derive 64/40 features |
-| 12 | Require complete features; report pixel and bin losses |
-| 13 | Apply reviewed independent-field partitions and check duplicate locations |
-| 14 | Train three source comparisons for both feature sets; export models, predictions and metrics |
-| 15 | Record versions, parameters, file hashes, coverage and limitations |
+| 1–4 | Load settings, obtain reference tables, verify cabbage labels and select 3,000 candidates |
+| 5–7 | Connect to Earth Engine, inventory acquisitions and download satellite composites |
+| 8 | Retrieve actual-date vegetation summaries |
+| 9 | Save the source handoff |
 
-Step 11 selects existing medians; do not composite them again. Begin with complete-data samples. Any gap treatment must preserve reconstruction flags and avoid inventing onset evidence.
+The source tables contain labels and parcel boundaries. The large interpolated FranceCrops satellite arrays are not needed. The notebook retrieves matching Sentinel-2 imagery independently.
 
-Follow [Review and training](remaining_steps.md) for CSV columns, configuration, local-data preparation and outputs. The implemented baseline has no gap reconstruction. Supplying evidence and collecting local test fields remain research work; the code does not fabricate those inputs. Optional cells compare saved coverage thresholds and one-bin window shifts separately from the primary baseline.
+For either source, set `authenticate_now = True` in its retrieval settings only when login is needed. Rerun failed satellite downloads; completed files are reused after grid and checksum checks.
 
-## Folders and helper modules
+## 3. Four-month windows and usable pixels
+
+After both source handoffs are saved, run [Crop_Four_Month_Windows.ipynb](../Crop_Four_Month_Windows.ipynb) from its first cell through Step 14. No Earth Engine connection or NetCDF download is needed.
+
+| Steps | Work |
+|---|---|
+| 6–8 | Audit each source in its own year, construct curves and identify candidate green-up |
+| 9–10 | Assess timing and save reference-supported, estimated and unresolved outcomes |
+| 11–12 | Build complete features, retain up to 1,000 usable unique external pixels per crop and report losses |
+| 13–14 | Apply field partitions and export primary and exploratory training bundles |
+
+A missing source is reported and available sources can be inspected. A complete three-class experiment still needs all three crops. Field assignment can remain pending even when usable feature rows exist; see [training requirements](training.md).
+
+## Important files
+
+Paths below are relative to `report_root`'s parent, normally `sen4agrinet_work/`.
 
 | Location | Contents |
 |---|---|
-| Data drive: `data/2020/` | Original NetCDFs |
-| Data drive: `sentinel2_pilot_composites/` | Large GeoTIFFs |
-| Project: `sen4agrinet_work/inventory/2020/` | File and crop reports |
-| Project: `sen4agrinet_work/fields/2020/` | Geometry, selection and masks |
-| Project: `sen4agrinet_work/l2a/2020/` | Acquisition inventory and progress |
-| Project: `sen4agrinet_work/analysis/2020/` | Quality, timelines and candidate results |
+| `fields/2020/pilot_3000/` | Sen4AgriNet selections, footprints and sampling masks |
+| `l2a/2020/pilot_3000/` | Sen4AgriNet acquisition and download records |
+| `analysis/2020/pilot_3000/timelines/` | Sen4AgriNet actual-date summaries |
+| `francecrops/` | Cabbage source tables, selections, acquisition records and summaries |
+| `source_handoffs/` | `sen4agrinet_3000.json` and `francecrops_3000.json` |
+| `analysis/pilot_3000/seasons/` | Combined windows, feature tables, selection counts and training inputs |
 
-`crop_workflow.py` handles quality, indices, plots and detection. `observed_timelines.py` retrieves dated summaries. `season_workflow.py` implements review through model packaging. `migrate_progress.py` updates local paths. Generated data and reports are excluded from Git; preserve them separately.
+Sen4AgriNet imagery is stored under configured `imagery_root/pilot_3000/`. Cabbage imagery uses `francecrops_imagery_root/pilot_3000/`, or defaults to `dataset_root/sentinel2_francecrops/pilot_3000/`. Previous pilot outputs remain separate.
 
-## References
+Within the combined `seasons/` folder:
 
-- [L2A collection](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED)
-- [Cloud probability](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_CLOUD_PROBABILITY)
-- [Download limits](https://developers.google.com/earth-engine/apidocs/ee-image-getdownloadurl)
-- [Study plan](study_plan.md)
+| File or folder | Meaning |
+|---|---|
+| `season_review_audit.csv` | Every window outcome and its reason |
+| `automatic_timing_audit.csv` | Timing checks and failures |
+| `features/`, `estimated_features/` | Separate supported and estimated feature tables and losses |
+| `usable_pixel_selection.csv` | Available pixels, selected pixels and shortfalls by crop |
+| `review/` | Field registry, review and configuration templates |
+| `training_input/`, `exploratory_training_input/` | Separate model-input bundles |
+
+## Common problems
+
+| Message or result | Meaning and next step |
+|---|---|
+| Saved field inventory missing | Restore the inventory or build it from raw source files |
+| NetCDF preparation skipped | Expected with default reuse settings; continue sequentially |
+| Source not prepared | Complete the corresponding source notebook's final handoff cell |
+| Source sampling changed | Finish acquisition for the new selection and export its handoff again |
+| Failed composites | Inspect the download report and rerun retrieval |
+| No actual-date summaries | Run the source notebook's summary retrieval; composite-only timing stays provisional |
+| Fewer than 1,000 usable pixels | Inspect timing and completeness losses; collect more candidates if necessary |
+| Zero reference-supported seasons | Independent crop-cycle evidence has not established supported windows; qualified estimates remain separate |
+| Zero partitioned rows / `pending_inputs` | Field registry or eligible model inputs are still missing |
+
+Continue with [model training](training.md) after checking the selected counts and partitions.

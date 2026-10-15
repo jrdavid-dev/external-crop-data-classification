@@ -36,3 +36,6 @@ __pycache__/
 
 # Recoverable local archive of unused scripts and old exploratory outputs
 /archive/
+
+# macOS Finder metadata
+.DS_Store

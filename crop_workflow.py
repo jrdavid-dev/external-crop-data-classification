@@ -73,7 +73,7 @@ def interval_bins(year=2020):
 
 
 def quality_check(regions, progress_folder, imagery_folder, field_folder, output_folder,
-                  cloud_threshold=40, minimum_fraction=0.8):
+                  cloud_threshold=40, minimum_fraction=0.8, year=2020):
     """Audit all 24 bins, preserving missing/failed records instead of filling."""
     progress_folder, output_folder = Path(progress_folder), Path(output_folder)
     region_map = {item["properties"]["fragment_id"]: item for item in regions}
@@ -84,7 +84,7 @@ def quality_check(regions, progress_folder, imagery_folder, field_folder, output
         settings = manifest.get("settings", {})
         if (manifest["fragment_id"] in region_map and settings.get("version") == 3
                 and settings.get("cloud_probability_threshold") == cloud_threshold
-                and settings.get("start") == "2020-01-01" and settings.get("end") == "2021-01-01"):
+                and settings.get("start") == f"{year}-01-01" and settings.get("end") == f"{year + 1}-01-01"):
             compatible[manifest["fragment_id"]].append((path, manifest))
     quality_rows, pixel_rows, errors = [], [], []
     for region_id, region in region_map.items():
@@ -99,7 +99,7 @@ def quality_check(regions, progress_folder, imagery_folder, field_folder, output
         total_selected = int(selected.sum())
         if total_selected != properties["selected_pixels"]:
             raise ValueError(f"Sampling-mask count differs for {region_id}")
-        for interval in interval_bins():
+        for interval in interval_bins(year):
             row = {"region_id": region_id, "crop": properties["crop"],
                    "partition_group": properties["partition_group"], **interval,
                    "selected_pixels": total_selected, "valid_pixels": 0,

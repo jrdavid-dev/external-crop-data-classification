@@ -2,13 +2,16 @@
 
 import json
 import importlib
+import shutil
 import tempfile
 import unittest
 from collections import Counter
+from datetime import date, timedelta
 from pathlib import Path
 
 import season_workflow as workflow
 import crop_workflow
+import timing_quality
 
 
 def reviewed_fixture():
@@ -106,6 +109,94 @@ class ReviewTests(unittest.TestCase):
             self.assertTrue((Path(folder) / "season_reviews.template.csv").is_file())
 
 
+class EstimatedWindowTests(unittest.TestCase):
+    def setUp(self):
+        self.candidate, self.review, self.region, self.configuration = reviewed_fixture()
+        self.candidate["source_kind"] = "observed_daily"
+        self.review["candidate_id"] = workflow.identify_candidates([self.candidate])[0]["candidate_id"]
+
+    def select(self, reviews=None, candidates=None):
+        return workflow.select_season_windows(
+            candidates or [self.candidate], reviews or [], [self.region], self.configuration)
+
+    def test_unfrozen_settings_allow_a_separate_estimate_without_reference_acceptance(self):
+        self.configuration.update(frozen=False, development_evidence="")
+        supported, estimated, audit = self.select()
+        self.assertFalse(supported)
+        self.assertEqual(len(estimated), 1)
+        self.assertEqual(estimated[0]["window_start"], "2020-10-01")
+        self.assertEqual(estimated[0]["window_end"], "2021-02-01")
+        self.assertEqual(estimated[0]["window_status"], "satellite_estimated")
+        self.assertEqual(estimated[0]["timing_review_status"], "pending")
+        self.assertEqual(estimated[0]["label_relevance"], "unverified")
+        self.assertEqual(estimated[0]["label_status"], "reported")
+        self.assertEqual(audit[0]["decision"], "satellite_estimated")
+
+    def test_reference_acceptance_remains_separate_and_requires_a_freeze(self):
+        self.configuration["frozen"] = False
+        supported, estimated, audit = self.select([self.review])
+        self.assertFalse(supported or estimated)
+        self.assertEqual(audit[0]["exclusion_reason"], "reference_settings_not_frozen")
+        self.configuration["frozen"] = True
+        supported, estimated, _ = self.select([self.review])
+        self.assertEqual(supported[0]["window_status"], "reference_supported")
+        self.assertFalse(estimated)
+
+    def test_reviewed_estimate_does_not_require_planting_records(self):
+        self.review.update(decision="accept_estimate", label_status="confirmed")
+        self.review.pop("cycle_evidence")
+        self.review.pop("label_evidence")
+        supported, estimated, _ = self.select([self.review])
+        self.assertFalse(supported)
+        self.assertEqual(estimated[0]["timing_review_status"], "reviewed")
+        self.assertEqual(estimated[0]["label_status"], "reported")
+        self.assertEqual(estimated[0]["label_relevance"], "unverified")
+
+    def test_month_crossing_needs_explicit_evidence_and_decision(self):
+        self.candidate["onset_interval_start"] = "2020-09-29"
+        self.review.update(candidate_id=workflow.identify_candidates([self.candidate])[0]["candidate_id"],
+                           decision="pending", resolved_onset_month="2020-10", month_resolution_evidence="Dated imagery")
+        self.assertFalse(self.select([self.review])[1])
+        self.review["decision"] = "accept_estimate"
+        supported, estimated, _ = self.select([self.review])
+        self.assertFalse(supported)
+        self.assertEqual(estimated[0]["window_start"], "2020-10-01")
+        self.assertTrue(estimated[0]["month_boundary_uncertain"])
+
+    def test_multiple_cycles_are_not_ranked_by_amplitude(self):
+        second_candidate = {**self.candidate, "peak_date": "2020-11-01", "amplitude": 0.9}
+        supported, estimated, audit = self.select(candidates=[self.candidate, second_candidate])
+        self.assertFalse(supported or estimated)
+        self.assertTrue(all(row["exclusion_reason"] == "multiple_cycles_require_timing_review" for row in audit))
+
+    def test_composite_only_or_rejected_signals_do_not_make_automatic_estimates(self):
+        self.candidate.update(status="provisional", source_kind="semi_monthly")
+        self.assertFalse(self.select()[1])
+        self.candidate["status"] = "rejected"
+        self.review.update(candidate_id=workflow.identify_candidates([self.candidate])[0]["candidate_id"],
+                           decision="accept_estimate")
+        supported, estimated, _ = self.select([self.review])
+        self.assertFalse(supported or estimated)
+
+    def test_rejection_and_stale_reviews_remain_effective(self):
+        self.review["decision"] = "reject"
+        self.assertFalse(self.select([self.review])[1])
+        self.review["candidate_id"] = "stale"
+        with self.assertRaisesRegex(ValueError, "Stale"):
+            self.select([self.review])
+
+    def test_estimate_features_preserve_uncertainty_and_cross_year_missingness(self):
+        _, estimated, _ = self.select()
+        _, quality_rows, pixel_rows = feature_fixture()
+        features, _, losses, _ = workflow.build_features(estimated, pixel_rows, quality_rows)
+        self.assertEqual(features[0]["window_status"], "satellite_estimated")
+        self.assertEqual(features[0]["timing_review_status"], "pending")
+        self.assertEqual(losses[0]["window_status"], "satellite_estimated")
+        missing_features, exclusions, _, _ = workflow.build_features(estimated, pixel_rows, quality_rows[:-1])
+        self.assertFalse(missing_features)
+        self.assertIn("2021_01_16_end", exclusions[0]["missing_bins"])
+
+
 class FeatureTests(unittest.TestCase):
     def test_window_sensitivity_uses_consecutive_bins_across_year_boundary(self):
         season, _, _ = feature_fixture()
@@ -179,12 +270,68 @@ def training_fixture():
                          "source": source, "partition": partition, "crop": crop,
                          "identity_evidence": "Reviewed independent geometry",
                          "season_id": "2020", "label_status": "confirmed",
+                         "window_status": "reference_supported", "timing_review_status": "reviewed",
                          "source_crs": "EPSG:32631", "x": len(rows) * 10, "y": 200,
                          **{column: crop_index + 0.1 for column in workflow.feature_columns()}})
     return rows, configuration
 
 
 class PartitionAndModelTests(unittest.TestCase):
+    def test_automatic_passes_can_train_only_with_matching_exploratory_policy(self):
+        rows, configuration = training_fixture()
+        policy = dict(timing_quality.DEFAULT_TIMING_POLICY)
+        configuration.update(window_policy="exploratory_external_estimates", automatic_timing_policy=policy)
+        policy_fingerprint = workflow.record_fingerprint({
+            "quality_policy": policy, "detector_parameters": configuration["detector_parameters"]})
+        for row in rows[:2]:
+            row.update(window_status="satellite_estimated", label_status="reported",
+                       timing_review_status="automated_pass", automatic_timing_status="passed",
+                       automatic_policy_fingerprint=policy_fingerprint)
+        with tempfile.TemporaryDirectory() as folder:
+            metrics = workflow.train_comparisons(rows, configuration, folder)
+            self.assertEqual(metrics["combined"]["training_pixels"], 4)
+            self.assertEqual(metrics["combined"]["test_pixels"], 2)
+            configuration["automatic_timing_policy"] = {**policy, "maximum_onset_gap_days": 10}
+            with self.assertRaisesRegex(ValueError, "different policy"):
+                workflow.train_comparisons(rows, configuration, folder)
+
+    def test_estimates_require_the_explicit_exploratory_policy(self):
+        rows, configuration = training_fixture()
+        for row in rows[:2]:
+            row.update(window_status="satellite_estimated", label_status="reported", timing_review_status="reviewed")
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError, "separate exploratory"):
+                workflow.train_comparisons(rows, configuration, folder)
+            configuration["window_policy"] = "exploratory_external_estimates"
+            metrics = workflow.train_comparisons(rows, configuration, folder)
+            self.assertTrue(all(result["window_policy"] == "exploratory_external_estimates" for result in metrics.values()))
+            rows[0]["timing_review_status"] = "pending"
+            with self.assertRaisesRegex(ValueError, "reviewed timing"):
+                workflow.train_comparisons(rows, configuration, folder)
+
+    def test_estimates_cannot_be_used_as_local_training_or_test_truth(self):
+        rows, configuration = training_fixture()
+        configuration["window_policy"] = "exploratory_external_estimates"
+        rows[-1].update(window_status="satellite_estimated", label_status="reported", timing_review_status="reviewed")
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError, "never as local test truth"):
+                workflow.train_comparisons(rows, configuration, folder)
+        rows[-1].update(label_status="confirmed")
+        registry = [{column: row[column] for column in workflow.FIELD_COLUMNS} for row in rows]
+        with self.assertRaisesRegex(ValueError, "reference-supported windows"):
+            workflow.assign_partitions(rows, registry)
+
+    def test_exploratory_preparation_does_not_promote_pending_estimates(self):
+        rows, _ = training_fixture()
+        estimate = {**rows[0], "window_status": "satellite_estimated", "label_status": "reported",
+                    "timing_review_status": "pending"}
+        registry = [{column: row[column] for column in workflow.FIELD_COLUMNS} for row in rows]
+        self.assertEqual(workflow.prepare_exploratory_rows(rows[1:], [estimate], registry), rows[1:])
+        estimate["timing_review_status"] = "reviewed"
+        combined = workflow.prepare_exploratory_rows(rows[1:], [estimate], registry)
+        self.assertEqual(len(combined), 6)
+        self.assertEqual(sum(row["window_status"] == "satellite_estimated" for row in combined), 1)
+
     def test_optional_checks_exclude_reserved_and_unassigned_fields(self):
         rows, _ = training_fixture()
         registry = [{column: row[column] for column in workflow.FIELD_COLUMNS} for row in rows]
@@ -247,10 +394,61 @@ class PartitionAndModelTests(unittest.TestCase):
 
 
 class NotebookIntegrationTests(unittest.TestCase):
-    def test_reviewed_seasons_reach_all_six_models_in_actual_notebook_cells(self):
-        notebook_path = Path(__file__).resolve().parents[1] / "Sen4AgriNet_Workflow_Outline.ipynb"
+    def test_draft_preprocessing_exports_estimates_without_accepting_reference_seasons(self):
+        candidate, _, region, configuration = reviewed_fixture()
+        values = [.1, .1, .1, .15, .3, .5, .7, .7, .6, .4, .2]
+        observations = [{"region_id": "region", "date": (date(2020, 10, 1) + timedelta(days=5 * index)).isoformat(),
+                         "source_kind": "observed_daily", "valid_fraction": 1.0,
+                         "NDVI": value, "NDRE": value * .5, "NDMI": value * .2}
+                        for index, value in enumerate(values)]
+        candidate = crop_workflow.detect_greenup(observations)[0]
+        configuration.update(frozen=False, development_evidence="")
+        _, quality_rows, pixel_rows = feature_fixture()
+        notebook_path = Path(__file__).resolve().parents[1] / "Crop_Four_Month_Windows.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-        executable_cells = [cell for cell in notebook["cells"][86:] if cell["cell_type"] == "code"]
+        review_start = next(index for index, cell in enumerate(notebook["cells"])
+                            if "".join(cell["source"]).startswith("## 9."))
+        executable_cells = [cell for cell in notebook["cells"][review_start:] if cell["cell_type"] == "code"]
+        with tempfile.TemporaryDirectory() as folder:
+            analysis_folder = Path(folder)
+            workflow.save_json(analysis_folder / "seasons/review/frozen_configuration.json", configuration)
+            namespace = {"json": json, "Path": Path, "Counter": Counter, "importlib": importlib,
+                         "crop_workflow": crop_workflow, "analysis_folder": analysis_folder,
+                         "source_manifest_paths": [],
+                         "greenup_folder": analysis_folder / "greenup", "field_folder": analysis_folder / "fields",
+                         "regions": [region], "greenup_results": [candidate],
+                         "detector_settings": configuration["detector_parameters"],
+                         "pixel_rows": pixel_rows, "quality_rows": quality_rows, "detector_rows": observations}
+            for cell in executable_cells:
+                exec("".join(cell["source"]), namespace)
+            self.assertFalse(namespace["accepted_seasons"])
+            self.assertEqual(len(namespace["estimated_windows"]), 1)
+            self.assertEqual(len(namespace["estimated_feature_rows"]), 2)
+            self.assertFalse(namespace["feature_rows"])
+            self.assertFalse(namespace["exploratory_rows"])
+            estimates = workflow.read_table(analysis_folder / "seasons/estimated_windows.csv")
+            self.assertEqual(estimates[0]["timing_review_status"], "automated_pass")
+            self.assertEqual(estimates[0]["label_relevance"], "unverified")
+
+    def test_exploratory_bundle_uses_a_separate_model_output_folder(self):
+        rows, configuration = training_fixture()
+        configuration["window_policy"] = "exploratory_external_estimates"
+        for row in rows[:2]:
+            row.update(window_status="satellite_estimated", label_status="reported", timing_review_status="reviewed")
+        with tempfile.TemporaryDirectory() as folder:
+            handoff_path = workflow.export_training_handoff(
+                Path(folder) / "exploratory_training_input", rows, configuration, {})
+            namespace = execute_training_notebook(handoff_path)
+            self.assertEqual(namespace["training_output_folder"], Path(folder) / "exploratory_estimated")
+            self.assertTrue((Path(folder) / "exploratory_estimated/models/features_64/combined.joblib").is_file())
+            self.assertFalse((Path(folder) / "models").exists())
+
+    def test_preprocessing_exports_data_and_fresh_training_kernel_fits_six_models(self):
+        notebook_path = Path(__file__).resolve().parents[1] / "Crop_Four_Month_Windows.ipynb"
+        notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+        review_start = next(index for index, cell in enumerate(notebook["cells"])
+                            if "".join(cell["source"]).startswith("## 9."))
+        executable_cells = [cell for cell in notebook["cells"][review_start:] if cell["cell_type"] == "code"]
         training_rows, configuration = training_fixture()
         candidates, reviews, regions, pixel_rows, quality_rows = [], [], [], [], []
         for training_row in training_rows:
@@ -275,6 +473,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             workflow.write_records(review_folder / "field_registry.csv", training_rows)
             namespace = {"json": json, "Path": Path, "Counter": Counter, "importlib": importlib,
                          "crop_workflow": crop_workflow, "analysis_folder": analysis_folder,
+                         "source_manifest_paths": [],
                          "greenup_folder": analysis_folder / "greenup", "field_folder": analysis_folder / "fields",
                          "regions": regions, "greenup_results": candidates,
                          "detector_settings": configuration["detector_parameters"],
@@ -283,8 +482,65 @@ class NotebookIntegrationTests(unittest.TestCase):
                 exec("".join(cell["source"]), namespace)
             self.assertEqual(len(namespace["accepted_seasons"]), 6)
             self.assertEqual(len(namespace["feature_rows"]), 6)
-            self.assertEqual(len(namespace["model_artifacts"]), 16)
-            self.assertEqual(namespace["run_manifest"]["coverage"]["training_status"], "completed")
+            self.assertNotIn("comparison_metrics", namespace)
+            self.assertFalse((analysis_folder / "seasons/models").exists())
+            training_namespace = execute_training_notebook(namespace["handoff_path"])
+            self.assertEqual(len(training_namespace["partitioned_rows"]), 6)
+            self.assertEqual(len(training_namespace["model_artifacts"]), 16)
+            self.assertEqual(training_namespace["training_manifest"]["coverage"]["training_status"], "completed")
+
+    def test_pending_bundle_can_be_opened_without_fitting_models(self):
+        _, _, _, configuration = reviewed_fixture()
+        configuration["frozen"] = False
+        with tempfile.TemporaryDirectory() as folder:
+            handoff_path = workflow.export_training_handoff(Path(folder) / "training_input", [], configuration, {})
+            namespace = execute_training_notebook(handoff_path)
+            self.assertEqual(namespace["training_manifest"]["coverage"]["training_status"], "pending_inputs")
+            self.assertFalse(namespace["model_artifacts"])
+            self.assertFalse((Path(folder) / "models").exists())
+
+
+def execute_training_notebook(handoff_path):
+    """Use a separate namespace to catch dependencies on preprocessing variables."""
+    notebook_path = Path(__file__).resolve().parents[1] / "Crop_Model_Training.ipynb"
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    executable_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+    namespace = {}
+    exec("".join(executable_cells[0]["source"]), namespace)
+    # The settings cell explicitly supports choosing a different input bundle.
+    namespace.update(handoff_path=handoff_path, training_output_folder=handoff_path.parent.parent)
+    for cell in executable_cells[1:]:
+        exec("".join(cell["source"]), namespace)
+    return namespace
+
+
+class TrainingHandoffTests(unittest.TestCase):
+    def test_bundle_round_trip_works_after_moving_the_folder(self):
+        rows, configuration = training_fixture()
+        with tempfile.TemporaryDirectory() as folder:
+            original_folder = Path(folder) / "original"
+            workflow.export_training_handoff(original_folder, rows, configuration, {"accepted_seasons": 6})
+            moved_folder = Path(folder) / "moved"
+            shutil.copytree(original_folder, moved_folder)
+            loaded_rows, loaded_configuration, coverage, manifest = workflow.load_training_handoff(
+                moved_folder / "training_handoff.json")
+            self.assertEqual(len(loaded_rows), 6)
+            self.assertEqual(loaded_configuration, configuration)
+            self.assertEqual(coverage["accepted_seasons"], 6)
+            self.assertEqual(manifest["status"], "prepared")
+
+    def test_changed_feature_table_is_rejected_before_training(self):
+        rows, configuration = training_fixture()
+        with tempfile.TemporaryDirectory() as folder:
+            handoff_path = workflow.export_training_handoff(folder, rows, configuration, {})
+            (Path(folder) / "partitioned_features.csv").write_text("edited", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "file changed"):
+                workflow.load_training_handoff(handoff_path)
+
+    def test_missing_handoff_explains_which_notebook_to_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(FileNotFoundError, "preprocessing notebook"):
+                workflow.load_training_handoff(Path(folder) / "training_handoff.json")
 
 
 if __name__ == "__main__":
