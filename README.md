@@ -6,6 +6,7 @@ Test a repeatable workflow from labelled parcels to saved model evaluation for *
 |---|---|---|
 | Carrot and potato | Sen4AgriNet | 2020 |
 | Cabbage | FranceCrops | 2022 |
+| Carrot, Cabbage, Potato | Cropharvest | Varies by sample |
 
 ## Setup
 
@@ -35,13 +36,14 @@ Edit `settings.local.json` with your data folders and registered Earth Engine pr
 
 | Order | Notebook | Purpose |
 |---|---|---|
-| 1 | [Sen4AgriNet preparation](notebooks/01_sen4agrinet_preparation.ipynb) | Prepare carrot/potato candidates and retrieve imagery |
-| 2 | [FranceCrops preparation](notebooks/02_francecrops_preparation.ipynb) | Prepare cabbage candidates and retrieve imagery |
+| 1 | [Sen4AgriNet preparation (data)](notebooks/01_sen4agrinet_preparation.ipynb) | Prepare carrot/potato candidates and retrieve imagery |
+| 2 | [FranceCrops preparation (data)](notebooks/02_francecrops_preparation.ipynb) | Prepare cabbage candidates and retrieve imagery |
 | 3 | [Four-month windows](notebooks/03_four_month_windows.ipynb) | Check quality, select windows and usable pixels, export features |
 | 4 | [Feature engineering](notebooks/04_feature_engineering.ipynb) | Derive SAVI and temporal-shape features; export experiment inputs |
 | 5 | [Model training](notebooks/05_model_training.ipynb) | Evaluate saved features locally, or run production Earth Engine experiments |
+| 6 | [Crop Harvest (data)](notebooks/06_cropharvest_preparation.ipynb) | Prepare supplementary CropHarvest labels, imagery and feature exports |
 
-The first two notebooks prepare independent sources. Complete both before preparing the full three-crop pilot. Each notebook can start in a fresh kernel; run its cells in order.
+The first two notebooks prepare independent sources. Complete both before preparing the full three-crop pilot. Notebook 06 can be run separately; its outputs can be included in expanded runs. Run each notebook's cells in order.
 
 **Sen4AgriNet defaults to reusing saved fields.** NetCDF downloading and field rebuilding stay off. Daily-summary retrieval, satellite downloading, and Earth Engine sign-in are enabled for the next collection run. Capacity is checked before network access. A new user without the saved inventory must obtain the source files and build the inventory first. See [workflow](docs/workflow.md).
 
