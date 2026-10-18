@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from statistics import median
 
-from crop_workflow import DEFAULT_DETECTOR, detect_greenup
+from crop_pipeline.imagery.quality import DEFAULT_DETECTOR, detect_greenup
 
 
 DEFAULT_TIMING_POLICY = {

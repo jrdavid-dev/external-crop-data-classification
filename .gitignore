@@ -39,3 +39,6 @@ __pycache__/
 
 # macOS Finder metadata
 .DS_Store
+
+# Editable install metadata
+*.egg-info/

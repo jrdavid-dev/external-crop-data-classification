@@ -11,11 +11,11 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-import crop_workflow
-import earth_engine_training as training
-import feature_experiments as features
-import season_workflow
-from satellite_workflow import REQUEST_VERSION, RESAMPLING_POLICY, SatelliteRetriever
+from crop_pipeline.imagery import quality as crop_workflow
+from crop_pipeline.training import earth_engine as training
+from crop_pipeline.features import experiments as features
+from crop_pipeline.windows import seasons as season_workflow
+from crop_pipeline.imagery.retrieval import REQUEST_VERSION, RESAMPLING_POLICY, SatelliteRetriever
 
 
 def experiment_fixture():
@@ -225,7 +225,7 @@ class FeatureHandoffTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as temporary:
             feature_namespace = {}
-            notebook = json.loads((root / "Crop_Feature_Engineering.ipynb").read_text())
+            notebook = json.loads((root / "notebooks/04_feature_engineering.ipynb").read_text())
             cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
             exec("".join(cells[0]["source"]), feature_namespace)
             season_folder = Path(temporary)
@@ -242,7 +242,7 @@ class FeatureHandoffTests(unittest.TestCase):
                 exec("".join(cell["source"]), feature_namespace)
             handoff = feature_namespace["feature_handoffs"]["feature_input"]
             training_namespace = {}
-            training_notebook = json.loads((root / "Crop_Model_Training.ipynb").read_text())
+            training_notebook = json.loads((root / "notebooks/05_model_training.ipynb").read_text())
             training_cells = [
                 cell for cell in training_notebook["cells"] if cell["cell_type"] == "code"
             ]

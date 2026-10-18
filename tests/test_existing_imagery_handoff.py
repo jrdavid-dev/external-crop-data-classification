@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-import pilot_sources
-from satellite_workflow import REQUEST_VERSION, RESAMPLING_POLICY
+from crop_pipeline.sources import pilot_sources
+from crop_pipeline.imagery.retrieval import REQUEST_VERSION, RESAMPLING_POLICY
 
 
 class ExistingImageryHandoffTests(unittest.TestCase):

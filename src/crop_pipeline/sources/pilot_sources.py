@@ -3,11 +3,11 @@
 import json
 from pathlib import Path
 
-import crop_workflow
-from crop_workflow import save_json
-from season_workflow import file_sha256
-from satellite_workflow import REQUEST_VERSION, RESAMPLING_POLICY
-from pilot_sampling import USABLE_PIXELS_PER_CROP
+from crop_pipeline.imagery import quality as crop_workflow
+from crop_pipeline.imagery.quality import save_json
+from crop_pipeline.windows.seasons import file_sha256
+from crop_pipeline.imagery.retrieval import REQUEST_VERSION, RESAMPLING_POLICY
+from crop_pipeline.sources.sampling import USABLE_PIXELS_PER_CROP
 
 
 def validate_source_contract(source):

@@ -12,8 +12,8 @@ from shapely import wkb
 from shapely.geometry import mapping, shape
 from shapely.ops import transform as transform_geometry
 
-from crop_workflow import save_json
-from pilot_sampling import stable_rank
+from crop_pipeline.imagery.quality import save_json
+from crop_pipeline.sources.sampling import stable_rank
 
 DATASET_NAME = "saget-antoine/francecrops"
 DEFAULT_REVISION = "6b6c51b780d8579138593f92738ed52f2528096e"

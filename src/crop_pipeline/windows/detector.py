@@ -91,7 +91,7 @@ def separate_low_state(previous, current, dates, values, smooth, settings):
 
 def supported_low_run(indices, dates, settings):
     """Use the existing confirmation count and time-gap checks for a low state."""
-    from timing_quality import DEFAULT_TIMING_POLICY
+    from crop_pipeline.windows.timing_quality import DEFAULT_TIMING_POLICY
 
     count = settings["minimum_confirmations"]
     for start in range(len(indices) - count + 1):
@@ -208,7 +208,7 @@ def onset_evidence(episode, dates, values, smooth, settings):
 
 def decline_evidence(episode, dates, values, smooth, threshold, settings):
     """Require sustained observed decline with the existing confirmation thresholds."""
-    from timing_quality import DEFAULT_TIMING_POLICY
+    from crop_pipeline.windows.timing_quality import DEFAULT_TIMING_POLICY
 
     for index in range(episode["peak"] + 1, episode["right"] + 1):
         if values[index] > threshold or smooth[index] > threshold:
@@ -320,7 +320,7 @@ def describe_episode(episode, observations, dates, values, smooth, settings):
 
 def cycle_problem(onset, decline, dates, values, smooth, settings):
     """Do not certify a cycle hidden by gaps or a rise inside an already-high canopy."""
-    from timing_quality import DEFAULT_TIMING_POLICY
+    from crop_pipeline.windows.timing_quality import DEFAULT_TIMING_POLICY
 
     low, crossing = onset["low"], onset["crossing"]
     annual_background = float(np.quantile(smooth, 0.10))

@@ -14,7 +14,7 @@ from datetime import date, datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from crop_workflow import interval_bins, ratio, save_json, write_table
+from crop_pipeline.imagery.quality import interval_bins, ratio, save_json, write_table
 
 
 EARTH_ENGINE_FOREST = {"number_of_trees": 1000, "seed": 42,
@@ -340,7 +340,7 @@ def qualify_estimated_windows(windows, audit, observations, configuration):
     Failed automatic proposals stay in the assessment report. A previously
     supplied human timing decision remains explicit and is never fabricated.
     """
-    from timing_quality import assess_timing
+    from crop_pipeline.windows.timing_quality import assess_timing
 
     assessments = assess_timing(windows, observations, configuration["detector_parameters"],
                                 configuration.get("automatic_timing_policy"),
@@ -654,7 +654,7 @@ def validate_automatic_policy(row, configuration):
     if row.get("timing_review_status") != "automated_pass":
         return
     policy = configuration.get("automatic_timing_policy")
-    from timing_quality import timing_policy_fingerprint
+    from crop_pipeline.windows.timing_quality import timing_policy_fingerprint
     expected = timing_policy_fingerprint(policy, configuration["detector_parameters"],
                                          configuration.get("cycle_selection_policy", "single_supported_cycle"))
     if not policy or row.get("automatic_policy_fingerprint") != expected:

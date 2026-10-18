@@ -13,7 +13,7 @@ from pyproj import CRS, Transformer
 from shapely.geometry import shape
 from shapely.ops import transform as transform_geometry
 
-from crop_workflow import interval_bins, save_json
+from crop_pipeline.imagery.quality import interval_bins, save_json
 
 
 REQUEST_VERSION = 4

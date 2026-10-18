@@ -3,10 +3,10 @@
 import unittest
 from datetime import date, timedelta
 
-import crop_workflow
-import cycle_windows
-import season_workflow
-import timing_quality
+from crop_pipeline.imagery import quality as crop_workflow
+from crop_pipeline.windows import cycle_windows
+from crop_pipeline.windows import seasons as season_workflow
+from crop_pipeline.windows import timing_quality
 
 
 def windows_fixture():

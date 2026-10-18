@@ -12,7 +12,7 @@ from pyproj import Transformer
 from shapely.geometry import box, mapping, shape
 from shapely.ops import transform as transform_geometry, unary_union
 
-from crop_workflow import save_json, write_table
+from crop_pipeline.imagery.quality import save_json, write_table
 
 CANDIDATE_PIXELS_PER_CROP = 3000
 USABLE_PIXELS_PER_CROP = 500

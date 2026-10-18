@@ -16,6 +16,7 @@ Use Python 3.13 and a notebook editor. Run commands from the repository folder.
 ```bash
 python3.13 -m venv .venv
 .venv/bin/python -m pip install -r requirements-notebooks.txt
+.venv/bin/python -m pip install -e .
 cp settings.example.json settings.local.json
 ```
 
@@ -24,6 +25,7 @@ cp settings.example.json settings.local.json
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-notebooks.txt
+.\.venv\Scripts\python.exe -m pip install -e .
 Copy-Item settings.example.json settings.local.json
 ```
 
@@ -33,11 +35,11 @@ Edit `settings.local.json` with your data folders and registered Earth Engine pr
 
 | Order | Notebook | Purpose |
 |---|---|---|
-| 1 | [Sen4AgriNet preparation](Sen4AgriNet_Satellite_Preparation.ipynb) | Prepare carrot/potato candidates and retrieve imagery |
-| 2 | [FranceCrops preparation](FranceCrops_Satellite_Preparation.ipynb) | Prepare cabbage candidates and retrieve imagery |
-| 3 | [Four-month windows](Crop_Four_Month_Windows.ipynb) | Check quality, select windows and usable pixels, export features |
-| 4 | [Feature engineering](Crop_Feature_Engineering.ipynb) | Derive SAVI and temporal-shape features; export experiment inputs |
-| 5 | [Model training](Crop_Model_Training.ipynb) | Evaluate saved features locally, or run production Earth Engine experiments |
+| 1 | [Sen4AgriNet preparation](notebooks/01_sen4agrinet_preparation.ipynb) | Prepare carrot/potato candidates and retrieve imagery |
+| 2 | [FranceCrops preparation](notebooks/02_francecrops_preparation.ipynb) | Prepare cabbage candidates and retrieve imagery |
+| 3 | [Four-month windows](notebooks/03_four_month_windows.ipynb) | Check quality, select windows and usable pixels, export features |
+| 4 | [Feature engineering](notebooks/04_feature_engineering.ipynb) | Derive SAVI and temporal-shape features; export experiment inputs |
+| 5 | [Model training](notebooks/05_model_training.ipynb) | Evaluate saved features locally, or run production Earth Engine experiments |
 
 The first two notebooks prepare independent sources. Complete both before preparing the full three-crop pilot. Each notebook can start in a fresh kernel; run its cells in order.
 
