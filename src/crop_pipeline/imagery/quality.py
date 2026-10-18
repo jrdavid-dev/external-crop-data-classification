@@ -2,7 +2,6 @@
 
 No imagery downloads occur in this module. Input GeoTIFFs remain unchanged.
 """
-import csv
 import json
 from collections import defaultdict
 from datetime import date, timedelta
@@ -12,27 +11,10 @@ import numpy as np
 import rasterio
 from affine import Affine
 
+from crop_pipeline.common import interval_bins, ratio, save_json, write_table
+
 
 STUDY_BANDS = ["B3", "B4", "B5", "B8", "B11", "B2"]
-
-
-def write_table(path, rows, columns):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=columns, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
-    temporary.replace(path)
-
-
-def save_json(path, value):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
-    temporary.replace(path)
 
 
 def resolve_mask(region, field_folder):
@@ -60,19 +42,6 @@ def resolve_image(record, manifest_path, imagery_folder):
     raise FileNotFoundError(f"Composite missing: {portable}")
 
 
-def interval_bins(year=2020):
-    result = []
-    for month in range(1, 13):
-        first, middle = date(year, month, 1), date(year, month, 16)
-        end = date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1)
-        result.extend([
-            {"name": f"{year}_{month:02d}_01_15", "start": first.isoformat(), "end": middle.isoformat()},
-            {"name": f"{year}_{month:02d}_16_end", "start": middle.isoformat(), "end": end.isoformat()},
-        ])
-    return result
-
-
-
 def compatible_request(settings, year, cloud_threshold, required_version):
     if settings.get("version") not in {3, 4}:
         return False
@@ -83,7 +52,7 @@ def compatible_request(settings, year, cloud_threshold, required_version):
     if settings.get("start") != f"{year}-01-01" or settings.get("end") != f"{year + 1}-01-01":
         return False
     if settings["version"] == 4:
-        from satellite_workflow import RESAMPLING_POLICY
+        from crop_pipeline.imagery.retrieval import RESAMPLING_POLICY
         return settings.get("resampling") == RESAMPLING_POLICY
     return True
 
@@ -173,11 +142,6 @@ def quality_check(regions, progress_folder, imagery_folder, field_folder, output
     return quality_rows, pixel_rows
 
 
-def ratio(left, right):
-    denominator = left + right
-    return None if not np.isfinite(denominator) or abs(denominator) < 1e-10 else float((left - right) / denominator)
-
-
 def composite_timelines(quality_rows, pixel_rows, output_folder):
     """Use index-of-composite-bands, then a median across selected pixels."""
     by_bin = defaultdict(list)
@@ -244,7 +208,7 @@ def detect_greenup(rows, settings=None):
     method = config.get("cycle_detector", "legacy_local_peaks")
     if method == "legacy_local_peaks":
         return detect_greenup_legacy(rows, settings)
-    from full_cycle_detector import METHOD, detect_region
+    from crop_pipeline.windows.detector import METHOD, detect_region
     if method != METHOD:
         raise ValueError("Unknown cycle detector version.")
     if not 0 < config["relative_threshold"] < 1:

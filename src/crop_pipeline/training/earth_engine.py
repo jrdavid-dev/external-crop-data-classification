@@ -7,9 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
-import feature_experiments
-import season_workflow
-from crop_workflow import save_json
+from crop_pipeline.features import experiments as feature_experiments
+from crop_pipeline.windows import seasons as season_workflow
+from crop_pipeline.imagery.quality import save_json
 
 DEFAULT_FOREST = dict(season_workflow.EARTH_ENGINE_FOREST)
 MAXIMUM_REQUEST_BYTES = 9_000_000

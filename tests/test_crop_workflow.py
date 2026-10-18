@@ -8,7 +8,7 @@ import numpy as np
 import rasterio
 from affine import Affine
 
-import crop_workflow as workflow
+from crop_pipeline.imagery import quality as workflow
 
 
 def curve(values, source="observed_daily", dates=None):

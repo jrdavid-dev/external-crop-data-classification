@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from crop_workflow import save_json, write_table
+from crop_pipeline.imagery.quality import save_json, write_table
 
 
 def retrieve_observed_timelines(plans, mask_acquisition, ee, destination, minimum_fraction=0.8):

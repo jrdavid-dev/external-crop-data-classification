@@ -12,10 +12,10 @@ from rasterio.features import rasterize
 from shapely.geometry import mapping, shape
 from shapely.ops import transform as transform_geometry
 
-import crop_workflow
-import pilot_sampling
-import season_workflow
-from satellite_workflow import REQUEST_VERSION
+from crop_pipeline.imagery import quality as crop_workflow
+from crop_pipeline.sources import sampling as pilot_sampling
+from crop_pipeline.windows import seasons as season_workflow
+from crop_pipeline.imagery.retrieval import REQUEST_VERSION
 
 # Carrot capacity is 3,471 under the field cap; keep a feasible rounded budget.
 CANDIDATE_BUDGETS = {"carrot": 3400, "cabbage": 7000, "potato": 10000}

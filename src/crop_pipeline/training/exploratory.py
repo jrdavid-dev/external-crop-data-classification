@@ -9,11 +9,11 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
-import earth_engine_training
-import feature_experiments
-import pilot_sampling
-import season_workflow
-from crop_workflow import save_json
+from crop_pipeline.training import earth_engine as earth_engine_training
+from crop_pipeline.features import experiments as feature_experiments
+from crop_pipeline.sources import sampling as pilot_sampling
+from crop_pipeline.windows import seasons as season_workflow
+from crop_pipeline.imagery.quality import save_json
 
 CLASSES = ["carrot", "cabbage", "potato"]
 SPLIT_POLICY = {

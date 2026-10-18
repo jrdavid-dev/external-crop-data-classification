@@ -4,7 +4,7 @@ The prototype checks that data can move reliably from selected windows to saved 
 
 ## Current files: exploratory accuracy evaluation
 
-Run [Model Training](../Crop_Model_Training.ipynb) in a fresh `.venv` kernel with the saved defaults:
+Run [Model Training](../notebooks/05_model_training.ipynb) in a fresh `.venv` kernel with the saved defaults:
 
 ```python
 training_mode = "existing_parcel_exploratory"

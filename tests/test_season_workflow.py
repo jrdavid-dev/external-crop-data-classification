@@ -9,9 +9,9 @@ from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
-import season_workflow as workflow
-import crop_workflow
-import timing_quality
+from crop_pipeline.windows import seasons as workflow
+from crop_pipeline.imagery import quality as crop_workflow
+from crop_pipeline.windows import timing_quality
 
 
 def reviewed_fixture():
@@ -404,7 +404,7 @@ class NotebookIntegrationTests(unittest.TestCase):
         candidate = crop_workflow.detect_greenup(observations)[0]
         configuration.update(frozen=False, development_evidence="")
         _, quality_rows, pixel_rows = feature_fixture()
-        notebook_path = Path(__file__).resolve().parents[1] / "Crop_Four_Month_Windows.ipynb"
+        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/03_four_month_windows.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         review_start = next(index for index, cell in enumerate(notebook["cells"])
                             if "".join(cell["source"]).startswith("## 9."))
@@ -445,7 +445,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             self.assertFalse((Path(folder) / "models").exists())
 
     def test_preprocessing_exports_data_and_fresh_training_kernel_fits_six_models(self):
-        notebook_path = Path(__file__).resolve().parents[1] / "Crop_Four_Month_Windows.ipynb"
+        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/03_four_month_windows.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         review_start = next(index for index, cell in enumerate(notebook["cells"])
                             if "".join(cell["source"]).startswith("## 9."))
@@ -504,7 +504,7 @@ class NotebookIntegrationTests(unittest.TestCase):
 
 def execute_training_notebook(handoff_path):
     """Use a separate namespace to catch dependencies on preprocessing variables."""
-    notebook_path = Path(__file__).resolve().parents[1] / "Crop_Model_Training.ipynb"
+    notebook_path = Path(__file__).resolve().parents[1] / "notebooks/05_model_training.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
     executable_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
     namespace = {}

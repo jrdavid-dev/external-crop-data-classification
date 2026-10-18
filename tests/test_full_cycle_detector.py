@@ -3,9 +3,9 @@
 import unittest
 from datetime import date, timedelta
 
-import crop_workflow
-import cycle_windows
-import full_cycle_detector
+from crop_pipeline.imagery import quality as crop_workflow
+from crop_pipeline.windows import cycle_windows
+from crop_pipeline.windows import detector as full_cycle_detector
 
 FULL_PULSE = [
     0.1,

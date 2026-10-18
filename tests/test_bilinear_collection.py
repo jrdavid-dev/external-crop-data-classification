@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-import bilinear_collection as collection
-from satellite_workflow import SatelliteRetriever
+from crop_pipeline.imagery import bilinear as collection
+from crop_pipeline.imagery.retrieval import SatelliteRetriever
 
 
 class BilinearCollectionTests(unittest.TestCase):
@@ -143,8 +143,8 @@ class BilinearCollectionTests(unittest.TestCase):
 
     def test_source_notebooks_are_ready_for_collection_and_gate_downloads(self):
         for name in [
-            "Sen4AgriNet_Satellite_Preparation.ipynb",
-            "FranceCrops_Satellite_Preparation.ipynb",
+            "notebooks/01_sen4agrinet_preparation.ipynb",
+            "notebooks/02_francecrops_preparation.ipynb",
         ]:
             notebook = json.loads((Path(__file__).parents[1] / name).read_text())
             source = "\n".join(

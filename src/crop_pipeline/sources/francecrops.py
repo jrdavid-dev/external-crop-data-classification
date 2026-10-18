@@ -12,8 +12,8 @@ from shapely import wkb
 from shapely.geometry import mapping, shape
 from shapely.ops import transform as transform_geometry
 
-from crop_workflow import save_json
-from pilot_sampling import stable_rank
+from crop_pipeline.imagery.quality import save_json
+from crop_pipeline.sources.sampling import stable_rank
 
 DATASET_NAME = "saget-antoine/francecrops"
 DEFAULT_REVISION = "6b6c51b780d8579138593f92738ed52f2528096e"
@@ -163,7 +163,7 @@ def parcel_pixel_candidates(feature, maximum_pixels=100, seed=42, inward_buffer_
             "source_crs": properties["source_crs"],
             "x": left + int(columns[index]) * 10 + 5,
             "y": top - int(raster_rows[index]) * 10 - 5,
-            "crop": "cabbage",
+            "crop": properties["crop"],
             "partition_group": properties["partition_group"],
             "source_fragments": [properties["fragment_id"]],
         }
@@ -172,8 +172,18 @@ def parcel_pixel_candidates(feature, maximum_pixels=100, seed=42, inward_buffer_
 
 
 def build_cabbage_catalog(features, seed=42):
+    return build_parcel_catalog(features, seed)
+
+
+def build_parcel_catalog(features, seed=42, inward_buffer_metres=10):
     """Exclude overlapping field claims so the candidate count reflects unique locations."""
-    records = [row for feature in features for row in parcel_pixel_candidates(feature, seed=seed)]
+    records = [
+        row
+        for feature in features
+        for row in parcel_pixel_candidates(
+            feature, seed=seed, inward_buffer_metres=inward_buffer_metres
+        )
+    ]
     by_location = {}
     conflicting = set()
     for row in records:

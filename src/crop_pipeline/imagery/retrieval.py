@@ -13,7 +13,7 @@ from pyproj import CRS, Transformer
 from shapely.geometry import shape
 from shapely.ops import transform as transform_geometry
 
-from crop_workflow import interval_bins, save_json
+from crop_pipeline.imagery.quality import interval_bins, save_json
 
 
 REQUEST_VERSION = 4
@@ -267,7 +267,7 @@ class SatelliteRetriever:
     def inventory_region(self, region, refresh=False):
         """Cache original granule metadata using the complete current request fingerprint."""
         region_id = region["properties"]["fragment_id"]
-        settings = self.request_settings(region)
+        settings = json.loads(json.dumps(self.request_settings(region)))
         path = self.report_folder / "acquisition_inventory" / f"{region_id}.json"
         saved = json.loads(path.read_text()) if path.exists() else {}
         if saved.get("settings") == settings and not refresh:

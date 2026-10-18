@@ -10,8 +10,8 @@ from unittest.mock import patch
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-import exploratory_training as exploratory
-import season_workflow
+from crop_pipeline.training import exploratory
+from crop_pipeline.windows import seasons as season_workflow
 
 
 def example_rows():
@@ -128,7 +128,7 @@ class ExploratoryTrainingTests(unittest.TestCase):
                 )
 
             with patch(
-                "exploratory_training.RandomForestClassifier", side_effect=fast_forest
+                "crop_pipeline.training.exploratory.RandomForestClassifier", side_effect=fast_forest
             ):
                 results, selections = exploratory.run_experiments(
                     rows, configuration, output

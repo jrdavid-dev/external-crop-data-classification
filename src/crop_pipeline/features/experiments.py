@@ -7,9 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
-import season_workflow
-from crop_workflow import save_json
-from satellite_workflow import REQUEST_VERSION, RESAMPLING_POLICY
+from crop_pipeline.windows import seasons as season_workflow
+from crop_pipeline.imagery.quality import save_json
+from crop_pipeline.imagery.retrieval import REQUEST_VERSION, RESAMPLING_POLICY
 
 INDEX_NAMES = ("NDVI", "NDRE", "NDMI", "SAVI")
 FEATURE_POLICY = {
@@ -253,7 +253,7 @@ def load_feature_handoff(manifest_path):
     manifest_path = Path(manifest_path)
     if not manifest_path.is_file():
         raise FileNotFoundError(
-            f"Feature handoff missing: {manifest_path}. Run Crop_Feature_Engineering.ipynb first."
+            f"Feature handoff missing: {manifest_path}. Run notebooks/04_feature_engineering.ipynb first."
         )
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("format_version") != 2 or manifest.get("feature_sets") != feature_sets():

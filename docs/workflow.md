@@ -6,11 +6,11 @@ Install [the requirements and local settings](../README.md#setup), select `.venv
 
 | Order | Notebook | Completion check |
 |---|---|---|
-| 1 | [Sen4AgriNet preparation](../Sen4AgriNet_Satellite_Preparation.ipynb) | Save `sen4agrinet_bilinear_expanded.json` |
-| 2 | [FranceCrops preparation](../FranceCrops_Satellite_Preparation.ipynb) | Save `francecrops_bilinear_expanded.json` |
-| 3 | [Four-month windows](../Crop_Four_Month_Windows.ipynb) | Inspect usable pixel counts and shortfalls for all crops |
-| 4 | [Feature engineering](../Crop_Feature_Engineering.ipynb) | Inspect the three designs and formal export status |
-| 5 | [Model training](../Crop_Model_Training.ipynb) | Save parcel splits, models, predictions and evaluation metrics |
+| 1 | [Sen4AgriNet preparation](../notebooks/01_sen4agrinet_preparation.ipynb) | Save `sen4agrinet_bilinear_expanded.json` |
+| 2 | [FranceCrops preparation](../notebooks/02_francecrops_preparation.ipynb) | Save `francecrops_bilinear_expanded.json` |
+| 3 | [Four-month windows](../notebooks/03_four_month_windows.ipynb) | Inspect usable pixel counts and shortfalls for all crops |
+| 4 | [Feature engineering](../notebooks/04_feature_engineering.ipynb) | Inspect the three designs and formal export status |
+| 5 | [Model training](../notebooks/05_model_training.ipynb) | Save parcel splits, models, predictions and evaluation metrics |
 
 The two source notebooks may run in separate kernels concurrently. Complete authentication one at a time. Wait for both source notebooks to finish successfully before starting window preparation. Restart downstream kernels and run their cells in order.
 

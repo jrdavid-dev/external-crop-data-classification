@@ -15,7 +15,7 @@ from shapely.ops import transform as transform_geometry
 
 
 NOTEBOOK_PATH = (
-    Path(__file__).resolve().parents[1] / "Sen4AgriNet_Satellite_Preparation.ipynb"
+    Path(__file__).resolve().parents[1] / "notebooks/01_sen4agrinet_preparation.ipynb"
 )
 
 
@@ -88,8 +88,8 @@ def execute_without_remote_services(folder):
         patch("requests.sessions.Session.request", side_effect=forbidden),
         patch("subprocess.check_call", side_effect=forbidden),
         patch("importlib.reload", side_effect=lambda module: module),
-        patch("satellite_workflow.SatelliteRetriever", return_value=retriever),
-        patch("observed_timelines.retrieve_observed_timelines", return_value=[]),
+        patch("crop_pipeline.imagery.retrieval.SatelliteRetriever", return_value=retriever),
+        patch("crop_pipeline.imagery.timelines.retrieve_observed_timelines", return_value=[]),
         redirect_stdout(io.StringIO()),
     ):
         for cell in notebook["cells"]:

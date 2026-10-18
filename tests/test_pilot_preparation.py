@@ -16,10 +16,10 @@ from pyproj import CRS, Transformer
 from shapely.geometry import box, mapping
 from shapely.ops import transform as transform_geometry
 
-import crop_workflow
-import francecrops_workflow as france
-import pilot_sampling as sampling
-from satellite_workflow import SatelliteRetriever, REQUEST_VERSION, RESAMPLING_POLICY
+from crop_pipeline.imagery import quality as crop_workflow
+from crop_pipeline.sources import francecrops as france
+from crop_pipeline.sources import sampling
+from crop_pipeline.imagery.retrieval import SatelliteRetriever, REQUEST_VERSION, RESAMPLING_POLICY
 
 
 def candidate_catalog(crop="carrot", group_count=60, pixels_per_group=60):
@@ -205,6 +205,22 @@ class SatelliteRetrievalTests(unittest.TestCase):
         self.assertEqual(first["bands"], second["bands"])
         self.assertNotEqual(first, second)
 
+    def test_saved_inventory_is_reused_for_freshly_sampled_regions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            rows = candidate_catalog(group_count=1, pixels_per_group=2)
+            regions, _ = sampling.save_candidate_pilot(rows, folder / "fields")
+            retriever = SatelliteRetriever(None, 2022, folder / "images", folder / "reports")
+            with patch.object(retriever, "list_acquisitions", return_value=[]), patch.object(
+                retriever, "find_cloud_probability_matches", return_value=set()
+            ):
+                retriever.inventory_region(regions[0])
+            # Same region sampled again in a new run: in-memory tuples, not saved lists.
+            regions_again, _ = sampling.save_candidate_pilot(rows, folder / "fields")
+            with patch.object(retriever, "list_acquisitions", side_effect=AssertionError("refetched")):
+                plan = retriever.inventory_region(regions_again[0])
+        self.assertEqual(plan["acquisitions"], [])
+
     def test_partial_download_is_retried_then_checksum_verified(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
@@ -273,7 +289,7 @@ class SatelliteRetrievalTests(unittest.TestCase):
 
 class SourceHandoffTests(unittest.TestCase):
     def test_source_handoff_rejects_changed_sampling(self):
-        import pilot_sources
+        from crop_pipeline.sources import pilot_sources
 
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
@@ -298,7 +314,7 @@ class SourceHandoffTests(unittest.TestCase):
                 pilot_sources.load_sources([manifest])
 
     def test_combined_audit_preserves_each_source_year_and_identity(self):
-        import pilot_sources
+        from crop_pipeline.sources import pilot_sources
 
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
