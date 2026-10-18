@@ -267,7 +267,7 @@ class SatelliteRetriever:
     def inventory_region(self, region, refresh=False):
         """Cache original granule metadata using the complete current request fingerprint."""
         region_id = region["properties"]["fragment_id"]
-        settings = self.request_settings(region)
+        settings = json.loads(json.dumps(self.request_settings(region)))
         path = self.report_folder / "acquisition_inventory" / f"{region_id}.json"
         saved = json.loads(path.read_text()) if path.exists() else {}
         if saved.get("settings") == settings and not refresh:

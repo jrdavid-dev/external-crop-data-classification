@@ -1,9 +1,11 @@
 # Large source data, imagery, generated reports and local environments
 .venv/
+.venv-cropharvest/
 venv/
 S4A/
 data/
 sen4agrinet_work/
+/cropharvest/
 crop_inspection/
 decoded_geometry/
 sentinel2_field/

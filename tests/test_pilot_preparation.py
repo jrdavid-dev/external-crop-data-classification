@@ -205,6 +205,22 @@ class SatelliteRetrievalTests(unittest.TestCase):
         self.assertEqual(first["bands"], second["bands"])
         self.assertNotEqual(first, second)
 
+    def test_saved_inventory_is_reused_for_freshly_sampled_regions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            rows = candidate_catalog(group_count=1, pixels_per_group=2)
+            regions, _ = sampling.save_candidate_pilot(rows, folder / "fields")
+            retriever = SatelliteRetriever(None, 2022, folder / "images", folder / "reports")
+            with patch.object(retriever, "list_acquisitions", return_value=[]), patch.object(
+                retriever, "find_cloud_probability_matches", return_value=set()
+            ):
+                retriever.inventory_region(regions[0])
+            # Same region sampled again in a new run: in-memory tuples, not saved lists.
+            regions_again, _ = sampling.save_candidate_pilot(rows, folder / "fields")
+            with patch.object(retriever, "list_acquisitions", side_effect=AssertionError("refetched")):
+                plan = retriever.inventory_region(regions_again[0])
+        self.assertEqual(plan["acquisitions"], [])
+
     def test_partial_download_is_retried_then_checksum_verified(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
