@@ -69,6 +69,62 @@ class PipelineVisualTests(unittest.TestCase):
             self.assertEqual(timing["carrot"], 10)
             self.assertEqual(timing["cabbage"], 10)
 
+    def test_combined_visual_report_uses_registered_source_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fields = root / "fields"
+            fields.mkdir()
+            reports = root / "reports/timing_first"
+            reports.mkdir(parents=True)
+            analysis = root / "analysis/combined"
+            analysis.mkdir(parents=True)
+            (fields / "sampled_download_regions.geojson").write_text(
+                json.dumps(
+                    {
+                        "features": [
+                            {
+                                "properties": {
+                                    "fragment_id": "cropharvest_region",
+                                    "crop": "cabbage",
+                                    "selected_pixels": 12,
+                                }
+                            }
+                        ]
+                    }
+                )
+            )
+            (reports / "timing_gate.json").write_text(
+                json.dumps(
+                    {
+                        "qualified_windows": [
+                            {
+                                "region_id": "cropharvest_region",
+                                "window_start": "2020-04-01",
+                                "window_end": "2020-08-01",
+                            }
+                        ]
+                    }
+                )
+            )
+            (analysis / "source_inputs.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "field_folder": str(fields),
+                            "progress_folder": str(
+                                reports.parent / "composite_progress"
+                            ),
+                            "year": 2020,
+                        }
+                    ]
+                )
+            )
+            candidates, timing = pipeline_visuals.candidate_and_timing_counts(
+                root / "inventory", "combined"
+            )
+            self.assertEqual(candidates["cabbage"], 12)
+            self.assertEqual(timing["cabbage"], 12)
+
     def test_confusion_uses_validation_selection_not_highest_test_accuracy(self):
         metrics = {
             "feature_selection": {

@@ -6,10 +6,10 @@ These rules explain what a usable sample means. The exact timing cutoffs are dev
 
 | Dataset | Labels used | Year |
 |---|---|---:|
-| [Sen4AgriNet](https://huggingface.co/datasets/orion-ai-lab/S4A) | Carrot and potato | 2020 |
-| [FranceCrops](https://huggingface.co/datasets/saget-antoine/francecrops) | `CHU` cabbage labels from its training split | 2022 |
+| [Sen4AgriNet](https://huggingface.co/datasets/orion-ai-lab/S4A) | All indexed target-crop parcels | Indexed observation years |
+| [FranceCrops](https://huggingface.co/datasets/saget-antoine/francecrops) | `CHU` cabbage and `PTC` table-potato parcels | 2022 |
 
-FranceCrops is pinned to revision `6b6c51b780d8579138593f92738ed52f2528096e`. Labels are joined to parcel boundaries by `parcel_id`; invalid boundaries are excluded. Its original validation/test parcels are not sampled. A 10 m inward buffer reduces boundary mixing.
+FranceCrops is pinned to revision `6b6c51b780d8579138593f92738ed52f2528096e`. Labels are joined to parcel boundaries by `parcel_id`; invalid boundaries are excluded. Its original validation/test parcels can be archived but remain outside model-development exports. A 10 m inward buffer reduces boundary mixing.
 
 Preserve source revisions and attribution. FranceCrops credits include Antoine Saget (CC BY 4.0), Copernicus Sentinel-2 and IGN RPG 2022. Follow Sen4AgriNet's source terms as well.
 
@@ -17,9 +17,9 @@ An annual crop label identifies the reported crop, but does not prove which crop
 
 ## Candidate sampling and imagery
 
-Targets are **3,400 carrot, 7,000 cabbage and 10,000 potato candidates**, with at most **100 per source parcel group**. Sampling favours broad parcel coverage. Only selected sampling-mask pixels can enter training; surrounding pixels in downloaded images are excluded.
+The full-year collection uses every eligible parcel and interior pixel in the supplied inventories, without pilot candidate budgets or per-parcel quotas. Same-parcel fragments share one group. Contested locations are excluded, and bounded tiles preserve the original parcel identity. FranceCrops and CropHarvest retain a 10 m inward buffer; Sen4AgriNet retains its existing declared crop-mask cells.
 
-Both sources use Sentinel-2 surface reflectance from `COPERNICUS/S2_SR_HARMONIZED`:
+All three sources use Sentinel-2 surface reflectance from `COPERNICUS/S2_SR_HARMONIZED`:
 
 - Mask unsuitable SCL classes, cloud probability at the configured cutoff of 40, and invalid scene edges. Missing cloud-probability matches are not treated as clear.
 - Align B5/B11 to the 10 m grid using bilinear interpolation before compositing. Quality masks use nearest-neighbor resampling.
@@ -32,7 +32,7 @@ Resampling does not create new spatial detail. Missing observations remain expli
 
 Daily summaries retain actual observation dates for timing checks. Half-month median composites provide stable model inputs.
 
-A supported rise in April gives an April–July window: April 1 through August 1, with the end excluded. Each window needs **eight half-month intervals**. Cross-year cycles are logged separately during collection; they do not discard valid in-year alternatives or trigger adjacent-year downloads.
+A supported rise in April gives an April–July window: April 1 through August 1, with the end excluded. Each window needs **eight half-month intervals**. Timing is evaluated after full-year collection. Cross-year windows remain incomplete without adjacent-year imagery; valid in-year alternatives are still eligible.
 
 | Outcome | Meaning |
 |---|---|
@@ -64,14 +64,14 @@ For each parcel, evaluate qualified windows chronologically. Keep the **earliest
 
 A complete pixel needs five bands—B3, B4, B5, B8, B11—and NDVI, NDRE and NDMI in every interval: **64 finite base features**. Missing bins, low coverage, invalid observation counts and zero index denominators cause exclusion. No imputation is used.
 
-Preserve the complete pool in `all_complete_features.csv`, then select up to **500 usable unique external pixels per crop** across both window policies, spreading selection across parcels. Reference-supported rows take precedence for duplicate locations. Registered local evaluation rows remain preserved. Report any shortfall instead of duplicating pixels.
+Retain every unique usable external pixel across both policies. Reference-supported rows take precedence for duplicate locations. Preserve registered local evaluation rows and upstream reserved roles. The old 500-pixel pilot cap applies only when deliberately reopening a pilot collection.
 
-The timing, cycle-selection and usable-selection audits explain losses at each stage. Budget trimming is separate from a quality failure. More candidates do not guarantee 500 usable pixels.
+Timing, cycle-selection and usable-selection audits explain losses. Source collection and window selection are separate; changing the latter can reuse the annual archive. See [full-year collection](full_year_collection.md).
 
-## Scope of the prototype
+## Study scope
 
 This is a three-class pipeline for known carrot, cabbage and potato parcels. General land-cover mapping needs additional classes. Source/year differences and nearby-parcel similarity can influence accuracy. Independent local evaluation is needed before making claims about Benguet.
 
 ## Saved preprocessing examples
 
-Section 15 of the window notebook displays one deterministic example per crop using saved files only: reference/sample locations, post-mask pixel eligibility, daily timelines with the selected four-month window, and eight half-month composites. PNGs and the example-selection manifest are saved in `analysis/bilinear_expanded/preprocessing_visuals/`. Original unmasked scenes are not stored, so the screening view is not a before/after cloud-removal comparison.
+Section 15 of the window notebook displays one deterministic example per crop using saved files only: reference/sample locations, post-mask pixel eligibility, daily timelines with the selected four-month window, and eight half-month composites. PNGs and the example-selection manifest are saved in the selected analysis folder’s `preprocessing_visuals/`. Original unmasked scenes are not stored, so the screening view is not a before/after cloud-removal comparison.

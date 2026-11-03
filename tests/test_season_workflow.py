@@ -404,7 +404,7 @@ class NotebookIntegrationTests(unittest.TestCase):
         candidate = crop_workflow.detect_greenup(observations)[0]
         configuration.update(frozen=False, development_evidence="")
         _, quality_rows, pixel_rows = feature_fixture()
-        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/03_four_month_windows.ipynb"
+        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/04_four_month_windows.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         review_start = next(index for index, cell in enumerate(notebook["cells"])
                             if "".join(cell["source"]).startswith("## 9."))
@@ -414,7 +414,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             workflow.save_json(analysis_folder / "seasons/review/frozen_configuration.json", configuration)
             namespace = {"json": json, "Path": Path, "Counter": Counter, "importlib": importlib,
                          "crop_workflow": crop_workflow, "analysis_folder": analysis_folder,
-                         "source_manifest_paths": [],
+                         "source_manifest_paths": [], "source_run_name": "bilinear_expanded", "annual": __import__("crop_pipeline.sources.annual", fromlist=["annual"]),
                          "sources": [{"request_version": 3, "resampling": "nearest"}],
                          "greenup_folder": analysis_folder / "greenup", "field_folder": analysis_folder / "fields",
                          "regions": [region], "greenup_results": [candidate],
@@ -445,7 +445,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             self.assertFalse((Path(folder) / "models").exists())
 
     def test_preprocessing_exports_data_and_fresh_training_kernel_fits_six_models(self):
-        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/03_four_month_windows.ipynb"
+        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/04_four_month_windows.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         review_start = next(index for index, cell in enumerate(notebook["cells"])
                             if "".join(cell["source"]).startswith("## 9."))
@@ -474,7 +474,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             workflow.write_records(review_folder / "field_registry.csv", training_rows)
             namespace = {"json": json, "Path": Path, "Counter": Counter, "importlib": importlib,
                          "crop_workflow": crop_workflow, "analysis_folder": analysis_folder,
-                         "source_manifest_paths": [],
+                         "source_manifest_paths": [], "source_run_name": "bilinear_expanded", "annual": __import__("crop_pipeline.sources.annual", fromlist=["annual"]),
                          "sources": [{"request_version": 3, "resampling": "nearest"}],
                          "greenup_folder": analysis_folder / "greenup", "field_folder": analysis_folder / "fields",
                          "regions": regions, "greenup_results": candidates,
@@ -504,11 +504,13 @@ class NotebookIntegrationTests(unittest.TestCase):
 
 def execute_training_notebook(handoff_path):
     """Use a separate namespace to catch dependencies on preprocessing variables."""
-    notebook_path = Path(__file__).resolve().parents[1] / "notebooks/05_model_training.ipynb"
+    notebook_path = Path(__file__).resolve().parents[1] / "notebooks/06_model_training.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
     executable_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
     namespace = {}
-    exec("".join(executable_cells[0]["source"]), namespace)
+    from unittest.mock import patch
+    with patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")):
+        exec("".join(executable_cells[0]["source"]), namespace)
     # The settings cell explicitly supports choosing a different input bundle.
     namespace.update(handoff_path=handoff_path, training_output_folder=handoff_path.parent.parent,
                      allow_legacy_band_comparison=True, training_mode="production")

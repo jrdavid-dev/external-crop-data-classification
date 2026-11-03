@@ -225,9 +225,11 @@ class FeatureHandoffTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as temporary:
             feature_namespace = {}
-            notebook = json.loads((root / "notebooks/04_feature_engineering.ipynb").read_text())
+            notebook = json.loads((root / "notebooks/05_feature_engineering.ipynb").read_text())
             cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
-            exec("".join(cells[0]["source"]), feature_namespace)
+            from unittest.mock import patch
+            with patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")):
+                exec("".join(cells[0]["source"]), feature_namespace)
             season_folder = Path(temporary)
             rows, configuration = experiment_fixture()
             for name in ("training_input", "exploratory_training_input"):
@@ -242,11 +244,12 @@ class FeatureHandoffTests(unittest.TestCase):
                 exec("".join(cell["source"]), feature_namespace)
             handoff = feature_namespace["feature_handoffs"]["feature_input"]
             training_namespace = {}
-            training_notebook = json.loads((root / "notebooks/05_model_training.ipynb").read_text())
+            training_notebook = json.loads((root / "notebooks/06_model_training.ipynb").read_text())
             training_cells = [
                 cell for cell in training_notebook["cells"] if cell["cell_type"] == "code"
             ]
-            exec("".join(training_cells[0]["source"]), training_namespace)
+            with patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")):
+                exec("".join(training_cells[0]["source"]), training_namespace)
             training_namespace["training_mode"] = "production"
             training_namespace["handoff_path"] = handoff
             for cell in training_cells[1:]:

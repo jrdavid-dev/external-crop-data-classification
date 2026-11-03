@@ -11,6 +11,7 @@ finished or running work is never submitted twice.
 import hashlib
 import json
 import math
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,7 +43,91 @@ def save_ledger(path, ledger):
 
 def settings_fingerprint(settings):
     """Same fingerprint the live code uses for checkpoints and request folders."""
-    return hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[:16]
+    return hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[
+        :16
+    ]
+
+
+def request_fingerprint(plan):
+    """Bind remote work to settings and acquisition IDs, not just a parcel name."""
+    payload = {"settings": plan["settings"], "acquisitions": plan["acquisitions"]}
+    return content_key(payload)
+
+
+def work_item(kind, plan, interval=None):
+    parts = [kind, plan["fragment_id"]]
+    if interval is not None:
+        parts.append(interval["name"])
+    parts.append(request_fingerprint(plan))
+    return "|".join(parts)
+
+
+def validate_task_requests(entry, plans_by_id):
+    """Never label an earlier export as if it used the current request settings."""
+    expected = entry.get("request_fingerprints")
+    if not expected:
+        raise ValueError(
+            "Legacy batch task has no request fingerprints; preserve its ledger and use a new run."
+        )
+    for region_id, fingerprint in expected.items():
+        if (
+            region_id not in plans_by_id
+            or request_fingerprint(plans_by_id[region_id]) != fingerprint
+        ):
+            raise ValueError(
+                f"Batch request changed for {region_id}; do not collect old results into this run."
+            )
+
+
+def wait_and_collect(
+    ee,
+    project,
+    ledger_path,
+    handlers,
+    plans_by_id,
+    wait=True,
+    poll_seconds=30,
+    maximum_wait_seconds=43200,
+):
+    """Allow sequential Run All while preserving a resumable, bounded task wait."""
+    if poll_seconds <= 0 or maximum_wait_seconds <= 0:
+        raise ValueError("Batch polling and timeout must be positive.")
+    deadline = time.monotonic() + maximum_wait_seconds
+    while True:
+        report = collect(ee, project, ledger_path, handlers, plans_by_id=plans_by_id)
+        active = [
+            row
+            for row in report
+            if not row["collected"] and row["state"] not in FAILED_STATES
+        ]
+        failed_items = {
+            item
+            for entry in load_ledger(ledger_path)
+            if entry["kind"] in handlers and entry.get("state") in FAILED_STATES
+            for item in entry["items"]
+        }
+        completed_items = {
+            item
+            for entry in load_ledger(ledger_path)
+            if entry["kind"] in handlers and entry.get("collected")
+            for item in entry["items"]
+        }
+        unresolved_failures = failed_items - completed_items
+        if not active:
+            if unresolved_failures:
+                raise RuntimeError(
+                    "Batch tasks failed; rerun the submit stage to retry. Saved files are preserved."
+                )
+            return report
+        if not wait or time.monotonic() >= deadline:
+            raise RuntimeError(
+                "Batch work is still running. Resume at its collect stage; no new tasks are needed."
+            )
+        print(
+            f"Waiting for {len(active)} batch tasks; saved progress is retained.",
+            flush=True,
+        )
+        time.sleep(min(poll_seconds, max(0, deadline - time.monotonic())))
 
 
 def ensure_folder(ee, folder):
@@ -59,16 +144,23 @@ def ensure_folder(ee, folder):
 
 def task_state(ee, project, task_id):
     """State and EECU-seconds of one batch task."""
-    metadata = ee.data.getOperation(f"projects/{project}/operations/{task_id}")["metadata"]
-    return metadata.get("state", "UNKNOWN"), float(metadata.get("batchEecuUsageSeconds", 0) or 0)
+    metadata = ee.data.getOperation(f"projects/{project}/operations/{task_id}")[
+        "metadata"
+    ]
+    return metadata.get("state", "UNKNOWN"), float(
+        metadata.get("batchEecuUsageSeconds", 0) or 0
+    )
 
 
 def in_flight(ledger):
     """Work items covered by tasks that are submitted and not yet collected or failed."""
     covered = set()
     for entry in ledger:
-        if (entry["kind"] != "permanent" and not entry.get("collected")
-                and entry.get("state") not in FAILED_STATES):
+        if (
+            entry["kind"] != "permanent"
+            and not entry.get("collected")
+            and entry.get("state") not in FAILED_STATES
+        ):
             covered.update(entry["items"])
     return covered
 
@@ -83,8 +175,10 @@ def granule_sources(ee, retriever, indices):
     up by system:index in these small collections; the images are the same.
     """
     in_region = ee.Filter.inList("system:index", indices)
-    return (ee.ImageCollection(retriever.collection_name).filter(in_region),
-            ee.ImageCollection(retriever.cloud_probability_collection).filter(in_region))
+    return (
+        ee.ImageCollection(retriever.collection_name).filter(in_region),
+        ee.ImageCollection(retriever.cloud_probability_collection).filter(in_region),
+    )
 
 
 def masked_mosaic(ee, retriever, sources, indices_csv):
@@ -93,8 +187,10 @@ def masked_mosaic(ee, retriever, sources, indices_csv):
 
     def masked(index):
         same_index = ee.Filter.eq("system:index", ee.String(index))
-        return retriever.mask_acquisition(ee.Image(granules.filter(same_index).first()),
-                                          ee.Image(probabilities.filter(same_index).first()))
+        return retriever.mask_acquisition(
+            ee.Image(granules.filter(same_index).first()),
+            ee.Image(probabilities.filter(same_index).first()),
+        )
 
     images = ee.String(indices_csv).split(",").map(masked)
     return ee.ImageCollection.fromImages(images).mosaic()
@@ -107,23 +203,37 @@ def daily_index_image(ee, daily):
         left, right = daily.select("B8"), daily.select(other)
         denominator = left.add(right)
         indices.append(
-            left.subtract(right).divide(denominator).updateMask(denominator.neq(0)).rename(name))
+            left.subtract(right)
+            .divide(denominator)
+            .updateMask(denominator.neq(0))
+            .rename(name)
+        )
     return ee.Image.cat(indices)
 
 
 def region_indices(acquisitions):
-    return sorted({row["image_index"] for row in acquisitions if row.get("cloud_probability_id")})
+    return sorted(
+        {row["image_index"] for row in acquisitions if row.get("cloud_probability_id")}
+    )
 
 
 def day_entries(acquisitions, start=None, end=None):
     """'date;index,index' per date, granules sorted by image_index like the live code."""
-    matched = [row for row in acquisitions if row.get("cloud_probability_id")
-               and (start is None or start <= row["date"] < end)]
+    matched = [
+        row
+        for row in acquisitions
+        if row.get("cloud_probability_id")
+        and (start is None or start <= row["date"] < end)
+    ]
     entries = []
     for observation_date in sorted({row["date"] for row in matched}):
-        same_date = sorted((row for row in matched if row["date"] == observation_date),
-                           key=lambda row: row["image_index"])
-        entries.append(f"{observation_date};" + ",".join(row["image_index"] for row in same_date))
+        same_date = sorted(
+            (row for row in matched if row["date"] == observation_date),
+            key=lambda row: row["image_index"],
+        )
+        entries.append(
+            f"{observation_date};" + ",".join(row["image_index"] for row in same_date)
+        )
     return entries
 
 
@@ -133,12 +243,21 @@ def daily_collection(ee, retriever, plans):
     regions = []
     for plan in plans:
         grid = plan["settings"]["grid"]
-        footprint = ee.Geometry(plan["fragment"]["geometry"], proj="EPSG:4326", geodesic=False)
-        regions.append(ee.Feature(footprint, {
-            "region_id": plan["fragment_id"], "crs": grid["crs"],
-            "transform": grid["transform"], "days": day_entries(plan["acquisitions"]),
-            "indices": region_indices(plan["acquisitions"]),
-        }))
+        footprint = ee.Geometry(
+            plan["fragment"]["geometry"], proj="EPSG:4326", geodesic=False
+        )
+        regions.append(
+            ee.Feature(
+                footprint,
+                {
+                    "region_id": plan["fragment_id"],
+                    "crs": grid["crs"],
+                    "transform": grid["transform"],
+                    "days": day_entries(plan["acquisitions"]),
+                    "indices": region_indices(plan["acquisitions"]),
+                },
+            )
+        )
 
     def region_days(feature):
         feature = ee.Feature(feature)
@@ -147,12 +266,19 @@ def daily_collection(ee, retriever, plans):
 
         def one_day(entry):
             parts = ee.String(entry).split(";")
-            image = daily_index_image(ee, masked_mosaic(ee, retriever, sources, parts.get(1)))
+            image = daily_index_image(
+                ee, masked_mosaic(ee, retriever, sources, parts.get(1))
+            )
             statistics = image.reduceRegion(
-                reducer=reducer, geometry=geometry, crs=feature.get("crs"),
-                crsTransform=feature.get("transform"), maxPixels=1000000)
+                reducer=reducer,
+                geometry=geometry,
+                crs=feature.get("crs"),
+                crsTransform=feature.get("transform"),
+                maxPixels=1000000,
+            )
             return ee.Feature(ee.Geometry.Point(PLACEHOLDER), statistics).set(
-                {"date": parts.get(0), "region_id": feature.get("region_id")})
+                {"date": parts.get(0), "region_id": feature.get("region_id")}
+            )
 
         return ee.FeatureCollection(ee.List(feature.get("days")).map(one_day))
 
@@ -161,25 +287,41 @@ def daily_collection(ee, retriever, plans):
 
 def composite_collection(ee, retriever, items):
     """One feature per grid pixel of each (region, interval) half-month composite."""
-    bands, outputs, nodata = retriever.spectral_bands, retriever.output_bands, retriever.nodata_value
+    bands, outputs, nodata = (
+        retriever.spectral_bands,
+        retriever.output_bands,
+        retriever.nodata_value,
+    )
     regions = []
     for plan, intervals in items:
         grid = plan["settings"]["grid"]
         left, top = grid["transform"][2], grid["transform"][5]
         right, bottom = left + 10 * grid["width"], top - 10 * grid["height"]
         # Inset 1 m so every pixel centre is inside and no outside centre is.
-        rectangle = ee.Geometry.Rectangle([left + 1, bottom + 1, right - 1, top - 1],
-                                          proj=grid["crs"], geodesic=False)
-        regions.append(ee.Feature(rectangle, {
-            "region_id": plan["fragment_id"], "crs": grid["crs"], "transform": grid["transform"],
-            "intervals": [
-                interval["name"] + "".join(
-                    ";" + entry.replace(";", "=")
-                    for entry in day_entries(plan["acquisitions"], interval["start"], interval["end"]))
-                for interval in intervals
-            ],
-            "indices": region_indices(plan["acquisitions"]),
-        }))
+        rectangle = ee.Geometry.Rectangle(
+            [left + 1, bottom + 1, right - 1, top - 1], proj=grid["crs"], geodesic=False
+        )
+        regions.append(
+            ee.Feature(
+                rectangle,
+                {
+                    "region_id": plan["fragment_id"],
+                    "crs": grid["crs"],
+                    "transform": grid["transform"],
+                    "intervals": [
+                        interval["name"]
+                        + "".join(
+                            ";" + entry.replace(";", "=")
+                            for entry in day_entries(
+                                plan["acquisitions"], interval["start"], interval["end"]
+                            )
+                        )
+                        for interval in intervals
+                    ],
+                    "indices": region_indices(plan["acquisitions"]),
+                },
+            )
+        )
 
     def region_pixels(feature):
         feature = ee.Feature(feature)
@@ -191,20 +333,38 @@ def composite_collection(ee, retriever, items):
             parts = ee.String(entry).split(";")
             days = parts.slice(1)
             dailies = days.map(
-                lambda day: masked_mosaic(ee, retriever, sources, ee.String(day).split("=").get(1)))
+                lambda day: masked_mosaic(
+                    ee, retriever, sources, ee.String(day).split("=").get(1)
+                )
+            )
             daily_images = ee.ImageCollection.fromImages(dailies)
             median = daily_images.median().select(bands)
-            clear_count = (daily_images.select("B3").count().rename("clear_count")
-                           .unmask(0, sameFootprint=False))
+            clear_count = (
+                daily_images.select("B3")
+                .count()
+                .rename("clear_count")
+                .unmask(0, sameFootprint=False)
+            )
             built = median.unmask(nodata, sameFootprint=False).addBands(clear_count)
             empty = ee.Image.constant([nodata] * len(bands) + [0]).rename(outputs)
-            composite = ee.Image(ee.Algorithms.If(days.size().gt(0), built, empty)).toFloat()
+            composite = ee.Image(
+                ee.Algorithms.If(days.size().gt(0), built, empty)
+            ).toFloat()
             samples = composite.addBands(ee.Image.pixelCoordinates(projection)).sample(
-                region=rectangle, projection=projection, dropNulls=False, geometries=False)
-            return samples.map(lambda pixel: pixel.setGeometry(ee.Geometry.Point(PLACEHOLDER)).set(
-                {"region_id": feature.get("region_id"), "interval": parts.get(0)}))
+                region=rectangle,
+                projection=projection,
+                dropNulls=False,
+                geometries=False,
+            )
+            return samples.map(
+                lambda pixel: pixel.setGeometry(ee.Geometry.Point(PLACEHOLDER)).set(
+                    {"region_id": feature.get("region_id"), "interval": parts.get(0)}
+                )
+            )
 
-        return ee.FeatureCollection(ee.List(feature.get("intervals")).map(one_interval)).flatten()
+        return ee.FeatureCollection(
+            ee.List(feature.get("intervals")).map(one_interval)
+        ).flatten()
 
     return ee.FeatureCollection(regions).map(region_pixels).flatten()
 
@@ -227,44 +387,86 @@ def chunk(items, size_of, limit):
 
 
 def start_export(ee, collection, asset_id, description):
-    task = ee.batch.Export.table.toAsset(collection=collection, description=description[:100],
-                                         assetId=asset_id, overwrite=True)
+    task = ee.batch.Export.table.toAsset(
+        collection=collection,
+        description=description[:100],
+        assetId=asset_id,
+        overwrite=False,
+    )
     task.start()
     return task.id
 
 
 def missing_daily_checkpoints(plans, timeline_folder):
     """Plans without the checkpoint file retrieve_observed_timelines would reuse."""
-    return [plan for plan in plans
-            if not (Path(timeline_folder) / "observed_checkpoints"
-                    / f"{plan['fragment_id']}_{settings_fingerprint(plan['settings'])}.json").exists()]
+    return [
+        plan
+        for plan in plans
+        if not (
+            Path(timeline_folder)
+            / "observed_checkpoints"
+            / f"{plan['fragment_id']}_{settings_fingerprint(plan['settings'])}.json"
+        ).exists()
+    ]
 
 
-def submit_daily(ee, retriever, plans, timeline_folder, ledger_path, temp_folder, year,
-                 region_days_per_task=6000):
+def submit_daily(
+    ee,
+    retriever,
+    plans,
+    timeline_folder,
+    ledger_path,
+    temp_folder,
+    year,
+    region_days_per_task=6000,
+):
     """Submit daily-summary tasks for regions without a local checkpoint; return at once."""
     ledger = load_ledger(ledger_path)
     covered = in_flight(ledger)
-    missing = [plan for plan in missing_daily_checkpoints(plans, timeline_folder)
-               if f"daily|{plan['fragment_id']}" not in covered]
+    missing = [
+        plan
+        for plan in missing_daily_checkpoints(plans, timeline_folder)
+        if work_item("daily", plan) not in covered
+    ]
     ensure_folder(ee, temp_folder)
     submitted = []
-    groups = chunk(missing, lambda plan: max(1, len(day_entries(plan["acquisitions"]))),
-                   region_days_per_task)
+    groups = chunk(
+        missing,
+        lambda plan: max(1, len(day_entries(plan["acquisitions"]))),
+        region_days_per_task,
+    )
     for group in groups:
-        key = hashlib.sha256("|".join(p["fragment_id"] for p in group).encode()).hexdigest()[:10]
+        key = hashlib.sha256(
+            "|".join(work_item("daily", plan) for plan in group).encode()
+        ).hexdigest()[:10]
         asset_id = f"{temp_folder}/daily_{year}_{key}"
-        task_id = start_export(ee, daily_collection(ee, retriever, group), asset_id,
-                               f"cropharvest_daily_{year}_{key}")
-        entry = {"task_id": task_id, "kind": "daily", "year": year, "asset_id": asset_id,
-                 "items": [f"daily|{plan['fragment_id']}" for plan in group],
-                 "submitted_at": datetime.now(timezone.utc).isoformat(),
-                 "state": "SUBMITTED", "collected": False}
+        task_id = start_export(
+            ee,
+            daily_collection(ee, retriever, group),
+            asset_id,
+            f"cropharvest_daily_{year}_{key}",
+        )
+        entry = {
+            "task_id": task_id,
+            "kind": "daily",
+            "year": year,
+            "asset_id": asset_id,
+            "items": [work_item("daily", plan) for plan in group],
+            "request_fingerprints": {
+                plan["fragment_id"]: request_fingerprint(plan) for plan in group
+            },
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "state": "SUBMITTED",
+            "collected": False,
+        }
         ledger.append(entry)
         submitted.append(entry)
     save_ledger(ledger_path, ledger)
-    return {"regions_needing_work": len(missing), "tasks_submitted": len(submitted),
-            "already_running": sum(1 for p in plans if f"daily|{p['fragment_id']}" in covered)}
+    return {
+        "regions_needing_work": len(missing),
+        "tasks_submitted": len(submitted),
+        "already_running": sum(1 for p in plans if work_item("daily", p) in covered),
+    }
 
 
 def pending_composites(retriever, plans):
@@ -272,65 +474,111 @@ def pending_composites(retriever, plans):
     work = []
     for plan in plans:
         settings = plan["settings"]
-        folder = retriever.imagery_folder / plan["fragment_id"] / settings_fingerprint(settings)
-        manifest_path = (retriever.report_folder / "composite_progress"
-                         / f"{plan['fragment_id']}_{settings_fingerprint(settings)}.json")
-        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"files": {}}
+        folder = (
+            retriever.imagery_folder
+            / plan["fragment_id"]
+            / settings_fingerprint(settings)
+        )
+        manifest_path = (
+            retriever.report_folder
+            / "composite_progress"
+            / f"{plan['fragment_id']}_{settings_fingerprint(settings)}.json"
+        )
+        manifest = (
+            json.loads(manifest_path.read_text())
+            if manifest_path.exists()
+            else {"files": {}}
+        )
         intervals = [
-            interval for interval in plan["download_intervals"]
-            if not retriever.reusable_file(folder / f"{interval['name']}.tif",
-                                           manifest["files"].get(interval["name"]),
-                                           settings["grid"])
+            interval
+            for interval in plan["download_intervals"]
+            if not retriever.reusable_file(
+                folder / f"{interval['name']}.tif",
+                manifest["files"].get(interval["name"]),
+                settings["grid"],
+            )
         ]
         if intervals:
             work.append((plan, intervals))
     return work
 
 
-def submit_composites(ee, retriever, plans, ledger_path, temp_folder, year,
-                      pixels_per_task=60000):
+def submit_composites(
+    ee, retriever, plans, ledger_path, temp_folder, year, pixels_per_task=60000
+):
     """Submit composite tasks for qualified bins not yet saved locally; return at once."""
     ledger = load_ledger(ledger_path)
     covered = in_flight(ledger)
     work = []
     for plan, intervals in pending_composites(retriever, plans):
-        intervals = [i for i in intervals
-                     if f"composite|{plan['fragment_id']}|{i['name']}" not in covered]
+        intervals = [
+            i for i in intervals if work_item("composite", plan, i) not in covered
+        ]
         if intervals:
             work.append((plan, intervals))
     ensure_folder(ee, temp_folder)
-    grid_pixels = lambda item: (item[0]["settings"]["grid"]["width"]
-                                * item[0]["settings"]["grid"]["height"] * len(item[1]))
+    grid_pixels = lambda item: (
+        item[0]["settings"]["grid"]["width"]
+        * item[0]["settings"]["grid"]["height"]
+        * len(item[1])
+    )
     submitted = []
     for group in chunk(work, grid_pixels, pixels_per_task):
-        names = [f"composite|{plan['fragment_id']}|{i['name']}" for plan, ints in group for i in ints]
+        names = [
+            work_item("composite", plan, interval)
+            for plan, intervals in group
+            for interval in intervals
+        ]
         key = hashlib.sha256("|".join(names).encode()).hexdigest()[:10]
         asset_id = f"{temp_folder}/composites_{year}_{key}"
-        task_id = start_export(ee, composite_collection(ee, retriever, group), asset_id,
-                               f"cropharvest_composites_{year}_{key}")
-        entry = {"task_id": task_id, "kind": "composite", "year": year, "asset_id": asset_id,
-                 "items": names, "submitted_at": datetime.now(timezone.utc).isoformat(),
-                 "state": "SUBMITTED", "collected": False}
+        task_id = start_export(
+            ee,
+            composite_collection(ee, retriever, group),
+            asset_id,
+            f"cropharvest_composites_{year}_{key}",
+        )
+        entry = {
+            "task_id": task_id,
+            "kind": "composite",
+            "year": year,
+            "asset_id": asset_id,
+            "items": names,
+            "request_fingerprints": {
+                plan["fragment_id"]: request_fingerprint(plan) for plan, _ in group
+            },
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "state": "SUBMITTED",
+            "collected": False,
+        }
         ledger.append(entry)
         submitted.append(entry)
     save_ledger(ledger_path, ledger)
-    return {"composites_needing_work": sum(len(i) for _, i in work),
-            "tasks_submitted": len(submitted)}
+    return {
+        "composites_needing_work": sum(len(i) for _, i in work),
+        "tasks_submitted": len(submitted),
+    }
 
 
 # ----------------------------------------------------------------------------- collect
 
 
 def read_table(ee, asset_id):
-    return ee.data.computeFeatures({"expression": ee.FeatureCollection(asset_id),
-                                    "fileFormat": "PANDAS_DATAFRAME"})
+    return ee.data.computeFeatures(
+        {"expression": ee.FeatureCollection(asset_id), "fileFormat": "PANDAS_DATAFRAME"}
+    )
 
 
 def finite_or_none(value):
-    return None if value is None or (isinstance(value, float) and math.isnan(value)) else float(value)
+    return (
+        None
+        if value is None or (isinstance(value, float) and math.isnan(value))
+        else float(value)
+    )
 
 
-def write_daily_checkpoints(plans_by_id, region_ids, table, timeline_folder, minimum_fraction):
+def write_daily_checkpoints(
+    plans_by_id, region_ids, table, timeline_folder, minimum_fraction
+):
     """Rows identical to retrieve_observed_timelines, one checkpoint file per region.
 
     A region with no cloud-matched dates exports no rows; like the live code it still
@@ -348,23 +596,45 @@ def write_daily_checkpoints(plans_by_id, region_ids, table, timeline_folder, min
             raise ValueError(f"{region_id}: exported dates differ from the plan")
         output = []
         for values in records:
-            count = min(int(finite_or_none(values.get(name + "_count")) or 0)
-                        for name, _ in INDEX_BANDS)
+            count = min(
+                int(finite_or_none(values.get(name + "_count")) or 0)
+                for name, _ in INDEX_BANDS
+            )
             fraction = count / properties["selected_pixels"]
             if fraction > 1 + 1e-6:
-                raise ValueError("Region reduction included more pixels than the sampling mask")
-            output.append({
-                "region_id": region_id, "partition_group": properties["partition_group"],
-                "crop": properties["crop"], "date": values["date"], "source_kind": "observed_daily",
-                "valid_pixels": count, "valid_fraction": fraction,
-                "eligible": fraction >= minimum_fraction,
-                **{name: finite_or_none(values.get(name + "_median")) for name, _ in INDEX_BANDS},
-            })
-        path = (Path(timeline_folder) / "observed_checkpoints"
-                / f"{region_id}_{settings_fingerprint(plan['settings'])}.json")
-        save_json(path, {"settings": plan["settings"],
-                         "retrieved_at": datetime.now(timezone.utc).isoformat(),
-                         "rows": output, "retrieval": "earth_engine_batch_export"})
+                raise ValueError(
+                    "Region reduction included more pixels than the sampling mask"
+                )
+            output.append(
+                {
+                    "region_id": region_id,
+                    "partition_group": properties["partition_group"],
+                    "crop": properties["crop"],
+                    "date": values["date"],
+                    "source_kind": "observed_daily",
+                    "valid_pixels": count,
+                    "valid_fraction": fraction,
+                    "eligible": fraction >= minimum_fraction,
+                    **{
+                        name: finite_or_none(values.get(name + "_median"))
+                        for name, _ in INDEX_BANDS
+                    },
+                }
+            )
+        path = (
+            Path(timeline_folder)
+            / "observed_checkpoints"
+            / f"{region_id}_{settings_fingerprint(plan['settings'])}.json"
+        )
+        save_json(
+            path,
+            {
+                "settings": plan["settings"],
+                "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                "rows": output,
+                "retrieval": "earth_engine_batch_export",
+            },
+        )
         written += 1
     # Regions whose plan has no matched dates export no rows; the live code saves them empty.
     return written
@@ -379,25 +649,44 @@ def write_composites(retriever, plans_by_id, table):
         # pixelCoordinates in the grid's own projection gives column / row centres (0.5, 1.5 ...).
         columns = np.floor(pixels["x"].to_numpy()).astype(int)
         rows = np.floor(pixels["y"].to_numpy()).astype(int)
-        if (len(pixels) != grid["width"] * grid["height"]
-                or columns.min() < 0 or rows.min() < 0
-                or columns.max() >= grid["width"] or rows.max() >= grid["height"]
-                or len(set(zip(columns, rows))) != len(pixels)):
-            raise ValueError(f"{region_id} {name}: exported pixels do not fill the grid")
-        values = np.full((len(retriever.output_bands), grid["height"], grid["width"]),
-                         retriever.nodata_value, dtype="float32")
+        if (
+            len(pixels) != grid["width"] * grid["height"]
+            or columns.min() < 0
+            or rows.min() < 0
+            or columns.max() >= grid["width"]
+            or rows.max() >= grid["height"]
+            or len(set(zip(columns, rows))) != len(pixels)
+        ):
+            raise ValueError(
+                f"{region_id} {name}: exported pixels do not fill the grid"
+            )
+        values = np.full(
+            (len(retriever.output_bands), grid["height"], grid["width"]),
+            retriever.nodata_value,
+            dtype="float32",
+        )
         for band_index, band in enumerate(retriever.output_bands):
             values[band_index, rows, columns] = pixels[band].to_numpy(dtype="float32")
 
         request_id = settings_fingerprint(settings)
         folder = retriever.imagery_folder / region_id / request_id
         folder.mkdir(parents=True, exist_ok=True)
-        manifest_path = retriever.report_folder / "composite_progress" / f"{region_id}_{request_id}.json"
-        manifest = (json.loads(manifest_path.read_text()) if manifest_path.exists()
-                    else {"fragment_id": region_id, "settings": settings, "files": {}})
+        manifest_path = (
+            retriever.report_folder
+            / "composite_progress"
+            / f"{region_id}_{request_id}.json"
+        )
+        manifest = (
+            json.loads(manifest_path.read_text())
+            if manifest_path.exists()
+            else {"fragment_id": region_id, "settings": settings, "files": {}}
+        )
         interval = next(i for i in plan["download_intervals"] if i["name"] == name)
-        granules = [row for row in plan["acquisitions"]
-                    if interval["start"] <= row["date"] < interval["end"]]
+        granules = [
+            row
+            for row in plan["acquisitions"]
+            if interval["start"] <= row["date"] < interval["end"]
+        ]
         destination = folder / f"{name}.tif"
         record = {
             **interval,
@@ -405,13 +694,21 @@ def write_composites(retriever, plans_by_id, table):
             "source_image_ids": [row["image_id"] for row in granules],
             "available_dates": sorted({row["date"] for row in granules}),
             "cloud_screened_available_dates": sorted(
-                {row["date"] for row in granules if row.get("cloud_probability_id")}),
+                {row["date"] for row in granules if row.get("cloud_probability_id")}
+            ),
         }
         temporary = destination.with_suffix(".tif.part")
-        with rasterio.open(temporary, "w", driver="GTiff", width=grid["width"],
-                           height=grid["height"], count=len(retriever.output_bands),
-                           dtype="float32", crs=grid["crs"],
-                           transform=Affine(*grid["transform"])) as raster:
+        with rasterio.open(
+            temporary,
+            "w",
+            driver="GTiff",
+            width=grid["width"],
+            height=grid["height"],
+            count=len(retriever.output_bands),
+            dtype="float32",
+            crs=grid["crs"],
+            transform=Affine(*grid["transform"]),
+        ) as raster:
             raster.write(values)
         retriever.check_raster(temporary, grid)
         record.update(retriever.finish_raster(temporary))
@@ -422,7 +719,9 @@ def write_composites(retriever, plans_by_id, table):
     return written
 
 
-def collect(ee, project, ledger_path, handlers, kinds=None, year=None):
+def collect(
+    ee, project, ledger_path, handlers, kinds=None, year=None, plans_by_id=None
+):
     """Save finished tasks locally, then delete their temporary assets.
 
     `handlers` maps a task kind to a function(entry, table) that writes and checks the
@@ -434,11 +733,15 @@ def collect(ee, project, ledger_path, handlers, kinds=None, year=None):
     ledger = load_ledger(ledger_path)
     report = []
     for entry in ledger:
-        if entry["kind"] not in kinds or (year is not None and entry.get("year") != year):
+        if entry["kind"] not in kinds or (
+            year is not None and entry.get("year") != year
+        ):
             continue
         if entry.get("collected"):
             report.append({**_summary(entry), "note": "already collected"})
             continue
+        if entry["kind"] != "permanent" and plans_by_id is not None:
+            validate_task_requests(entry, plans_by_id)
         state, eecu = task_state(ee, project, entry["task_id"])
         entry["state"], entry["eecu_seconds"] = state, eecu
         note = ""
@@ -461,9 +764,13 @@ def collect(ee, project, ledger_path, handlers, kinds=None, year=None):
 
 def remove_temp_folder(ee, ledger_path, temp_folder):
     """Delete the temporary asset folder once no temporary task is waiting to be collected."""
-    waiting = [entry for entry in load_ledger(ledger_path)
-               if entry["kind"] != "permanent" and not entry.get("collected")
-               and entry.get("state") not in FAILED_STATES]
+    waiting = [
+        entry
+        for entry in load_ledger(ledger_path)
+        if entry["kind"] != "permanent"
+        and not entry.get("collected")
+        and entry.get("state") not in FAILED_STATES
+    ]
     try:
         left = ee.data.listAssets({"parent": temp_folder}).get("assets", [])
     except ee.EEException:
@@ -476,29 +783,53 @@ def remove_temp_folder(ee, ledger_path, temp_folder):
 
 def submit_permanent(ee, collection, asset_id, ledger_path, content_key, description):
     """Export a permanent table asset unless the same content was already saved there."""
+    asset_id = f"{asset_id}_{content_key}"
     ledger = load_ledger(ledger_path)
     for entry in ledger:
-        if (entry["kind"] == "permanent" and entry["asset_id"] == asset_id
-                and entry.get("content_key") == content_key
-                and entry.get("state") not in FAILED_STATES):
-            return {"asset_id": asset_id, "submitted": False, "reason": "same content already exported"}
+        if (
+            entry["kind"] == "permanent"
+            and entry["asset_id"] == asset_id
+            and entry.get("content_key") == content_key
+            and entry.get("state") not in FAILED_STATES
+        ):
+            return {
+                "asset_id": asset_id,
+                "submitted": False,
+                "reason": "same content already exported",
+            }
     ensure_folder(ee, asset_id.rsplit("/", 1)[0])
     task_id = start_export(ee, collection, asset_id, description)
-    ledger.append({"task_id": task_id, "kind": "permanent", "year": None, "asset_id": asset_id,
-                   "items": [asset_id], "content_key": content_key,
-                   "submitted_at": datetime.now(timezone.utc).isoformat(),
-                   "state": "SUBMITTED", "collected": False})
+    ledger.append(
+        {
+            "task_id": task_id,
+            "kind": "permanent",
+            "year": None,
+            "asset_id": asset_id,
+            "items": [asset_id],
+            "content_key": content_key,
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "state": "SUBMITTED",
+            "collected": False,
+        }
+    )
     save_ledger(ledger_path, ledger)
     return {"asset_id": asset_id, "submitted": True, "task_id": task_id}
 
 
 def content_key(records):
     """Fingerprint of what a permanent asset should contain."""
-    return hashlib.sha256(json.dumps(records, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    return hashlib.sha256(
+        json.dumps(records, sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
 
 
 def _summary(entry):
-    return {"task_id": entry["task_id"], "kind": entry["kind"], "year": entry.get("year"),
-            "items": len(entry["items"]), "state": entry.get("state"),
-            "eecu_seconds": round(float(entry.get("eecu_seconds") or 0), 4),
-            "collected": bool(entry.get("collected"))}
+    return {
+        "task_id": entry["task_id"],
+        "kind": entry["kind"],
+        "year": entry.get("year"),
+        "items": len(entry["items"]),
+        "state": entry.get("state"),
+        "eecu_seconds": round(float(entry.get("eecu_seconds") or 0), 4),
+        "collected": bool(entry.get("collected")),
+    }

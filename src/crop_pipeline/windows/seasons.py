@@ -490,6 +490,9 @@ def build_features(seasons, pixel_rows, quality_rows, minimum_fraction=0.8, bin_
     """Steps 11–12: select existing medians; retain only complete 64-feature rows."""
     if not 0 < minimum_fraction <= 1:
         raise ValueError("minimum_fraction must be in (0, 1].")
+    if hasattr(pixel_rows, "for_regions"):
+        from crop_pipeline.windows.annual_archive import build_partitioned_features
+        return build_partitioned_features(seasons, pixel_rows, quality_rows, minimum_fraction, bin_shift)
     indexed_pixels = index_pixels(pixel_rows)
     quality_map = unique_records([{**row, "identifier": (row["region_id"], row["name"])}
                                   for row in quality_rows], "identifier")

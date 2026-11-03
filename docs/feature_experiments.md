@@ -38,7 +38,7 @@ Slopes and integrals use actual calendar-bin midpoints. A peak at a boundary has
 
 ## How to run it
 
-Run [Feature Engineering](../notebooks/04_feature_engineering.ipynb) after the window notebook. It reads `analysis/bilinear_expanded/seasons/` and exports formal feature bundles inside that run.
+Run [Feature Engineering](../notebooks/05_feature_engineering.ipynb) after the window notebook. It resolves the same collection as notebook 04 (`full_year_all_parcels` by default) and exports formal feature bundles inside its source-specific analysis folder.
 
 | Window bundle | Feature bundle |
 |---|---|

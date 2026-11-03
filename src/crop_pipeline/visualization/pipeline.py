@@ -22,19 +22,33 @@ def read_table(path):
 def candidate_and_timing_counts(report_root, run_name):
     """Count each region once even when several qualified cycles share its pixels."""
     candidates, timing = Counter(), Counter()
-    for source_name in ("sen4agrinet", "francecrops"):
-        manifest_path = (
-            Path(report_root).parent
-            / "source_handoffs"
-            / f"{source_name}_{run_name}.json"
-        )
-        source = json.loads(manifest_path.read_text())
+    source_snapshot = (
+        Path(report_root).parent / "analysis" / run_name / "source_inputs.json"
+    )
+    if source_snapshot.exists():
+        sources = json.loads(source_snapshot.read_text())
+    else:
+        sources = [
+            json.loads(
+                (
+                    Path(report_root).parent
+                    / "source_handoffs"
+                    / f"{name}_{run_name}.json"
+                ).read_text()
+            )
+            for name in ("sen4agrinet", "francecrops")
+        ]
+    for source in sources:
         regions_path = Path(source["field_folder"]) / "sampled_download_regions.geojson"
         regions = json.loads(regions_path.read_text())["features"]
         gate_path = (
             Path(source["progress_folder"]).parent / "timing_first" / "timing_gate.json"
         )
-        windows = json.loads(gate_path.read_text())["qualified_windows"]
+        if source.get("collection") == "full_year_all_parcels":
+            window_path = source_snapshot.parent / "seasons/estimated_windows.json"
+            windows = json.loads(window_path.read_text())
+        else:
+            windows = json.loads(gate_path.read_text())["qualified_windows"]
         year = int(source["year"])
         eligible_regions = {
             window["region_id"]
@@ -63,7 +77,7 @@ def label_bars(axis, bars):
     axis.margins(y=0.18)
 
 
-def draw_workflow():
+def draw_workflow(annual_collection=False):
     figure, axis = plt.subplots(figsize=(13, 5))
     axis.set_axis_off()
     stages = [
@@ -76,6 +90,8 @@ def draw_workflow():
         "Features and\nparcel-separated splits",
         "Models and\nsaved evaluation",
     ]
+    if annual_collection:
+        stages[1:5] = ["All eligible interior pixels\nwith parcel groups", "Earth Engine masks\nand daily mosaics", "Full-year median images\nand dated summaries", "Timing checks\non the saved archive"]
     positions = [(0.12 + index * 0.25, 0.72) for index in range(4)]
     positions += [(0.87 - index * 0.25, 0.24) for index in range(4)]
     for label, position in zip(stages, positions):
@@ -112,12 +128,12 @@ def draw_workflow():
             arrowprops={"arrowstyle": "->", "color": "#527487", "lw": 1.7},
         )
     figure.suptitle(
-        "Pilot pipeline: from labelled parcels to saved evaluation", fontsize=15
+        "From labelled parcels to saved evaluation", fontsize=15
     )
     figure.text(
         0.5,
         0.01,
-        "Timing is estimated before image downloads; one parcel stays in one split.",
+        "Annual imagery is saved before window selection; one parcel stays in one split." if annual_collection else "Timing is estimated before image downloads; one parcel stays in one split.",
         ha="center",
         fontsize=10,
     )
@@ -125,7 +141,7 @@ def draw_workflow():
     return figure
 
 
-def draw_pixel_counts(candidates, timing, selection):
+def draw_pixel_counts(candidates, timing, selection, annual_collection=False):
     figure, axes = plt.subplots(1, 3, figsize=(13, 4.4))
     for axis, crop, color in zip(axes, CROPS, COLORS):
         record = selection[crop]
@@ -150,11 +166,11 @@ def draw_pixel_counts(candidates, timing, selection):
         axis.set_title(crop.capitalize())
         axis.set_ylabel("Sampled pixel locations")
         axis.spines[["top", "right"]].set_visible(False)
-    figure.suptitle("Where the pilot's pixels are filtered and selected", fontsize=14)
+    figure.suptitle("Where pixels are filtered and selected", fontsize=14)
     figure.text(
         0.5,
         0.01,
-        "Timing counts cover in-year regions, once each. Complete counts include deduplication; retention applies the crop cap.",
+        "Archive pixels are counted once per tile. Complete counts exclude upstream holdouts; all usable development pixels are retained." if annual_collection else "Timing counts cover in-year regions, once each. Complete counts include deduplication; retention applies the crop cap.",
         ha="center",
         fontsize=9,
     )
@@ -303,9 +319,10 @@ def generate_report(report_root, run_name, training_run_name):
     candidates, timing = candidate_and_timing_counts(report_root, run_name)
     output = training / "visuals"
     output.mkdir(parents=True, exist_ok=True)
+    annual_collection = run_name.startswith("full_year_all_parcels_")
     figures = {
-        "01_pipeline": draw_workflow(),
-        "02_pixel_counts": draw_pixel_counts(candidates, timing, selection),
+        "01_pipeline": draw_workflow(annual_collection),
+        "02_pixel_counts": draw_pixel_counts(candidates, timing, selection, annual_collection),
         "03_parcel_splits": draw_split_counts(metrics["split_summary"]),
         "04_training_weights": draw_training_weights(weights),
         "05_test_confusion": draw_confusion(metrics),

@@ -1,76 +1,48 @@
-# Run the prototype
+# Run the workflow
 
-Install [the requirements and local settings](../README.md#setup), select `.venv` as the kernel, and run notebooks from the repository folder. The active collection and analysis run is **`bilinear_expanded`**. Historical runs remain in their own folders.
+For a new clone, follow [fresh-clone Run All](fresh_clone.md): source notebooks install missing packages, create settings and obtain their inputs. A Python 3.12+ kernel and Earth Engine project/sign-in are required. Run cells sequentially. The default collection is **`full_year_all_parcels`**; collection and sign-in are configured for the next Run All, but nothing starts until cells execute.
 
-## Run order
+| Order | Notebook | What it does | Completion output |
+|---|---|---|---|
+| 1 | [Sen4AgriNet](../notebooks/01_sen4agrinet_preparation.ipynb) | Scan every upstream year/tile; extract references and collect annual imagery | Completed source registry |
+| 2 | [FranceCrops](../notebooks/02_francecrops_preparation.ipynb) | Fetch pinned tables and read all declared cabbage/table-potato parcels; preserve upstream roles | Completed source registry |
+| 3 | [CropHarvest](../notebooks/03_cropharvest_preparation.ipynb) | Fetch missing labels, screen references and collect annual imagery | Completed source registry |
+| 4 | [Four-month windows](../notebooks/04_four_month_windows.ipynb) | Audit saved rasters, detect timing and select complete usable windows | Usable counts, exclusions and window handoffs |
+| 5 | [Feature engineering](../notebooks/05_feature_engineering.ipynb) | Prepare interval, shape and combined designs | Feature handoffs |
+| 6 | [Model training](../notebooks/06_model_training.ipynb) | Fit parcel-separated models and evaluate predictions | Splits, models, metrics and figures |
 
-| Order | Notebook | Completion check |
-|---|---|---|
-| 1 | [Sen4AgriNet preparation](../notebooks/01_sen4agrinet_preparation.ipynb) | Save `sen4agrinet_bilinear_expanded.json` |
-| 2 | [FranceCrops preparation](../notebooks/02_francecrops_preparation.ipynb) | Save `francecrops_bilinear_expanded.json` |
-| 3 | [Four-month windows](../notebooks/03_four_month_windows.ipynb) | Inspect usable pixel counts and shortfalls for all crops |
-| 4 | [Feature engineering](../notebooks/04_feature_engineering.ipynb) | Inspect the three designs and formal export status |
-| 5 | [Model training](../notebooks/05_model_training.ipynb) | Save parcel splits, models, predictions and evaluation metrics |
+The source notebooks are set for Run All. Sen4AgriNet performs full reference discovery and extraction before satellite collection. For preparation-only inspection, disable satellite collection; its `retrieve_reference_masks` flag controls reference-only transfers separately. See [full-year collection](full_year_collection.md) for switches, reference requirements, storage paths and restart behavior. Sources can run in separate kernels; authenticate one at a time and keep the archive drive connected. Finish all three before notebook 04.
 
-The two source notebooks may run in separate kernels concurrently. Complete authentication one at a time. Wait for both source notebooks to finish successfully before starting window preparation. Restart downstream kernels and run their cells in order.
+## Important checks
 
-## Source preparation
+- Sen4AgriNet now scans the entire pinned release, not the old subset. Any unscanned patch blocks completion. See [its Run All guide](sen4agrinet.md).
+- `status: disabled` means satellite collection did not run; Sen4AgriNet references and CropHarvest labels have their own retrieval switches. `completed` means all planned annual files exist, not that their pixels passed quality checks.
+- Notebook 04 keeps the same timing and complete-data requirements. It retains all usable pixels without a pilot cap. Missing cross-year dates remain unresolved.
+- Upstream reserved splits stay outside model-development exports. Local exploratory training keeps each parcel in one split and gives each crop equal total training weight.
+- Formal production exports may remain pending independent field identities, timing evidence or development freezes. External-source accuracy is not evidence of Benguet accuracy.
 
-For the existing saved references, leave Sen4AgriNet NetCDF downloading and field rebuilding disabled. Both source notebooks currently enable daily-summary retrieval, satellite downloading and authentication. Missing cached reference files must be resolved before collection.
+## Saved outputs
 
-| Crop | Candidate target | Maximum candidates per source parcel |
-|---|---:|---:|
-| Carrot | 3,400 | 100 |
-| Cabbage | 7,000 | 100 |
-| Potato | 10,000 | 100 |
+Source registries are under `source_handoffs/full_year_all_parcels/`, beside the configured report folder. Analysis is under `analysis/full_year_all_parcels_<source-hash>/`. Inspect:
 
-The source notebooks check candidate capacity before network access, retrieve actual-date daily summaries, apply the timing checks, then download qualified half-month median composites. B5/B11 use bilinear alignment before compositing; quality masks use nearest-neighbor resampling.
+- `source_inputs.json`: exact source contracts.
+- `seasons/automatic_timing_audit.csv`: timing passes and failures.
+- `seasons/cycle_selection_audit.csv`: candidate completeness and selected windows.
+- `seasons/usable_pixel_selection.csv`: unique usable counts per crop.
+- `seasons/features/` and `seasons/estimated_features/`: complete model-development features.
+- `seasons/reserved_upstream_features.csv`: separate upstream holdouts.
+- The printed training output folder: locked parcel split, models and accuracy.
 
-The pilot downloads the available timing-qualified candidates without a 3,000-pixel minimum. Each requested crop must have eligible pixels. All planned intervals for all selected regions must complete before exporting the handoff. These are sampled footprints covered by files, not guaranteed usable feature pixels. Timing and image-quality checks remain unchanged.
-
-Timing-qualified cycles are scheduled independently. Complete in-year cycles remain scheduled when another cycle crosses the request-year boundary. Unsupported cycles are logged with their dates and `adjacent_year_imagery_required` in `download_selection.json`. A region may appear in both scheduled plans and pending-cycle diagnostics. Cross-year windows are not clipped, and adjacent-year downloads are not added automatically.
-
-## Four-month windows and usable pixels
-
-The window notebook requires both source handoffs and rejects version 3 imagery. It audits saved images, assesses supported rises, and chooses the earliest qualified four-month window containing complete pixels per parcel. All fragments of a parcel share its selected date range.
-
-Each usable pixel requires all eight half-month intervals and 64 finite base features. No missing-data filling is applied. After selecting windows, retain up to **500 usable unique pixels per crop** across the two window policies. Report shortages instead of duplicating samples. See [methodology](methodology.md) for exact checks and interpretation.
-
-## Features and training
-
-Feature engineering prepares 72 interval, 120 interval-plus-shape and 48 shape predictors. Formal exports may remain `pending_inputs` while field identities, reviews or development freezes are missing. Leave scientific freeze flags unchanged until their evidence is available.
-
-The default training mode, `existing_parcel_exploratory`, reads complete pixel tables directly from `bilinear_expanded` and computes these designs internally. It does not require a prepared formal feature handoff. It requires all three crops and at least five source parcel groups per crop, then locks a deterministic parcel-separated split before training local 1,000-tree Random Forests.
-
-Validation macro-F1 selects the design before test scoring. Keep test results out of model-development decisions. Production Earth Engine evaluation has separate independent-local-data and freeze requirements; see [training](training.md) and [feature definitions](feature_experiments.md).
-
-## Important files
-
-Paths are relative to the parent of your configured `report_root`, normally `sen4agrinet_work/`.
-
-| Path | Contents |
-|---|---|
-| `source_handoffs/<source>_bilinear_expanded.json` | Acquisition paths and provenance |
-| `analysis/bilinear_expanded/source_inputs.json` | Combined source provenance |
-| `analysis/bilinear_expanded/seasons/automatic_timing_audit.csv` | Timing passes and failures |
-| `analysis/bilinear_expanded/seasons/cycle_selection_audit.csv` | Candidate windows and selected cycles |
-| `analysis/bilinear_expanded/seasons/usable_pixel_selection.csv` | Retained counts and crop shortfalls |
-| `analysis/bilinear_expanded/seasons/features/complete_features.csv` | Selected reference-supported pixel features |
-| `analysis/bilinear_expanded/seasons/estimated_features/complete_features.csv` | Selected qualified estimated-window features |
-| `analysis/bilinear_expanded/seasons/existing_parcel_exploratory_bilinear_equal_crop/` | Locked split, models, predictions, metrics and package |
-
-Imagery stays under each configured imagery root in a separate `bilinear_expanded` folder. Existing verified downloads are reused; missing or damaged files can be retried. Keep exported bundle files together so hash verification succeeds.
+Old pilot results remain in `analysis/bilinear_expanded/`. Set `analysis_collection` to that name consistently across notebooks 04–06 when revisiting them.
 
 ## Common problems
 
 | Symptom | Action |
 |---|---|
-| Certificate verification fails | Restart the kernel and run from the certificate-setup cell before authentication; it loads trusted certificates without disabling HTTPS verification |
-| Required handoff missing | Finish the named source notebook before window processing |
-| Timing-qualified count is too low | Inspect timing rejection reasons and available parcel capacity; add suitable references rather than weakening checks |
-| Few complete usable pixels | Inspect missing intervals, quality losses and cycle-selection audits separately |
-| Formal partition counts are zero | Formal field-registry/review requirements may be pending; this is separate from the local exploratory split |
-| Training says inputs changed | Use a new analysis/output run; do not replace a locked holdout |
-| Earth Engine throttling or temporary failure | Retry using the saved checkpoints; running one source at a time can reduce contention |
-
-A successful prototype demonstrates repeatable data handoffs and saved evaluation. It does not guarantee a target accuracy or establish local Benguet performance.
+| Reference retrieval failed | Fix the displayed network or validation error, then resume Run All; incomplete inputs are not treated as crop absence |
+| Certificate failure | Run the trusted-certificate cell before authentication |
+| Required source handoff missing | Finish the named source collection; partial source sets cannot proceed |
+| Interrupted collection | Restart with the same settings; verified files are reused |
+| Few usable pixels | Examine timing, missing-bin and coverage exclusions separately |
+| Formal partitions are zero | Inspect registry/review requirements; local exploratory splitting is separate |
+| Training input changed | Create a new output run rather than replacing a locked evaluation |

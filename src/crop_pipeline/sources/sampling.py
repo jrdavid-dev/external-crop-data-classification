@@ -235,14 +235,14 @@ def trim_usable_pixels(
     Only external pilot rows should be supplied. Held-out local evaluation data
     are never balanced or selected using their feature quality here.
     """
-    if target_per_crop < 1:
+    if target_per_crop is not None and target_per_crop < 1:
         raise ValueError("Usable-pixel target must be positive.")
     candidates = unique_usable_windows(reference_rows, estimated_rows)
     selected = []
     summaries = []
     for crop in crops:
         crop_rows = [row for row in candidates if row["crop"] == crop]
-        kept_rows = round_robin_fields(crop_rows, target_per_crop, seed)
+        kept_rows = crop_rows if target_per_crop is None else round_robin_fields(crop_rows, target_per_crop, seed)
         selected.extend(kept_rows)
         summaries.append(
             {
@@ -250,9 +250,10 @@ def trim_usable_pixels(
                 "available_usable_pixels": len(crop_rows),
                 "selected_usable_pixels": len(kept_rows),
                 "target_pixels": target_per_crop,
-                "shortfall_pixels": max(0, target_per_crop - len(kept_rows)),
+                "shortfall_pixels": 0 if target_per_crop is None else max(0, target_per_crop - len(kept_rows)),
                 "status": (
-                    "target_met"
+                    "all_usable_retained"
+                    if target_per_crop is None else "target_met"
                     if len(kept_rows) == target_per_crop
                     else "insufficient_usable_pixels"
                 ),

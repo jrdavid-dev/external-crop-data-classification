@@ -57,13 +57,13 @@ def compatible_request(settings, year, cloud_threshold, required_version):
     return True
 
 def quality_check(regions, progress_folder, imagery_folder, field_folder, output_folder,
-                  cloud_threshold=40, minimum_fraction=0.8, year=2020, required_request_version=None):
+                  cloud_threshold=40, minimum_fraction=0.8, year=2020, required_request_version=None, progress_paths=None):
     """Audit all 24 bins, preserving missing/failed records instead of filling."""
     progress_folder, output_folder = Path(progress_folder), Path(output_folder)
     region_map = {item["properties"]["fragment_id"]: item for item in regions}
     # Never silently select one of multiple competing versions.
     compatible = defaultdict(list)
-    for path in sorted(progress_folder.glob("*.json")):
+    for path in sorted(progress_folder.glob("*.json") if progress_paths is None else progress_paths):
         manifest = json.loads(path.read_text(encoding="utf-8"))
         settings = manifest.get("settings", {})
         if manifest["fragment_id"] in region_map and compatible_request(
@@ -144,6 +144,9 @@ def quality_check(regions, progress_folder, imagery_folder, field_folder, output
 
 def composite_timelines(quality_rows, pixel_rows, output_folder):
     """Use index-of-composite-bands, then a median across selected pixels."""
+    if hasattr(pixel_rows, "for_regions"):
+        from crop_pipeline.windows.annual_archive import partitioned_timelines
+        return partitioned_timelines(quality_rows, pixel_rows, output_folder)
     by_bin = defaultdict(list)
     index_rows = []
     for row in pixel_rows:

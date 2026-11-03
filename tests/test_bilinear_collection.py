@@ -141,28 +141,14 @@ class BilinearCollectionTests(unittest.TestCase):
             self.assertEqual(collection.select_timing_plans([plan], flat, folder), [])
             self.assertTrue((Path(folder) / "timing_gate.json").is_file())
 
-    def test_source_notebooks_are_ready_for_collection_and_gate_downloads(self):
-        for name in [
-            "notebooks/01_sen4agrinet_preparation.ipynb",
-            "notebooks/02_francecrops_preparation.ipynb",
-        ]:
-            notebook = json.loads((Path(__file__).parents[1] / name).read_text())
-            source = "\n".join(
-                "".join(cell["source"])
-                for cell in notebook["cells"]
-                if cell["cell_type"] == "code"
-            )
-            self.assertIn("retrieve_daily_summaries = True", source)
-            self.assertIn("download_satellite_imagery = True", source)
+    def test_annual_notebooks_enable_collection_and_defer_timing(self):
+        for name in ["01_sen4agrinet_preparation", "02_francecrops_preparation", "03_cropharvest_preparation"]:
+            notebook = json.loads((Path(__file__).parents[1] / "notebooks" / f"{name}.ipynb").read_text())
+            source = "\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
+            self.assertIn("run_satellite_collection = True", source)
             self.assertIn("authenticate_now = True", source)
-            self.assertLess(
-                source.index("select_timing_plans("),
-                source.index("download_composites(selected_plans)"),
-            )
-            self.assertLess(
-                source.index("retrieve_observed_timelines("),
-                source.index("select_timing_plans("),
-            )
+            self.assertIn("annual.collect_source(", source)
+            self.assertNotIn("select_timing_plans(", source)
         self.assertEqual(
             collection.CANDIDATE_BUDGETS,
             {"carrot": 3400, "cabbage": 7000, "potato": 10000},

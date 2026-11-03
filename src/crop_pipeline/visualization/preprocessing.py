@@ -57,9 +57,15 @@ def choose_examples(windows, retained_rows):
 def load_reference_shapes(source, region):
     """Use actual saved reference geometry; sampled footprints are not parcel outlines."""
     field_folder = Path(source["field_folder"])
+    if source.get("collection") == "full_year_all_parcels":
+        features = json.loads((field_folder / "source_footprints.geojson").read_text())["features"]
+        return [shape(feature["geometry"]) for feature in features
+                if feature["properties"]["partition_group"] == region["properties"]["partition_group"]]
     filename = field_folder / "cabbage_training_parcels.geojson"
     if source["source_name"] == "sen4agrinet":
         filename = field_folder.parent / "download_candidates.geojson"
+    if source["source_name"].startswith("cropharvest_"):
+        filename = field_folder / "cropharvest_parcels.geojson"
     features = json.loads(filename.read_text())["features"]
     identifiers = set(region["properties"]["source_fragments"])
     return [
@@ -80,10 +86,18 @@ def load_context(report_root, run_name):
         (analysis / "timelines" / "observed_timelines.json").read_text()
     )
     contexts = {}
-    for source_name in ("sen4agrinet", "francecrops"):
-        source = json.loads(
-            (base / "source_handoffs" / f"{source_name}_{run_name}.json").read_text()
-        )
+    snapshot_path = analysis / "source_inputs.json"
+    if snapshot_path.exists():
+        sources = json.loads(snapshot_path.read_text())
+    else:
+        sources = [
+            json.loads(
+                (base / "source_handoffs" / f"{name}_{run_name}.json").read_text()
+            )
+            for name in ("sen4agrinet", "francecrops")
+        ]
+    for source in sources:
+        source_name = source["source_name"]
         regions_path = Path(source["field_folder"]) / "sampled_download_regions.geojson"
         regions = {
             region["properties"]["fragment_id"]: region

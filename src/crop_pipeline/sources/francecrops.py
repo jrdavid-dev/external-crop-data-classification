@@ -25,27 +25,27 @@ TABLE_FILES = {
 }
 
 
-def download_reference_tables(destination, revision=DEFAULT_REVISION):
+def download_reference_tables(destination, revision=DEFAULT_REVISION, download_if_missing=True):
     """Fetch labels and footprints only; the large interpolated arrays are unnecessary."""
-    from huggingface_hub import hf_hub_download
-
     if len(revision) != 40 or any(character not in "0123456789abcdef" for character in revision):
         raise ValueError("Pin FranceCrops to a full immutable dataset revision.")
     paths = {}
     for name, filename in TABLE_FILES.items():
         path = Path(destination) / filename
         if not path.is_file():
-            path = Path(
-                hf_hub_download(
-                    repo_id=DATASET_NAME,
-                    repo_type="dataset",
-                    revision=revision,
-                    filename=filename,
-                    local_dir=str(destination),
-                )
-            )
+            path = download_missing_table(path, destination, revision, filename, download_if_missing)
         paths[name] = path
     return paths
+
+
+def download_missing_table(path, destination, revision, filename, download_if_missing):
+    """Keep reference retrieval explicit in offline mode, without requiring a prior cache."""
+    if not download_if_missing:
+        raise FileNotFoundError(f"Missing FranceCrops table: {path}. Enable download_missing_reference_tables.")
+    from huggingface_hub import hf_hub_download
+
+    return Path(hf_hub_download(repo_id=DATASET_NAME, repo_type="dataset", revision=revision,
+                               filename=filename, local_dir=str(destination)))
 
 
 def load_cabbage_parcels(table_paths, revision=DEFAULT_REVISION, audit_path=None):
@@ -192,3 +192,49 @@ def build_parcel_catalog(features, seed=42, inward_buffer_metres=10):
         if previous["partition_group"] != row["partition_group"]:
             conflicting.add(key)
     return [row for key, row in by_location.items() if key not in conflicting]
+
+
+def load_target_parcels(table_paths, revision=DEFAULT_REVISION, audit_path=None, return_audit=False):
+    """Load all declared target parcels, retaining upstream holdout roles in provenance.
+
+    Cabbage and table potato are explicit classes. Absent classes are reported,
+    never substituted with another vegetable. Reserved upstream splits remain
+    reserved and are excluded from model-development inputs downstream.
+    """
+    import pyarrow.parquet as parquet
+
+    class_rows = parquet.read_table(table_paths["class_map"]).to_pylist()
+    target_codes = {"CHU": "cabbage", "PTC": "potato"}
+    classes = {int(row["y"]): (row["class_code"], target_codes[row["class_code"]])
+               for row in class_rows if row["class_code"] in target_codes}
+    if set(value[0] for value in classes.values()) != set(target_codes):
+        raise ValueError("FranceCrops must identify both CHU cabbage and PTC table potato.")
+    labels = parquet.read_table(table_paths["metadata"], filters=[("y", "in", list(classes))]).to_pylist()
+    by_identifier = {str(row["parcel_id"]): row for row in labels}
+    if not labels or len(by_identifier) != len(labels):
+        raise ValueError("Target parcel identifiers are empty or duplicated.")
+    geometry_table = parquet.read_table(table_paths["geolocation"], filters=[("parcel_id", "in", list(by_identifier))])
+    validate_geolocation_crs(geometry_table.schema.metadata)
+    rows = geometry_table.to_pylist()
+    if len(rows) != len(labels) or {str(row["parcel_id"]) for row in rows} != set(by_identifier):
+        raise ValueError("Target parcel geometry join is incomplete or duplicated.")
+    features, exclusions = [], []
+    for row in rows:
+        label = by_identifier[str(row["parcel_id"])]
+        try:
+            features.append(target_parcel_feature(row, label, classes, revision))
+        except ValueError as error:
+            exclusions.append({"parcel_id": str(row["parcel_id"]), "reason": str(error)})
+    audit = {"labeled_parcels": len(labels), "valid_footprints": len(features),
+             "excluded_footprints": exclusions, "unavailable_target_classes": ["carrot"]}
+    if audit_path is not None:
+        save_json(audit_path, audit)
+    return (features, audit) if return_audit else features
+
+
+def target_parcel_feature(row, label, classes, revision):
+    class_code, crop = classes[int(label["y"])]
+    feature = parcel_feature(row, revision, int(label["y"]))
+    feature["properties"].update(crop=crop, source_class_code=class_code,
+        source_split=label["split"], label_evidence=f"FranceCrops {revision}, IGN RPG 2022 declared crop {class_code}")
+    return feature

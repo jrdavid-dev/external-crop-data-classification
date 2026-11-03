@@ -4,14 +4,14 @@ The prototype checks that data can move reliably from selected windows to saved 
 
 ## Current files: exploratory accuracy evaluation
 
-Run [Model Training](../notebooks/05_model_training.ipynb) in a fresh `.venv` kernel with the saved defaults:
+Run [Model Training](../notebooks/06_model_training.ipynb) in a fresh `.venv` kernel with the saved defaults:
 
 ```python
 training_mode = "existing_parcel_exploratory"
-analysis_run_name = "bilinear_expanded"
+# analysis_collection in settings.local.json defaults to full_year_all_parcels
 ```
 
-This mode reads the new run's complete pixel tables and builds features locally. It does not download imagery or contact Earth Engine. Formal feature handoffs may remain pending; they are not required for this mode.
+This mode reads the new run's complete pixel tables and builds features locally. It does not download imagery or contact Earth Engine. All three completed source registries are required to resolve the annual analysis; upstream reserved splits stay outside its development tables. Formal feature handoffs may remain pending; they are not required for this mode.
 
 ### How the data is split
 
@@ -35,7 +35,7 @@ Validation macro-F1 selects the design before test scoring. All designs use the 
 
 ### What gets saved
 
-Outputs are under `analysis/bilinear_expanded/seasons/existing_parcel_exploratory_bilinear_equal_crop/`, relative to the parent of `report_root`.
+Outputs are under the selected `analysis/<collection-and-source-hash>/seasons/` folder, relative to the parent of `report_root`; the notebook prints the exact model folder. Old `bilinear_expanded` results remain separate.
 
 | File | Purpose |
 |---|---|

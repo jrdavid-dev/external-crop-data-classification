@@ -253,7 +253,7 @@ def load_feature_handoff(manifest_path):
     manifest_path = Path(manifest_path)
     if not manifest_path.is_file():
         raise FileNotFoundError(
-            f"Feature handoff missing: {manifest_path}. Run notebooks/04_feature_engineering.ipynb first."
+            f"Feature handoff missing: {manifest_path}. Run notebooks/05_feature_engineering.ipynb first."
         )
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("format_version") != 2 or manifest.get("feature_sets") != feature_sets():

@@ -186,3 +186,66 @@ def save_source_manifest(
     payload["regions_sha256"] = file_sha256(region_path)
     save_json(path, payload)
     return payload
+
+
+def supplementary_handoffs(bundle_path, expected_hash, collection_name):
+    """Validate the entire supplement before changing the selected source pointer."""
+    bundle_path = Path(bundle_path)
+    if file_sha256(bundle_path) != expected_hash:
+        raise ValueError(
+            "Selected CropHarvest bundle changed; register its completed run again."
+        )
+    bundle = json.loads(bundle_path.read_text())
+    if (
+        bundle.get("kind") != "cropharvest_source_bundle"
+        or bundle.get("collection_name") != collection_name
+        or not bundle.get("handoffs")
+    ):
+        raise ValueError(
+            "Supplementary bundle does not match this collection or has no handoffs."
+        )
+    paths = []
+    for record in bundle["handoffs"]:
+        path = Path(record["path"])
+        if file_sha256(path) != record["sha256"]:
+            raise ValueError(
+                "CropHarvest handoff changed after registration; do not reuse stale provenance."
+            )
+        paths.append(path)
+    return paths
+
+
+def resolve_collection(report_root, collection_name):
+    """Follow an explicitly activated, hash-checked supplement into a separate analysis."""
+    from crop_pipeline.sources import annual
+    if collection_name == annual.COLLECTION_NAME:
+        return annual.resolve_collection(report_root)
+    handoff_folder = Path(report_root).parent / "source_handoffs"
+    sources = [
+        handoff_folder / f"{source}_{collection_name}.json"
+        for source in ("sen4agrinet", "francecrops")
+    ]
+    pointer = handoff_folder / f"active_supplement_{collection_name}.json"
+    if not pointer.exists():
+        return sources, collection_name
+    selection = json.loads(pointer.read_text())
+    sources.extend(
+        supplementary_handoffs(selection["path"], selection["sha256"], collection_name)
+    )
+    return sources, f"{collection_name}_cropharvest_{selection['sha256'][:12]}"
+
+
+def activate_supplement(report_root, collection_name, bundle_path):
+    """Select completed supplemental inputs without modifying an existing analysis run."""
+    selection = {
+        "path": str(Path(bundle_path).resolve()),
+        "sha256": file_sha256(bundle_path),
+    }
+    supplementary_handoffs(bundle_path, selection["sha256"], collection_name)
+    pointer = (
+        Path(report_root).parent
+        / "source_handoffs"
+        / f"active_supplement_{collection_name}.json"
+    )
+    save_json(pointer, selection)
+    return pointer
