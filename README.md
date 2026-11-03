@@ -47,6 +47,10 @@ The first two notebooks prepare independent sources. Complete both before prepar
 
 **Sen4AgriNet defaults to reusing saved fields.** NetCDF downloading and field rebuilding stay off. Daily-summary retrieval, satellite downloading, and Earth Engine sign-in are enabled for the next collection run. Capacity is checked before network access. A new user without the saved inventory must obtain the source files and build the inventory first. See [workflow](docs/workflow.md).
 
+## Project folders
+
+Notebooks are in `notebooks/`; shared Python code is in `src/crop_pipeline/`, including the `visualization` helpers. Install the local package with the setup command above before starting a fresh kernel. Settings, datasets and generated results stay in their existing root-level locations; they do not move into the notebook folder.
+
 ## Active prototype run
 
 All five notebooks use `bilinear_expanded`. New outputs stay separate from historical pilot runs. Finish both source handoffs before running the window notebook; it stops if either is missing.
@@ -74,4 +78,4 @@ Run the test suite:
 
 On Windows, use `.\.venv\Scripts\python.exe` instead. Tests verify software behavior; they do not establish crop-label or phenology accuracy.
 
-Code, five workflow notebooks, tests and documentation belong in Git. Raw data, imagery, generated results, credentials, `.venv` and local settings are excluded. Attribute the upstream datasets when using their data; their licenses do not assign a license to this project's code.
+Code, workflow notebooks, tests and documentation belong in Git. Raw data, imagery, generated results, credentials, `.venv` and local settings are excluded. Attribute the upstream datasets when using their data; their licenses do not assign a license to this project's code.

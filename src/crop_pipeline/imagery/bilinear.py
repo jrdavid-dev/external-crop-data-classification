@@ -265,19 +265,20 @@ def download_pixel_counts(plans, crops):
 
 
 def require_download_pixel_budget(plans, crops):
-    """Stop before raster transfer if timing filtering leaves 3,000 or fewer per crop."""
+    """Allow small pilot collections while rejecting crops with no eligible pixels."""
     counts = download_pixel_counts(plans, crops)
-    shortages = {crop: count for crop, count in counts.items() if count <= 3000}
-    if shortages:
+    missing_crops = [crop for crop, count in counts.items() if count <= 0]
+    if missing_crops:
         raise ValueError(
-            f"More timing-qualified reference pixels are needed before downloading: {shortages}. "
-            "Each crop must exceed 3,000 unique sampled pixels. Add reference fields; do not relax timing or quality rules."
+            f"No timing-qualified sampled pixels for: {missing_crops}. "
+            "Each requested crop needs a nonempty download plan."
         )
     return counts
 
 
 def verify_download_completion(plans, summary, crops, report_path):
     """Distinguish transferred sampling footprints from complete, usable feature pixels."""
+    planned_counts = require_download_pixel_budget(plans, crops)
     completed_intervals = {
         (row["region_id"], row["name"])
         for row in summary["results"]
@@ -295,10 +296,11 @@ def verify_download_completion(plans, summary, crops, report_path):
     counts = download_pixel_counts(completed_plans, crops)
     report = {
         "downloaded_sampled_pixels": counts,
-        "minimum_exclusive_per_crop": 3000,
+        "planned_sampled_pixels": planned_counts,
+        "minimum_exclusive_per_crop": 0,
         "status": (
             "complete"
-            if all(count > 3000 for count in counts.values())
+            if len(completed_plans) == len(plans) and counts == planned_counts
             else "insufficient_completed_downloads"
         ),
         "usable_pixels": "not_measured_until_window_quality_checks",
@@ -306,6 +308,6 @@ def verify_download_completion(plans, summary, crops, report_path):
     crop_workflow.save_json(report_path, report)
     if report["status"] != "complete":
         raise ValueError(
-            f"Completed image downloads do not yet cover more than 3,000 sampled pixels per crop: {counts}. Rerun failed downloads or add timing-qualified fields."
+            f"Completed image downloads do not yet cover all planned intervals: {counts} of {planned_counts} sampled pixels. Rerun failed or missing downloads before exporting the handoff."
         )
     return report

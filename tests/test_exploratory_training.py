@@ -99,12 +99,48 @@ class ExploratoryTrainingTests(unittest.TestCase):
             exploratory.parcel_partitions(rows)
 
     def test_bootstrap_weight_scale_preserves_parcel_ratios_and_sample_count(self):
-        rows = [{"field_id": "small", "label_status": "reported"}] + [
-            {"field_id": "large", "label_status": "reported"} for _ in range(4)
+        rows = [
+            {"crop": "carrot", "partition_group": "small", "label_status": "reported"}
+        ] + [
+            {"crop": "carrot", "partition_group": "large", "label_status": "reported"}
+            for _ in range(4)
         ]
         weights = exploratory.normalized_training_weights(rows, {"reported": 0.5})
         self.assertAlmostEqual(weights.sum(), len(rows))
         self.assertAlmostEqual(weights[0], weights[1:].sum())
+
+    def test_crop_totals_and_within_crop_parcel_totals_are_equal(self):
+        rows = [
+            {
+                "crop": crop,
+                "partition_group": f"{crop}_{group}",
+                "label_status": "confirmed" if pixel == 0 else "reported",
+            }
+            for crop, sizes in [
+                ("carrot", [1, 4]),
+                ("cabbage", [3]),
+                ("potato", [1, 2, 5]),
+            ]
+            for group, size in enumerate(sizes)
+            for pixel in range(size)
+        ]
+        weights = exploratory.normalized_training_weights(
+            rows, {"reported": 0.5, "confirmed": 1.0}
+        )
+        self.assertAlmostEqual(weights.sum(), len(rows))
+        for crop in exploratory.CLASSES:
+            crop_total = sum(
+                weight for row, weight in zip(rows, weights) if row["crop"] == crop
+            )
+            self.assertAlmostEqual(crop_total, len(rows) / 3)
+            groups = {row["partition_group"] for row in rows if row["crop"] == crop}
+            for group in groups:
+                group_total = sum(
+                    weight
+                    for row, weight in zip(rows, weights)
+                    if row["partition_group"] == group
+                )
+                self.assertAlmostEqual(group_total, crop_total / len(groups))
 
     def test_saved_inputs_are_locked_and_three_models_use_shared_test_samples(self):
         with tempfile.TemporaryDirectory() as temporary:

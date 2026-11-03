@@ -208,7 +208,7 @@ def prepare_existing_inputs(input_paths, output_folder, previous_split_path=None
             "n_jobs": -1,
         },
         "confidence_weights": {"confirmed": 1.0, "reported": 0.5},
-        "weighting": "source_parcel_confidence_sample_weight",
+        "weighting": "equal_crop_then_equal_source_parcel_confidence_within_parcel_v1",
         "weight_normalization": "mean_one_preserves_relative_weights_and_half_sample_bootstrap",
         "imagery_policy": "saved_complete_feature_tables_resampling_not_inferred",
         "limitations": [
@@ -280,17 +280,34 @@ def evaluate_predictions(rows, predictions):
 
 
 def normalized_training_weights(rows, confidence_weights):
-    """Keep relative parcel weights while preserving the intended bootstrap size.
+    """Give crops equal budgets, then parcels equal shares within each crop.
 
-    Recent sklearn versions compute fractional max_samples from the sum of
-    sample weights. Mean-one weights prevent a small number of parcel budgets
-    from reducing a tree's draw to only a handful of pixels.
+    Confidence only allocates a parcel's share among its pixels. Normalizing to
+    mean one preserves the intended fractional bootstrap sample size.
     """
+    if not rows:
+        raise ValueError("Training rows must not be empty.")
+    groups_by_crop = defaultdict(set)
+    confidence_by_parcel = Counter()
+    pixel_confidences = []
+    for row in rows:
+        group = row["partition_group"]
+        crop = row["crop"]
+        confidence = float(confidence_weights[row["label_status"]])
+        if not np.isfinite(confidence) or confidence <= 0:
+            raise ValueError("Training confidence weights must be finite and positive.")
+        groups_by_crop[crop].add(group)
+        confidence_by_parcel[(crop, group)] += confidence
+        pixel_confidences.append(confidence)
     weights = np.asarray(
-        season_workflow.field_sample_weights(rows, confidence_weights), dtype=float
+        [
+            confidence
+            / confidence_by_parcel[(row["crop"], row["partition_group"])]
+            / len(groups_by_crop[row["crop"]])
+            for row, confidence in zip(rows, pixel_confidences)
+        ],
+        dtype=float,
     )
-    if not np.all(np.isfinite(weights)) or np.any(weights <= 0):
-        raise ValueError("Training confidence weights must be finite and positive.")
     return weights * (len(rows) / weights.sum())
 
 
@@ -305,6 +322,18 @@ def run_experiments(rows, configuration, output_folder):
     training_rows = partitions["train"]
     weights = normalized_training_weights(
         training_rows, configuration["confidence_weights"]
+    )
+    season_workflow.write_records(
+        output_folder / "training_weights.csv",
+        [
+            {
+                "sample_id": row["sample_id"],
+                "crop": row["crop"],
+                "partition_group": row["partition_group"],
+                "weight": float(weight),
+            }
+            for row, weight in zip(training_rows, weights)
+        ],
     )
     fitted, validation_metrics = {}, {}
     for design, columns in feature_experiments.feature_sets().items():

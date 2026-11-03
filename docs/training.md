@@ -25,17 +25,17 @@ Each crop needs at least **five source parcel groups**. This is an execution min
 
 All pixels and fragments from one source parcel stay together. Pixel percentages may differ because parcels have different sizes. Missing identities, conflicting labels and shared locations across groups stop training.
 
-The split uses seed 42 and is saved with input-file hashes before fitting. If inputs change, use a new output folder rather than replacing the locked split.
+The equal-crop rerun reuses the original bilinear run’s parcel split through `previous_split_path`; old models and metrics remain preserved. Splits use seed 42 and are saved with input-file hashes before fitting. If inputs change, use a new output folder rather than replacing the locked split.
 
 ### What gets trained
 
-Three local Random Forests compare the [feature designs](feature_experiments.md). Each uses 1,000 trees, seed 42, square-root feature selection, minimum leaf size 2 and 50% bootstrap samples. Training weights reduce domination by parcels with many pixels.
+Three local Random Forests compare the [feature designs](feature_experiments.md). Each uses 1,000 trees, seed 42, square-root feature selection, minimum leaf size 2 and 50% bootstrap samples. Each crop has equal total training weight, divided equally among its source parcels; confidence distributes each parcel’s share across its pixels. Weights are normalized to mean one for bootstrap sampling.
 
 Validation macro-F1 selects the design before test scoring. All designs use the same test samples. Do not choose a design or tune settings using test scores.
 
 ### What gets saved
 
-Outputs are under `analysis/bilinear_expanded/seasons/existing_parcel_exploratory_bilinear/`, relative to the parent of `report_root`.
+Outputs are under `analysis/bilinear_expanded/seasons/existing_parcel_exploratory_bilinear_equal_crop/`, relative to the parent of `report_root`.
 
 | File | Purpose |
 |---|---|
@@ -43,6 +43,7 @@ Outputs are under `analysis/bilinear_expanded/seasons/existing_parcel_explorator
 | `parcel_split.csv` | Parcel membership in each split |
 | `partitioned_features.csv` | Features with their split assignments |
 | `configuration.json` | Recorded training settings |
+| `training_weights.csv` | Per-sample weights used for fitting |
 | `feature_selection.json` | Validation-based design selection |
 | `experiment_metrics.json` | Scores, crop-level results and confusion matrices |
 | `<design>/model.joblib` | Fitted model and ordered predictors |
@@ -72,3 +73,7 @@ Use `training_mode = "production"` only when the following are ready:
 Use the generated templates for exact evidence fields. Do not mark a decision frozen merely to clear a pending status. Choose settings using development data, then re-export windows and features if their inputs change.
 
 Production uses Earth Engine to compare external-only, local-only and combined training across the three designs: nine models. The shared local test set remains separate from fitting and design selection. Estimated external windows may support exploratory training, but cannot become independent local test truth. Earth Engine's bootstrap weighting differs from local scikit-learn weighting; the two implementations are not identical.
+
+## Pipeline visuals
+
+Section 5 of the training notebook reads saved local exploratory results and displays the workflow, pixel counts through filtering, pixel/parcel splits, training-weight shares, the selected model's confusion matrix, and validation/test comparisons. It can run without fitting models or downloading images. PNG copies are saved under the training output's `visuals/` folder. Required results must exist; production mode skips these local-pilot figures.

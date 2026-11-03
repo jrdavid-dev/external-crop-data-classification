@@ -168,31 +168,55 @@ class BilinearCollectionTests(unittest.TestCase):
             {"carrot": 3400, "cabbage": 7000, "potato": 10000},
         )
 
-    def test_download_budget_counts_regions_once_and_requires_above_3000(self):
+    def test_download_budget_allows_small_pilot_and_counts_regions_once(self):
         plan = {
             "fragment_id": "field",
-            "fragment": {"properties": {"crop": "carrot", "selected_pixels": 3000}},
+            "fragment": {"properties": {"crop": "carrot", "selected_pixels": 1254}},
             "download_intervals": [{"name": str(index)} for index in range(24)],
         }
         self.assertEqual(
-            collection.download_pixel_counts([plan], ["carrot"]), {"carrot": 3000}
+            collection.download_pixel_counts([plan], ["carrot"]), {"carrot": 1254}
         )
-        with self.assertRaisesRegex(ValueError, "timing-qualified"):
-            collection.require_download_pixel_budget([plan], ["carrot"])
-        plan["fragment"]["properties"]["selected_pixels"] = 3001
         self.assertEqual(
             collection.require_download_pixel_budget([plan], ["carrot"]),
-            {"carrot": 3001},
+            {"carrot": 1254},
         )
         with self.assertRaisesRegex(ValueError, "Duplicate"):
             collection.download_pixel_counts([plan, plan], ["carrot"])
         with self.assertRaisesRegex(ValueError, "timing-qualified"):
             collection.require_download_pixel_budget([plan], ["carrot", "potato"])
 
+    def test_all_planned_regions_must_complete_even_when_pixel_total_is_large(self):
+        plans = [
+            {
+                "fragment_id": identifier,
+                "fragment": {
+                    "properties": {"crop": "potato", "selected_pixels": count}
+                },
+                "download_intervals": [{"name": "first"}],
+            }
+            for identifier, count in [("complete_region", 3500), ("failed_region", 139)]
+        ]
+        summary = {
+            "results": [
+                {
+                    "region_id": "complete_region",
+                    "name": "first",
+                    "status": "downloaded",
+                },
+                {"region_id": "failed_region", "name": "first", "status": "failed"},
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "all planned intervals"):
+                collection.verify_download_completion(
+                    plans, summary, ["potato"], Path(temporary) / "completion.json"
+                )
+
     def test_failed_intervals_cannot_count_as_completed_pixel_downloads(self):
         plan = {
             "fragment_id": "field",
-            "fragment": {"properties": {"crop": "carrot", "selected_pixels": 3001}},
+            "fragment": {"properties": {"crop": "carrot", "selected_pixels": 1254}},
             "download_intervals": [{"name": "first"}, {"name": "second"}],
         }
         summary = {
@@ -215,4 +239,4 @@ class BilinearCollectionTests(unittest.TestCase):
             report = collection.verify_download_completion(
                 [plan], summary, ["carrot"], report_path
             )
-            self.assertEqual(report["downloaded_sampled_pixels"], {"carrot": 3001})
+            self.assertEqual(report["downloaded_sampled_pixels"], {"carrot": 1254})

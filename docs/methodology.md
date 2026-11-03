@@ -71,3 +71,7 @@ The timing, cycle-selection and usable-selection audits explain losses at each s
 ## Scope of the prototype
 
 This is a three-class pipeline for known carrot, cabbage and potato parcels. General land-cover mapping needs additional classes. Source/year differences and nearby-parcel similarity can influence accuracy. Independent local evaluation is needed before making claims about Benguet.
+
+## Saved preprocessing examples
+
+Section 15 of the window notebook displays one deterministic example per crop using saved files only: reference/sample locations, post-mask pixel eligibility, daily timelines with the selected four-month window, and eight half-month composites. PNGs and the example-selection manifest are saved in `analysis/bilinear_expanded/preprocessing_visuals/`. Original unmasked scenes are not stored, so the screening view is not a before/after cloud-removal comparison.

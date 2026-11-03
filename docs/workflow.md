@@ -26,7 +26,7 @@ For the existing saved references, leave Sen4AgriNet NetCDF downloading and fiel
 
 The source notebooks check candidate capacity before network access, retrieve actual-date daily summaries, apply the timing checks, then download qualified half-month median composites. B5/B11 use bilinear alignment before compositing; quality masks use nearest-neighbor resampling.
 
-Each crop must retain **more than 3,000 sampled candidate pixels after timing filtering** before raster downloads begin. A second check requires completed files for that coverage before exporting the handoff. This counts sampling footprints covered by files, not guaranteed usable feature pixels. A shortfall stops collection; do not relax quality rules to pass it.
+The pilot downloads the available timing-qualified candidates without a 3,000-pixel minimum. Each requested crop must have eligible pixels. All planned intervals for all selected regions must complete before exporting the handoff. These are sampled footprints covered by files, not guaranteed usable feature pixels. Timing and image-quality checks remain unchanged.
 
 Timing-qualified cycles are scheduled independently. Complete in-year cycles remain scheduled when another cycle crosses the request-year boundary. Unsupported cycles are logged with their dates and `adjacent_year_imagery_required` in `download_selection.json`. A region may appear in both scheduled plans and pending-cycle diagnostics. Cross-year windows are not clipped, and adjacent-year downloads are not added automatically.
 
@@ -57,7 +57,7 @@ Paths are relative to the parent of your configured `report_root`, normally `sen
 | `analysis/bilinear_expanded/seasons/usable_pixel_selection.csv` | Retained counts and crop shortfalls |
 | `analysis/bilinear_expanded/seasons/features/complete_features.csv` | Selected reference-supported pixel features |
 | `analysis/bilinear_expanded/seasons/estimated_features/complete_features.csv` | Selected qualified estimated-window features |
-| `analysis/bilinear_expanded/seasons/existing_parcel_exploratory_bilinear/` | Locked split, models, predictions, metrics and package |
+| `analysis/bilinear_expanded/seasons/existing_parcel_exploratory_bilinear_equal_crop/` | Locked split, models, predictions, metrics and package |
 
 Imagery stays under each configured imagery root in a separate `bilinear_expanded` folder. Existing verified downloads are reused; missing or damaged files can be retried. Keep exported bundle files together so hash verification succeeds.
 
