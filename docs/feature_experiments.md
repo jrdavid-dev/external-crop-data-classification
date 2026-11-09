@@ -1,18 +1,16 @@
-# Feature designs
+# Feature preparation
 
-A feature is a number the model uses to distinguish crops. The window notebook first saves **64 base features per pixel**: five bands and three vegetation indices across eight half-month intervals.
-
-This stage adds SAVI and measurements of how vegetation changes over the window.
+Notebook **04** saves complete four-month windows with **64 base features per pixel**: five spectral bands and NDVI, NDRE and NDMI across eight half-month intervals. Notebook **05** adds SAVI and temporal-shape measurements, then exports the exact feature bundle consumed by **06**.
 
 ## Three designs
 
-| Design | Information used | Features |
-|---|---|---:|
-| `interval_only` | Five bands and four indices in each of eight intervals | 72 |
-| `interval_and_shape` | Interval measurements plus changes over time | 120 |
-| `shape_only` | Changes over time for the four indices | 48 |
+| Design | Information used | Predictors |
+| --- | --- | ---: |
+| `interval_only` | Five bands and four indices in eight intervals | 72 |
+| `shape_only` | Temporal shape of the four indices | 48 |
+| `interval_and_shape` | Both designs combined | 120 |
 
-Bands are B3, B4, B5, B8 and B11. Indices are NDVI, NDRE, NDMI and SAVI. B2 and clear-observation counts are used for inspection, not classification.
+Bands are B3, B4, B5, B8 and B11. Indices are NDVI, NDRE, NDMI and SAVI. B2 and clear-observation counts support inspection, not classification.
 
 SAVI uses scaled reflectance and the recorded soil adjustment `L = 0.5`:
 
@@ -20,39 +18,19 @@ SAVI uses scaled reflectance and the recorded soil adjustment `L = 0.5`:
 SAVI = (1 + L) × (B8 − B4) / (B8 + B4 + L)
 ```
 
-All designs use the same samples and partitions. Missing values or invalid index denominators cause an error; one design does not silently receive a different dataset.
+Each index contributes seven consecutive differences, slopes before and after the first maximum, peak interval, amplitude and trapezoidal integral. Slopes/integrals use actual calendar-bin midpoints. A boundary peak has its unavailable phase slope set to zero with a separate metadata flag. Ties use the first maximum. These describe the measurements, not verified planting or harvesting dates.
 
-## What “shape” means
+## Notebook 05
 
-Each index contributes 12 features:
+1. Select the same collection and analysis mode as notebook 04.
+2. Load its explicit `window_handoff.json`.
+3. Verify inputs, complete values, identities and locked partitions.
+4. Compute the three designs on one common sample set.
+5. Export `feature_handoff.json` with feature rows, recipe and hashed provenance.
+6. Show counts, readiness and the path to use in notebook 06.
 
-| Features | Meaning |
-|---|---|
-| Seven differences | Change between consecutive intervals |
-| Two slopes | Trend before and after the first maximum, in index units per day |
-| Peak interval | First interval containing the maximum, numbered 1–8 |
-| Amplitude | Maximum minus minimum |
-| Integral | Trapezoidal area between the first and last interval midpoints |
+Outputs are immutable, content-keyed artifacts. Changed windows, samples or feature policy create a separate export; earlier files stay intact. Missing values or invalid index denominators stop export rather than silently removing different samples for each design.
 
-Slopes and integrals use actual calendar-bin midpoints. A peak at a boundary has an unavailable phase slope recorded as zero, with a separate metadata flag. Ties use the first maximum. These describe numerical patterns; they do not verify planting or harvest dates.
+`analysis_mode = "pilot"` reports unmet collection budgets without falsely declaring production reviews or settings frozen. `"strict"` requires the adaptive collection targets. Both preserve complete-data and parcel-separation requirements. Formal reviewed/frozen feature bundles remain a separate advanced production path.
 
-## How to run it
-
-Run [Feature Engineering](../notebooks/05_feature_engineering.ipynb) after the window notebook. It resolves the same collection as notebook 04 (`full_year_all_parcels` by default) and exports formal feature bundles inside its source-specific analysis folder.
-
-| Window bundle | Feature bundle |
-|---|---|
-| `training_input/` | `feature_input/` |
-| `exploratory_training_input/` | `exploratory_feature_input/` |
-
-Each feature bundle contains `experiment_features.csv`, `configuration.json`, `coverage.json`, `window_input_provenance.json` and `feature_handoff.json`. Keep these files together for hash verification.
-
-Formal exports require version 4 imagery: bilinear B5/B11 before compositing, with categorical quality masks preserved. Old imagery remains separate.
-
-A formal bundle can be inspected while review/freeze requirements are pending. **Local exploratory training builds these designs directly from complete pixel tables**, so pending formal exports do not block the prototype. See [training](training.md) for the distinction.
-
-## Compare designs fairly
-
-Select the design using validation macro-F1 before test scoring. Ties prefer fewer features, then the design name. Keep all three designs on the same rows and partitions; do not use test scores to change windows or discard samples.
-
-A changed feature recipe requires a new feature export. Changes to imagery, windows or selected pixels require a new window export first. Preserve prior model results in their original run folders.
+Notebook 06 reads these saved predictors directly. It selects the feature design using validation macro-F1 before test scoring; all designs share the same rows and partitions. See [training](training.md) and [workflow](workflow.md).

@@ -36,11 +36,27 @@ These existing scientific rules remain different deliberately; shared headings d
 1. Run the source notebooks. Rerun while jobs are pending; inspect errors before retrying. Submitted cloud jobs continue after Run All returns, but downloading and TIFF creation need a local run.
 2. Existing selections, plans, ledgers and locked partitions remain authoritative. Older batches above 100 are preserved. Notebook layout or summary changes do not replace their plans. New settings apply to new selections; mask repair uses the original configuration and stops if it cannot reproduce it safely.
 3. Once launched batches finish, run **04 Four-month windows**. It can assess partial source coverage, combines completed rounds and reports usable samples and deficits.
-4. Rerun sources for deficient crop/partition combinations, then 04. Continue to **05 Feature engineering → 06 Model training** only when `Targets met: True`.
+4. Rerun sources for deficient crop/partition combinations when more data is wanted. For **05–06**, use the same collection and analysis mode as 04: `pilot` permits unmet collection budgets; `strict` requires `Targets met: True`. Both keep complete-data checks and locked partitions.
 
 Per crop, initial targets are **1,200 training pixels from 60 parcels**, **400 validation pixels from 20 parcels**, and **400 reserved-test pixels from 20 parcels**, with at most 20 retained pixels per parcel. These budgets do not guarantee accuracy.
 
 If Sen4AgriNet runs out of reference candidates, increasing the imagery batch limit will not help. Deliberately increase `reference_target_parcels_per_crop` and, if needed, `reference_scan_max_patches`, then use `download_missing`. Earlier selections/jobs stay intact; an empty selection is retained as an audit record when an expanded pool supplies a supplemental batch.
+
+## Analysis and training: notebooks 04–06
+
+Each notebook uses concise setup, input checks, processing, saved outputs and a final summary. They read local files; no imagery downloads are needed.
+
+| Notebook | Process | Handoff |
+| --- | --- | --- |
+| 04 Four-month windows | Audit imagery, assess timing, select complete windows, report usable counts and deficits | `window_handoff.json` |
+| 05 Feature engineering | Verify window inputs and compute the 72/48/120-predictor designs once | `feature_handoff.json` |
+| 06 Model training | Verify features, train three forests, select on validation, evaluate external holdout | Selected model, recipe, metrics and checksums |
+
+`analysis_mode = "pilot"` is the default. It reports unmet collection targets but requires finite complete windows, at least five usable source parcel groups per crop, and every crop in each locked train/validation/test split. It does not reassign parcels to make a split pass. Strict mode enforces the original budgets; advanced scientific production retains its separate reviewed/frozen-input requirements.
+
+Timing, eight-bin completeness, imagery quality and the 20-pixel-per-parcel cap remain unchanged. Reference-supported and satellite-estimated windows remain distinguishable. All feature designs use the same samples; notebook 06 reads notebook 05’s saved values directly. Validation macro-F1 selects the design before test scoring. Low accuracy does not block a pilot result.
+
+Handoffs and model inputs are content-keyed and hash-verified. Changed inputs create separate artifacts; previous imagery, jobs, partitions and results stay intact. The selected-model package records the preprocessing recipe needed for later Paoay inference. Local mapping and comparison with dated KMZ ground truth are a later stage; existing notebooks 07–10 remain separate experiments.
 
 ## Results and troubleshooting
 
@@ -48,4 +64,4 @@ The final summary lists batch states, reported verified tiles, queued/running/fa
 
 Default annual TIFFs are under `sen4agrinet_work/annual_tifs/<source>/<year>/<campaign>/round_<number>/`. Each tile stores 24 half-month periods × seven measurements. Sampling masks and Parquet transport caches are separate. Use the printed paths for the exact run.
 
-For missing references, check the mode and paths. For errors, inspect the detail log and traceback. Keep quality thresholds unchanged when usable yield is low. Revised windows can reuse annual histories; cross-year windows need explicit adjacent-year imagery.
+For missing references, check the mode and paths. For errors, inspect the detail log and traceback. Keep quality thresholds unchanged when usable yield is low. Use pilot mode for a smaller qualifying experiment; do not fabricate missing values, move locked parcels or mark production reviews complete. Revised windows can reuse annual histories; cross-year windows need explicit adjacent-year imagery.

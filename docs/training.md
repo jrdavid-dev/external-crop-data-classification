@@ -1,79 +1,41 @@
 # Training and evaluation
 
-The prototype checks that data can move reliably from selected windows to saved models and evaluation. Better data can be added later. Accuracy is useful for diagnosing the pipeline; it is not yet evidence of performance in Benguet.
+Run **04 Four-month windows → 05 Feature engineering → 06 Model training**. All three use the same `analysis_collection` (`adaptive_training` by default) and explicit `analysis_mode`.
 
-## Current files: exploratory accuracy evaluation
+## Pilot and strict modes
 
-Run [Model Training](../notebooks/06_model_training.ipynb) in a fresh `.venv` kernel with the saved defaults:
+- **`analysis_mode = "pilot"` (default):** train with qualifying available data while reporting unmet collection budgets. Low accuracy does not block completion.
+- **`analysis_mode = "strict"`:** require the original adaptive pixel and parcel targets before feature export or training.
 
-```python
-training_mode = "existing_parcel_exploratory"
-# analysis_collection in settings.local.json defaults to full_year_all_parcels
-```
+Both modes keep the same timing, imagery-quality, complete-data and partition checks. Every crop needs at least **five usable source parcel groups**, and carrot, cabbage and potato must each be present in training, validation and test. This is an execution minimum, not evidence that the sample is sufficient for a final study.
 
-This mode reads the new run's complete pixel tables and builds features locally. It does not download imagery or contact Earth Engine. All three completed source registries are required to resolve the annual analysis; upstream reserved splits stay outside its development tables. Formal feature handoffs may remain pending; they are not required for this mode.
+Whole parcels retain their locked partition. Missing identities, conflicting crop labels, shared locations across groups and incomplete/nonfinite features stop the workflow. Do not move reserved parcels to make a split pass. Pending launched source batches must finish before analysis.
 
-### How the data is split
+## Notebook 06
 
-Each crop needs at least **five source parcel groups**. This is an execution minimum, not a recommendation for a final study.
+1. Load the exact feature handoff exported by notebook 05.
+2. Verify hashes, predictor schemas, sample identities and locked partitions.
+3. Fit the three existing local Random Forest feature experiments.
+4. Select the design using **validation macro-F1**, before test scoring.
+5. Save held-out predictions, metrics and models.
+6. Package the selected model and input recipe for later Paoay testing.
 
-| Split | Approximate share of parcel groups | Purpose |
-|---|---:|---|
-| Training | 60% | Fit the models |
-| Validation | 20% | Choose the feature design |
-| Test | 20% | Evaluate held-out predictions |
+Features are computed once in notebook 05, not recomputed differently in training. All designs use the same samples and partitions. Forests retain 1,000 trees, seed 42, square-root feature selection, minimum leaf size 2 and 50% bootstrap samples. Each crop receives equal total training weight, shared equally among its source parcels; confidence allocates each parcel's share across pixels.
 
-All pixels and fragments from one source parcel stay together. Pixel percentages may differ because parcels have different sizes. Missing identities, conflicting labels and shared locations across groups stop training.
+Report accuracy, macro-F1, crop-level precision/recall/F1, confusion matrices and parcel counts together. Test results describe held-out external source labels, not independently measured Paoay accuracy. Do not use test scores to change windows, discard samples or switch feature designs.
 
-The equal-crop rerun reuses the original bilinear run’s parcel split through `previous_split_path`; old models and metrics remain preserved. Splits use seed 42 and are saved with input-file hashes before fitting. If inputs change, use a new output folder rather than replacing the locked split.
+## Saved results
 
-### What gets trained
+The notebooks print their exact content-keyed output folders. Changed inputs create a separate artifact; existing data, locked partitions and earlier models are preserved.
 
-Three local Random Forests compare the [feature designs](feature_experiments.md). Each uses 1,000 trees, seed 42, square-root feature selection, minimum leaf size 2 and 50% bootstrap samples. Each crop has equal total training weight, divided equally among its source parcels; confidence distributes each parcel’s share across its pixels. Weights are normalized to mean one for bootstrap sampling.
+Completed local runs are reused only after their experiment receipt and artifact checksums verify. Incomplete or changed runs stop instead of overwriting results; choose a new `training_run_name` for a separate attempt.
 
-Validation macro-F1 selects the design before test scoring. All designs use the same test samples. Do not choose a design or tune settings using test scores.
+Saved results include feature provenance, parcel assignments, configuration, training weights, validation/test predictions, feature selection, model files, metrics and figures. The selected-model package contains the model, ordered predictors, crop codes, imagery/scaling rules, four-month window and feature recipe, source references and checksums. It is a **pilot model for evaluation**, not a claim of local accuracy. Only load trusted joblib files.
 
-### What gets saved
+The next project stage is to prepare matching four-month Paoay imagery, classify it with this fixed model, and compare predictions with dated local ground truth. That mapping/evaluation stage is separate from notebooks 01–06; the existing experimental notebooks 07–10 are not their automatic continuation.
 
-Outputs are under the selected `analysis/<collection-and-source-hash>/seasons/` folder, relative to the parent of `report_root`; the notebook prints the exact model folder. Old `bilinear_expanded` results remain separate.
+## Separate production path
 
-| File | Purpose |
-|---|---|
-| `exploratory_input.json` | Input hashes and locked group assignments |
-| `parcel_split.csv` | Parcel membership in each split |
-| `partitioned_features.csv` | Features with their split assignments |
-| `configuration.json` | Recorded training settings |
-| `training_weights.csv` | Per-sample weights used for fitting |
-| `feature_selection.json` | Validation-based design selection |
-| `experiment_metrics.json` | Scores, crop-level results and confusion matrices |
-| `<design>/model.joblib` | Fitted model and ordered predictors |
-| `<design>/*_predictions.csv` | Validation and test predictions |
-| `training_package/` | File inventory and provenance for the run |
+Strict collection budgets are not the same as scientific production readiness. The advanced production path retains reviewed field identities, supported local crop-cycle evidence, frozen window/feature decisions, verified formal bundles and independent local test fields. Its Earth Engine comparisons remain separate from pilot models.
 
-Read accuracy, macro-F1, per-crop precision/recall and parcel counts together. Nearby parcels can remain similar despite separate identities. Cabbage also comes from a different source/year, which can influence scores. These are external-source results, not independent local accuracy.
-
-## Local data and field partitions
-
-This section applies to the later **production** study. Source notebooks do not automatically collect or label local evaluation data.
-
-Prepare local observations with the same imagery and feature rules. Before the window notebook's field-partition step, add the local reference-supported feature rows once and record their input paths in the export provenance.
-
-Complete `seasons/review/field_registry.csv` using the generated template. Keep every fragment, season and pixel of the same reviewed field in one partition. Sources are `external` or `local`; partitions are `train`, `validation` or `test`. Independent local test fields require confirmed crop labels and reference-supported windows.
-
-## Production requirements
-
-Use `training_mode = "production"` only when the following are ready:
-
-1. Reviewed field identities and independent local test labels.
-2. Supported crop-cycle evidence in `season_reviews.csv` for reference-supported windows.
-3. A frozen window configuration with recorded development evidence.
-4. A frozen feature recipe and its development evidence.
-5. Hash-verified feature bundles and all configured crops in the required splits.
-
-Use the generated templates for exact evidence fields. Do not mark a decision frozen merely to clear a pending status. Choose settings using development data, then re-export windows and features if their inputs change.
-
-Production uses Earth Engine to compare external-only, local-only and combined training across the three designs: nine models. The shared local test set remains separate from fitting and design selection. Estimated external windows may support exploratory training, but cannot become independent local test truth. Earth Engine's bootstrap weighting differs from local scikit-learn weighting; the two implementations are not identical.
-
-## Pipeline visuals
-
-Section 5 of the training notebook reads saved local exploratory results and displays the workflow, pixel counts through filtering, pixel/parcel splits, training-weight shares, the selected model's confusion matrix, and validation/test comparisons. It can run without fitting models or downloading images. PNG copies are saved under the training output's `visuals/` folder. Required results must exist; production mode skips these local-pilot figures.
+Do not mark reviews or settings frozen merely to clear a pending status. Production compares external-only, local-only and combined training on a shared independent local test set; local scikit-learn and Earth Engine bagging are not identical.

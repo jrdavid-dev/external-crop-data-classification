@@ -221,43 +221,34 @@ class FeatureHandoffTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "bilinear"):
                 features.export_feature_handoff(source, Path(temporary) / "rejected")
 
-    def test_feature_and_training_notebooks_run_with_a_fresh_kernel_handoff(self):
+    def test_pending_formal_bundle_still_stops_production_training(self):
+        from contextlib import chdir
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as temporary:
-            feature_namespace = {}
-            notebook = json.loads((root / "notebooks/05_feature_engineering.ipynb").read_text())
+            folder = Path(temporary)
+            report = folder / "reports/inventory"
+            season_folder = report.parent / "analysis/fixture/seasons"
+            handoff = export_fixture(folder / "formal", frozen=False)
+            destination = season_folder / "feature_input"
+            shutil.copytree(handoff.parent, destination)
+            (folder / "settings.local.json").write_text(json.dumps({"report_root": str(report)}))
+            notebook = json.loads((root / "notebooks/06_model_training.ipynb").read_text())
             cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
-            from unittest.mock import patch
-            with patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")):
-                exec("".join(cells[0]["source"]), feature_namespace)
-            season_folder = Path(temporary)
-            rows, configuration = experiment_fixture()
-            for name in ("training_input", "exploratory_training_input"):
-                season_workflow.export_training_handoff(
-                    season_folder / name,
-                    rows,
-                    configuration,
-                    {"imagery_request_version": REQUEST_VERSION, "resampling": RESAMPLING_POLICY},
-                )
-            feature_namespace["season_folder"] = season_folder
-            for cell in cells[1:]:
-                exec("".join(cell["source"]), feature_namespace)
-            handoff = feature_namespace["feature_handoffs"]["feature_input"]
-            training_namespace = {}
-            training_notebook = json.loads((root / "notebooks/06_model_training.ipynb").read_text())
-            training_cells = [
-                cell for cell in training_notebook["cells"] if cell["cell_type"] == "code"
-            ]
-            with patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")):
-                exec("".join(training_cells[0]["source"]), training_namespace)
-            training_namespace["training_mode"] = "production"
-            training_namespace["handoff_path"] = handoff
-            for cell in training_cells[1:]:
-                exec("".join(cell["source"]), training_namespace)
-            self.assertEqual(
-                training_namespace["training_coverage"]["training_status"], "pending_inputs"
-            )
-            self.assertFalse(training_namespace["comparison_metrics"])
+            namespace = {}
+            with (
+                chdir(folder),
+                patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")),
+                patch("crop_pipeline.training.exploratory.run_experiments", side_effect=AssertionError("No pilot fit")),
+                patch("crop_pipeline.training.earth_engine.train_feature_experiments", side_effect=AssertionError("No production fit")),
+            ):
+                exec("".join(cells[0]["source"]), namespace)
+                namespace["training_mode"] = "production"
+                namespace["show_figures"] = False
+                for cell in cells[1:]:
+                    exec("".join(cell["source"]), namespace)
+            self.assertEqual(namespace["training_coverage"]["training_status"], "pending_inputs")
+            self.assertFalse(namespace["comparison_metrics"])
+            self.assertFalse(namespace["selected_model_manifest"])
 
 
 class ExperimentTrainingTests(unittest.TestCase):

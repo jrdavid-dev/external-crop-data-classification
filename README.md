@@ -10,7 +10,7 @@ Initial targets **per crop**, after quality filtering:
 | Validation | 400 | 20 |
 | Reserved test | 400 | 20 |
 
-Retain at most 20 pixels per parcel. These are sampling budgets, not a guarantee of accuracy. Keep whole parcels in one partition and assess external-to-local transfer separately.
+Retain at most 20 pixels per parcel. These are collection budgets, not a guarantee of accuracy. The default **pilot** analysis can train with qualifying available data while reporting unmet budgets; **strict** analysis requires the targets. Both preserve quality checks and locked parcel partitions.
 
 ## Setup
 
@@ -31,10 +31,12 @@ On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 
 1. **01 Sen4AgriNet, 02 FranceCrops, 03 CropHarvest:** notebook 01 targets up to 100 carrot and 100 potato candidates per round from a capped reference subset; notebook 02 targets up to 100 cabbage and 100 potato candidates per round; notebook 03 targets up to 100 eligible parcels per available crop per round. Existing selections and submitted jobs are preserved. Rerun the same notebook to collect its pending jobs.
 2. **04 Four-month windows:** combine completed batches, run the existing timing/quality checks, retain balanced usable samples, and save deficits.
-3. If targets are unmet, repeat **01–03 → 04**. Previously selected parcels and locked partitions are preserved. Only deficit crop/partition combinations get new candidates.
-4. When targets are met, run **05 Feature engineering → 06 Model training**. Adaptive training remains blocked until the targets are satisfied.
+3. If more data is needed, repeat **01–03 → 04** for deficient crop/partition combinations. Existing selections, imagery, jobs and locked partitions remain preserved.
+4. Run **05 Feature engineering → 06 Model training** using the same collection and `analysis_mode = "pilot"` (default) or `"strict"`. Notebook 05 consumes 04’s saved window handoff; 06 consumes 05’s exact feature bundle and exports the validation-selected model with its input recipe. Pilot mode permits unmet budgets, but requires complete inputs, at least five usable parcel groups per crop, and every crop in each locked split.
 
 FranceCrops contributes cabbage/table potato, not carrots. Sources with no candidates for remaining deficits are skipped explicitly. Candidate batches are not expected to have a guaranteed usable yield.
+
+The intended next stage is independent testing in Paoay, Atok, Benguet: prepare matching four-month imagery, classify with the fixed model, and compare with dated local ground truth. Existing notebooks 07–10 are separate experiments, not the automatic continuation of 01–06. Low pilot accuracy is a reportable result, not a reason to relax quality checks.
 
 ## Annual TIFF folder
 

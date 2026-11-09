@@ -282,3 +282,96 @@ def load_feature_handoff(manifest_path):
     ):
         raise ValueError("Feature rows no longer match the exported sample identities.")
     return rows, configuration, coverage, manifest
+
+
+def export_pilot_feature_handoff(window_handoff, output_root, policy=None):
+    """Enhance one verified window handoff without promoting pilot reviews to frozen."""
+    from crop_pipeline import analysis_workflow
+
+    rows, configuration, coverage, window_manifest = analysis_workflow.load_window_handoff(window_handoff)
+    policy = dict(FEATURE_POLICY if policy is None else policy)
+    validate_policy(policy)
+    identity = {
+        "window_manifest_sha256": season_workflow.file_sha256(window_handoff),
+        "implementation_sha256": season_workflow.file_sha256(Path(__file__)),
+        "feature_policy": policy,
+        "feature_sets": feature_sets(),
+    }
+    folder = Path(output_root) / season_workflow.record_fingerprint(identity)[:16]
+    manifest_path = folder / "feature_handoff.json"
+    if folder.exists():
+        if not manifest_path.is_file():
+            raise ValueError("Incomplete existing feature export; preserve it and choose another output root.")
+        load_pilot_feature_handoff(manifest_path)
+        return manifest_path
+    enhanced = sorted(enhance_rows(rows, policy), key=lambda row: row["sample_id"])
+    configuration = {
+        **configuration, "feature_policy": policy, "feature_policy_frozen": False,
+        "frozen": False, "training_backend": "scikit_learn",
+    }
+    folder.mkdir(parents=True)
+    season_workflow.write_records(folder / "experiment_features.csv", enhanced)
+    save_json(folder / "configuration.json", configuration)
+    save_json(folder / "coverage.json", coverage)
+    save_json(folder / "window_input_provenance.json", {
+        "window_handoff": str(Path(window_handoff).resolve()),
+        "window_manifest_sha256": identity["window_manifest_sha256"],
+        "window_manifest": window_manifest,
+    })
+    filenames = ("experiment_features.csv", "configuration.json", "coverage.json", "window_input_provenance.json")
+    manifest = {
+        "format_version": 1, "kind": "local_parcel_feature_experiments",
+        "status": "prepared", "analysis_mode": configuration["analysis_mode"],
+        "row_count": len(enhanced), "feature_sets": feature_sets(), "feature_policy": policy,
+        "sample_fingerprint": season_workflow.record_fingerprint([row["sample_id"] for row in enhanced]),
+        "partition_fingerprint": season_workflow.record_fingerprint(
+            [[row["sample_id"], row["partition_group"], row["partition"]] for row in enhanced]),
+        "identity": identity,
+        "files": {name: {"sha256": season_workflow.file_sha256(folder / name)} for name in filenames},
+    }
+    save_json(manifest_path, manifest)
+    load_pilot_feature_handoff(manifest_path)
+    return manifest_path
+
+
+def load_pilot_feature_handoff(manifest_path):
+    """Verify local feature data, predictors and partitions without recomputing features."""
+    manifest_path = Path(manifest_path)
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Feature handoff missing: {manifest_path}. Run notebook 05 first.")
+    manifest = json.loads(manifest_path.read_text())
+    expected = {"experiment_features.csv", "configuration.json", "coverage.json", "window_input_provenance.json"}
+    if (manifest.get("kind") != "local_parcel_feature_experiments" or manifest.get("format_version") != 1
+            or manifest.get("status") != "prepared" or manifest.get("feature_sets") != feature_sets()
+            or set(manifest.get("files", {})) != expected):
+        raise ValueError("Unsupported local feature handoff or predictor schema.")
+    for name, record in manifest["files"].items():
+        if season_workflow.file_sha256(manifest_path.parent / name) != record["sha256"]:
+            raise ValueError(f"Feature input changed: {name}; preserve it and export a new bundle.")
+    configuration = json.loads((manifest_path.parent / "configuration.json").read_text())
+    coverage = json.loads((manifest_path.parent / "coverage.json").read_text())
+    policy = configuration.get("feature_policy", {})
+    validate_policy(policy)
+    if policy != manifest.get("feature_policy"):
+        raise ValueError("Feature recipe differs between configuration and manifest.")
+    if coverage.get("imagery_request_version") != REQUEST_VERSION or coverage.get("resampling") != RESAMPLING_POLICY:
+        raise ValueError("Local feature inputs require the recorded bilinear imagery contract.")
+    if configuration.get("analysis_mode") not in {"pilot", "strict"} or configuration["analysis_mode"] != manifest.get("analysis_mode"):
+        raise ValueError("Feature analysis mode differs between configuration and manifest.")
+    from crop_pipeline import analysis_workflow
+    analysis_workflow.validate_coverage(coverage, configuration["analysis_mode"])
+    rows = season_workflow.read_table(manifest_path.parent / "experiment_features.csv")
+    if any(row.get("partition") not in {"train", "validation", "test"} for row in rows):
+        raise ValueError("Every feature row must retain a known locked partition.")
+    ids = [row["sample_id"] for row in rows]
+    if (not rows or len(rows) != manifest["row_count"] or len(set(ids)) != len(ids)
+            or season_workflow.record_fingerprint(ids) != manifest["sample_fingerprint"]):
+        raise ValueError("Feature sample identities differ from the exported rows.")
+    if any(sample_identifier(row) != row["sample_id"] for row in rows):
+        raise ValueError("Feature sample identity no longer matches its window and location.")
+    if season_workflow.record_fingerprint([[row["sample_id"], row["partition_group"], row["partition"]] for row in rows]) != manifest["partition_fingerprint"]:
+        raise ValueError("Locked feature partitions changed.")
+    for row in rows:
+        for column in feature_sets()["interval_and_shape"]:
+            finite_value(row, column)
+    return rows, configuration, coverage, manifest

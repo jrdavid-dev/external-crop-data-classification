@@ -7,7 +7,7 @@ Use a writable Python 3.12+ notebook kernel, internet access and an Earth Engine
 3. **Restart Kernel → Run All.** Setup installs missing dependencies and creates ignored `settings.local.json` if absent. Existing settings are preserved. Enter your Earth Engine-enabled project ID and complete sign-in when prompted.
 4. Let one notebook finish environment setup before starting another. Use separate kernels for concurrent source collections and authenticate one at a time.
 5. Rerun pending collections to retrieve saved cloud results and create annual TIFFs. Check the final summary for errors and the next action.
-6. Once launched batches finish, run **04**. Repeat relevant sources → 04 for measured deficits; continue to **05–06** only when targets are met.
+6. Once launched batches finish, run **04**. Repeat relevant sources → 04 for measured deficits; continue to **05–06** when pilot inputs are ready. Strict mode requires all collection targets.
 
 All three notebooks use the same six sections and a shared **100 candidate parcels per available crop per round** limit. Sen4AgriNet supplies carrot/potato, FranceCrops cabbage/table potato, and CropHarvest whichever target crops pass its checks. Candidate limits do not guarantee usable yield or runtime.
 

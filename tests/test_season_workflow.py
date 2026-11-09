@@ -393,7 +393,7 @@ class PartitionAndModelTests(unittest.TestCase):
             json.loads((Path(folder) / "run_manifest.json").read_text())
 
 
-class NotebookIntegrationTests(unittest.TestCase):
+class LegacyNotebookIntegrationTests(unittest.TestCase):
     def test_draft_preprocessing_exports_estimates_without_accepting_reference_seasons(self):
         candidate, _, region, configuration = reviewed_fixture()
         values = [.1, .1, .1, .15, .3, .5, .7, .7, .6, .4, .2]
@@ -404,7 +404,7 @@ class NotebookIntegrationTests(unittest.TestCase):
         candidate = crop_workflow.detect_greenup(observations)[0]
         configuration.update(frozen=False, development_evidence="")
         _, quality_rows, pixel_rows = feature_fixture()
-        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/04_four_month_windows.ipynb"
+        notebook_path = Path(__file__).resolve().parents[1] / "Crop_Four_Month_Windows.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         review_start = next(index for index, cell in enumerate(notebook["cells"])
                             if "".join(cell["source"]).startswith("## 9."))
@@ -421,7 +421,7 @@ class NotebookIntegrationTests(unittest.TestCase):
                          "detector_settings": configuration["detector_parameters"],
                          "pixel_rows": pixel_rows, "quality_rows": quality_rows, "detector_rows": observations}
             for cell in executable_cells:
-                exec("".join(cell["source"]), namespace)
+                exec(legacy_source(cell), namespace)
             self.assertFalse(namespace["accepted_seasons"])
             self.assertEqual(len(namespace["estimated_windows"]), 1)
             self.assertEqual(len(namespace["estimated_feature_rows"]), 2)
@@ -445,7 +445,7 @@ class NotebookIntegrationTests(unittest.TestCase):
             self.assertFalse((Path(folder) / "models").exists())
 
     def test_preprocessing_exports_data_and_fresh_training_kernel_fits_six_models(self):
-        notebook_path = Path(__file__).resolve().parents[1] / "notebooks/04_four_month_windows.ipynb"
+        notebook_path = Path(__file__).resolve().parents[1] / "Crop_Four_Month_Windows.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         review_start = next(index for index, cell in enumerate(notebook["cells"])
                             if "".join(cell["source"]).startswith("## 9."))
@@ -481,7 +481,7 @@ class NotebookIntegrationTests(unittest.TestCase):
                          "detector_settings": configuration["detector_parameters"],
                          "pixel_rows": pixel_rows, "quality_rows": quality_rows, "detector_rows": []}
             for cell in executable_cells:
-                exec("".join(cell["source"]), namespace)
+                exec(legacy_source(cell), namespace)
             self.assertEqual(len(namespace["accepted_seasons"]), 6)
             self.assertEqual(len(namespace["feature_rows"]), 6)
             self.assertNotIn("comparison_metrics", namespace)
@@ -504,19 +504,38 @@ class NotebookIntegrationTests(unittest.TestCase):
 
 def execute_training_notebook(handoff_path):
     """Use a separate namespace to catch dependencies on preprocessing variables."""
-    notebook_path = Path(__file__).resolve().parents[1] / "notebooks/06_model_training.ipynb"
+    notebook_path = Path(__file__).resolve().parents[1] / "Crop_Model_Training.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
     executable_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
     namespace = {}
     from unittest.mock import patch
     with patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")):
-        exec("".join(executable_cells[0]["source"]), namespace)
+        exec(legacy_source(executable_cells[0]), namespace)
     # The settings cell explicitly supports choosing a different input bundle.
     namespace.update(handoff_path=handoff_path, training_output_folder=handoff_path.parent.parent,
                      allow_legacy_band_comparison=True, training_mode="production")
     for cell in executable_cells[1:]:
-        exec("".join(cell["source"]), namespace)
+        exec(legacy_source(cell), namespace)
     return namespace
+
+def legacy_source(cell):
+    """Historical root notebooks predate the package move; adapt import names only."""
+    source = "".join(cell["source"])
+    modules = {
+        "season_workflow": "crop_pipeline.windows.seasons",
+        "pilot_sampling": "crop_pipeline.sources.sampling",
+        "timing_quality": "crop_pipeline.windows.timing_quality",
+        "cycle_windows": "crop_pipeline.windows.cycle_windows",
+        "feature_experiments": "crop_pipeline.features.experiments",
+        "earth_engine_training": "crop_pipeline.training.earth_engine",
+        "exploratory_training": "crop_pipeline.training.exploratory",
+        "pipeline_visuals": "crop_pipeline.visualization.pipeline",
+        "preprocessing_visuals": "crop_pipeline.visualization.preprocessing",
+    }
+    for alias, module in modules.items():
+        source = source.replace(f"import {alias}\n", f"import {module} as {alias}\n")
+    return source
+
 
 
 class TrainingHandoffTests(unittest.TestCase):

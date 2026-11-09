@@ -16,7 +16,7 @@ The default `adaptive_training` workflow collects annual histories for selected 
 2. Keep the laptop on until Run All returns normally. Inspect reported job states and errors. Submitted cloud jobs can continue while the laptop is off.
 3. Rerun the same notebook to collect existing jobs and create local annual TIFFs. Pending runs reuse selections and checkpoints. All source notebooks resume original plans and preserve earlier selections while filling their round limit.
 4. Once launched batches finish, run **04 Four-month windows**. It combines completed rounds, applies timing and quality checks, and reports usable pixels, parcels and deficits. Partial source coverage is allowed; outstanding launched batches must finish first.
-5. Rerun relevant source notebooks to fill measured crop/partition deficits, then run 04 again. Continue to **05–06** only when `Targets met: True`.
+5. Rerun relevant source notebooks to fill measured crop/partition deficits, then run 04 again. Continue to **05–06** when notebook 04 exports a prepared pilot handoff. Pilot mode reports unmet budgets; strict mode requires `Targets met: True`.
 
 All source notebooks use the same 100-per-crop round limit. Existing selections count toward it; older saved batches above 100 remain intact and are resumed without adding candidates to that crop. FranceCrops has no carrots. A source with no candidates for the remaining deficits is skipped. Candidate limits do not guarantee usable yield, runtime or completion overnight.
 

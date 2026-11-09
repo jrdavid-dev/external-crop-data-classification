@@ -311,7 +311,7 @@ def normalized_training_weights(rows, confidence_weights):
     return weights * (len(rows) / weights.sum())
 
 
-def run_experiments(rows, configuration, output_folder):
+def run_experiments(rows, configuration, output_folder, reuse_completed=False):
     """Select on validation before evaluating any design on the same held-out parcels."""
     output_folder = Path(output_folder)
     partitions = {
@@ -319,6 +319,32 @@ def run_experiments(rows, configuration, output_folder):
         for partition in ("train", "validation", "test")
     }
     assert_partition_separation(partitions)
+    receipt_path = output_folder / "experiment_receipt.json"
+    run_identity = {
+        "samples": season_workflow.record_fingerprint(rows),
+        "configuration": season_workflow.record_fingerprint(configuration),
+    }
+    if reuse_completed:
+        if receipt_path.exists():
+            receipt = json.loads(receipt_path.read_text())
+            if receipt.get("identity") != run_identity:
+                raise ValueError("Saved experiment inputs differ; preserve this run and choose a new training_run_name")
+            expected = {"experiment_metrics.json", "feature_selection.json", "training_weights.csv"}
+            for design in feature_experiments.feature_sets():
+                expected.update(f"{design}/{name}" for name in ("model.joblib", "validation_predictions.csv", "test_predictions.csv"))
+            if set(receipt.get("files", {})) != expected:
+                raise ValueError("Saved experiment receipt is incomplete; existing results were preserved")
+            for name, record in receipt["files"].items():
+                path = output_folder / name
+                if not path.is_file() or season_workflow.file_sha256(path) != record["sha256"]:
+                    raise ValueError("Saved experiment artifacts changed; existing results were preserved")
+            metrics = json.loads((output_folder / "experiment_metrics.json").read_text())
+            selections = json.loads((output_folder / "feature_selection.json").read_text())
+            return metrics, selections
+        if (output_folder / "experiment_metrics.json").exists() or any(
+            (output_folder / design).exists() for design in feature_experiments.feature_sets()
+        ):
+            raise ValueError("Incomplete or unverified training results exist; preserve them and choose a new training_run_name")
     training_rows = partitions["train"]
     weights = normalized_training_weights(
         training_rows, configuration["confidence_weights"]
@@ -377,12 +403,25 @@ def run_experiments(rows, configuration, output_folder):
         "validation": validation_metrics,
         "test": test_metrics,
         "feature_selection": selections,
+        "model_artifacts": {
+            design: {
+                "sha256": season_workflow.file_sha256(output_folder / design / "model.joblib"),
+                "feature_columns": list(columns),
+            }
+            for design, (_, columns) in fitted.items()
+        },
         "shared_test_sample_fingerprint": season_workflow.record_fingerprint(
             [row["sample_id"] for row in partitions["test"]]
         ),
         "limitations": configuration["limitations"],
     }
     save_json(output_folder / "experiment_metrics.json", results)
+    if reuse_completed:
+        names = ["experiment_metrics.json", "feature_selection.json", "training_weights.csv"]
+        names.extend(f"{design}/{name}" for design in feature_experiments.feature_sets()
+                     for name in ("model.joblib", "validation_predictions.csv", "test_predictions.csv"))
+        save_json(receipt_path, {"identity": run_identity,
+            "files": {name: {"sha256": season_workflow.file_sha256(output_folder / name)} for name in names}})
     return results, selections
 
 
@@ -412,3 +451,166 @@ def evaluate_test_designs(fitted, test_rows, output_folder):
             output_folder / design / "test_predictions.csv", test_rows, predictions
         )
     return metrics
+
+
+def prepare_feature_inputs(feature_handoff, output_root):
+    """Consume notebook 05's exact enhanced rows; never recreate features or splits."""
+    rows, configuration, coverage, feature_manifest = feature_experiments.load_pilot_feature_handoff(feature_handoff)
+    partitions = {partition: [row for row in rows if row["partition"] == partition]
+                  for partition in ("train", "validation", "test")}
+    assert_partition_separation(partitions)
+    for crop in CLASSES:
+        if len({row["partition_group"] for row in rows if row["crop"] == crop}) < 5:
+            raise ValueError(f"At least five source parcel groups are required for {crop}.")
+    identity = {"feature_manifest_sha256": season_workflow.file_sha256(feature_handoff),
+                "implementation_sha256": season_workflow.file_sha256(Path(__file__)),
+                "forest_parameters": configuration["forest_parameters"],
+                "weighting": "equal_crop_then_equal_source_parcel_confidence_within_parcel_v1"}
+    folder = Path(output_root) / season_workflow.record_fingerprint(identity)[:16]
+    manifest_path = folder / "exploratory_input.json"
+    manifest = {
+        "kind": "exploratory_existing_source_parcel_evaluation",
+        "feature_handoff": str(Path(feature_handoff).resolve()),
+        "identity": identity,
+        "sample_fingerprint": feature_manifest["sample_fingerprint"],
+        "group_assignments": {row["partition_group"]: row["partition"] for row in rows},
+        "feature_policy": configuration["feature_policy"],
+    }
+    configuration = {
+        **configuration,
+        "purpose": "external_parcel_" + configuration["analysis_mode"],
+        "backend": "scikit_learn", "frozen": False,
+        "weighting": identity["weighting"],
+        "weight_normalization": "mean_one_preserves_relative_weights_and_half_sample_bootstrap",
+        "limitations": configuration.get("limitations", []) + [
+            "Held-out external source labels, not independent Paoay ground truth.",
+            "Satellite-estimated windows do not verify crop-cycle relevance.",
+            "Parcel groups are source identities, not independently verified field boundaries.",
+        ],
+    }
+    if folder.exists():
+        if not manifest_path.is_file():
+            raise ValueError("Training inputs changed; preserve the old run and use another output root.")
+        saved_manifest = json.loads(manifest_path.read_text())
+        if {key: value for key, value in saved_manifest.items() if key != "files"} != manifest:
+            raise ValueError("Training inputs changed; preserve the old run and use another output root.")
+        if set(saved_manifest.get("files", {})) != {"partitioned_features.csv", "parcel_split.csv", "configuration.json"}:
+            raise ValueError("Existing training inputs are incomplete; preserve the run and use another output root.")
+        for name, record in saved_manifest["files"].items():
+            if not (folder / name).is_file() or season_workflow.file_sha256(folder / name) != record["sha256"]:
+                raise ValueError("Saved training inputs changed; do not replace the locked run.")
+        saved_rows = season_workflow.read_table(folder / "partitioned_features.csv")
+        if saved_rows != rows or json.loads((folder / "configuration.json").read_text()) != configuration:
+            raise ValueError("Saved training inputs changed; do not replace the locked run.")
+        return rows, configuration, split_summary(rows), manifest_path
+    folder.mkdir(parents=True)
+    season_workflow.write_records(folder / "partitioned_features.csv", rows)
+    season_workflow.write_records(folder / "parcel_split.csv", [
+        {"partition_group": group, "partition": partition}
+        for group, partition in sorted(manifest["group_assignments"].items())])
+    save_json(folder / "configuration.json", configuration)
+    manifest["files"] = {name: {"sha256": season_workflow.file_sha256(folder / name)}
+                         for name in ("partitioned_features.csv", "parcel_split.csv", "configuration.json")}
+    save_json(manifest_path, manifest)
+    return rows, configuration, split_summary(rows), manifest_path
+
+
+def export_selected_model(output_folder, feature_handoff):
+    """Package the validation-selected fitted model for later local inference, without refitting."""
+    import shutil
+    from crop_pipeline.imagery.retrieval import REQUEST_VERSION, RESAMPLING_POLICY
+
+    output_folder = Path(output_folder)
+    rows, configuration, coverage, feature_manifest = feature_experiments.load_pilot_feature_handoff(feature_handoff)
+    training_manifest_path = output_folder / "exploratory_input.json"
+    training_manifest = json.loads(training_manifest_path.read_text())
+    if training_manifest["identity"]["feature_manifest_sha256"] != season_workflow.file_sha256(feature_handoff):
+        raise ValueError("Selected model's training inputs differ from the feature handoff.")
+    if set(training_manifest.get("files", {})) != {"partitioned_features.csv", "parcel_split.csv", "configuration.json"}:
+        raise ValueError("Training input manifest is incomplete; do not package an unverified model run.")
+    for name, record in training_manifest["files"].items():
+        if season_workflow.file_sha256(output_folder / name) != record["sha256"]:
+            raise ValueError("Saved training inputs changed; do not package a different recipe with the model.")
+    selection_path = output_folder / "feature_selection.json"
+    selections = json.loads(selection_path.read_text())
+    selection = selections.get("external_parcel_holdout", {})
+    design = selection.get("selected_design")
+    if selection.get("status") != "selected_on_validation" or design not in feature_experiments.feature_sets():
+        raise ValueError("A validation-selected feature design is required before model export.")
+    # Re-derive selection from validation only; held-out test metrics never choose a model.
+    metrics_path = output_folder / "experiment_metrics.json"
+    metrics = json.loads(metrics_path.read_text())
+    expected = earth_engine_training.select_feature_designs({"external_parcel_holdout": metrics["validation"]})
+    if selections != expected:
+        raise ValueError("Model selection differs from the saved validation-only selection.")
+    model_path = output_folder / design / "model.joblib"
+    artifact = metrics.get("model_artifacts", {}).get(design, {})
+    if (artifact.get("feature_columns") != feature_experiments.feature_sets()[design]
+            or artifact.get("sha256") != season_workflow.file_sha256(model_path)):
+        raise ValueError("Selected model artifact differs from the model evaluated in the saved metrics.")
+    recipe = {
+        "status": "unvalidated_external_parcel_prototype", "analysis_mode": configuration["analysis_mode"],
+        "selected_design": design, "selection": selection,
+        "feature_columns": feature_experiments.feature_sets()[design],
+        "feature_policy": configuration["feature_policy"],
+        "study_classes": list(CLASSES), "class_codes": {crop: index + 1 for index, crop in enumerate(CLASSES)},
+        "nodata_code": 0,
+        "probability_columns": "classifier.classes_; map class labels through class_codes",
+        "imagery": {"collection": "COPERNICUS/S2_SR_HARMONIZED", "request_version": REQUEST_VERSION,
+                    "resampling": RESAMPLING_POLICY, "spectral_scale": 0.0001,
+                    "bands": list(season_workflow.FEATURE_BANDS),
+                    "feature_bands": list(season_workflow.FEATURE_BANDS),
+                    "collection_bands": ["B3", "B4", "B5", "B8", "B11", "B2"],
+                    "valid_data_rule": "all six collection bands must be valid before compositing",
+                    "clear_counts_scaled": False,
+                    "output_resolution_metres": 10,
+                    "grid": "saved sampling-grid CRS and affine transform",
+                    "input_nodata_value": -9999,
+                    "nodata_handling": "mask nodata before reflectance scaling",
+                    "cloud_probability_threshold": 40,
+                    "cloud_probability_rule": "probability < threshold",
+                    "excluded_scl_classes": [0, 1, 3, 8, 9, 10, 11],
+                    "cloud_probability_collection": "COPERNICUS/S2_CLOUD_PROBABILITY",
+                    "missing_cloud_probability": "exclude",
+                    "scene_edges": "valid_B8A_and_B9",
+                    "compositing": "same_date_mosaics_then_calendar_half_month_medians"},
+        "window_recipe": configuration.get("window_recipe", {}),
+        "window_convention": "four_calendar_months_eight_half_month_bins_end_exclusive",
+        "window_policy": configuration["window_policy"],
+        "quality": {"minimum_valid_fraction": coverage.get("window_recipe", {}).get("minimum_valid_fraction", coverage.get("minimum_valid_fraction", 0.8)),
+                    "finite_features_required": True, "missing_values": "exclude_no_imputation"},
+        "training_configuration": json.loads((output_folder / "configuration.json").read_text()),
+        "source_feature_manifest_sha256": season_workflow.file_sha256(feature_handoff),
+        "training_input_manifest_sha256": season_workflow.file_sha256(training_manifest_path),
+        "sample_fingerprint": feature_manifest["sample_fingerprint"],
+        "limitations": configuration.get("limitations", []) + [
+            "Freeze model and preprocessing before inspecting Paoay ground-truth scores.",
+            "Class codes describe known target crops only; other land cover needs a separate mask or strategy.",
+        ],
+    }
+    identity = {"model_sha256": season_workflow.file_sha256(model_path),
+                "recipe": recipe, "selection_sha256": season_workflow.file_sha256(selection_path)}
+    folder = output_folder / "selected_model" / season_workflow.record_fingerprint(identity)[:16]
+    manifest_path = folder / "model_manifest.json"
+    if folder.exists():
+        if not manifest_path.is_file():
+            raise ValueError("Incomplete selected-model package; preserve it before choosing a new destination.")
+        manifest = json.loads(manifest_path.read_text())
+        if (manifest.get("kind") != "paoay_inference_model_package"
+                or set(manifest.get("files", {})) != {"model.joblib", "recipe.json"}
+                or manifest.get("identity") != identity) or any(
+            season_workflow.file_sha256(folder / name) != record["sha256"]
+            for name, record in manifest["files"].items()):
+            raise ValueError("Selected-model package changed; existing files were preserved.")
+        return manifest_path
+    folder.mkdir(parents=True)
+    shutil.copyfile(model_path, folder / "model.joblib")
+    save_json(folder / "recipe.json", recipe)
+    manifest = {"format_version": 1, "kind": "paoay_inference_model_package",
+                "status": recipe["status"], "identity": identity,
+                "files": {name: {"sha256": season_workflow.file_sha256(folder / name)}
+                          for name in ("model.joblib", "recipe.json")},
+                "feature_handoff": str(Path(feature_handoff).resolve()),
+                "training_metrics_sha256": season_workflow.file_sha256(metrics_path)}
+    save_json(manifest_path, manifest)
+    return manifest_path

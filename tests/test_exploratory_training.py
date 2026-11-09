@@ -167,8 +167,13 @@ class ExploratoryTrainingTests(unittest.TestCase):
                 "crop_pipeline.training.exploratory.RandomForestClassifier", side_effect=fast_forest
             ):
                 results, selections = exploratory.run_experiments(
-                    rows, configuration, output
+                    rows, configuration, output, reuse_completed=True
                 )
+            saved = {path: path.read_bytes() for path in output.rglob("*") if path.is_file()}
+            with patch("crop_pipeline.training.exploratory.RandomForestClassifier", side_effect=AssertionError("Do not refit saved models")):
+                repeated = exploratory.run_experiments(rows, configuration, output, reuse_completed=True)
+            self.assertEqual(repeated, (results, selections))
+            self.assertEqual({path: path.read_bytes() for path in saved}, saved)
             self.assertEqual(len(results["test"]), 3)
             self.assertEqual(
                 selections["external_parcel_holdout"]["status"],
@@ -185,6 +190,11 @@ class ExploratoryTrainingTests(unittest.TestCase):
                         [row["sample_id"] for row in csv.DictReader(stream)]
                     )
             self.assertEqual(test_samples[0], test_samples[1])
+            model = output / "shape_only/model.joblib"
+            model.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "artifacts changed"):
+                exploratory.run_experiments(rows, configuration, output, reuse_completed=True)
+            self.assertEqual(model.read_bytes(), b"changed")
             self.assertEqual(test_samples[0], test_samples[2])
             inputs.write_text(inputs.read_text() + "\n")
             with self.assertRaisesRegex(ValueError, "changed"):
