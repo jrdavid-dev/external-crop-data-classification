@@ -7,10 +7,14 @@ from pathlib import Path
 from shapely.geometry import shape
 
 from crop_pipeline.common import save_json
+from crop_pipeline.source_workflow import ROUND_PARCELS_PER_CROP
 from crop_pipeline.sources import annual, sampling
 from crop_pipeline.windows.seasons import file_sha256
 
 COLLECTION_NAME = "adaptive_training"
+# Keep the legacy policy key stable: changing it would create another campaign
+# and abandon existing locked partitions. Source notebooks use the shared round
+# limit through prepare_round_batches instead.
 DEFAULT_POLICY = {
     "version": 1, "seed": 42, "candidate_parcels_per_crop_per_source": 25,
     "pixels_per_parcel": 20,
@@ -143,30 +147,46 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
 
 
 def collect_batch(plan, context, project, enabled=False, authenticate=False, **kwargs):
+    folder = Path(context["folder"])
+    state_path = folder / "state.json"
+    # Offline inspection must not erase the operational state of launched work.
+    # In particular, replacing pending_retry with disabled would let notebook 04
+    # overlook unfinished jobs. A new preparation can still record its disabled state.
+    persist_state = enabled or not state_path.exists()
     if plan is None:
         result = {"status": "skipped", "reason": context["selection_status"]}
-        save_json(Path(context["folder"]) / "state.json", result)
+        if persist_state:
+            save_json(state_path, result)
         return result
     result = annual.collect_source(plan, Path(context["report_folder"]), project,
         enabled=enabled, authenticate=authenticate, archive_format="pixel_tables",
         collection_backend="batch", **kwargs)
-    folder = Path(context["folder"])
-    save_json(folder / "state.json", result)
     if result["status"] == "completed":
-        bundle = read_json(result["registry"], {})
-        from crop_pipeline.imagery import annual_tif
-        for handoff in bundle["handoffs"]:
-            manifest_path = Path(handoff["path"])
-            manifest = read_json(manifest_path, {})
-            output_root = Path(context["annual_tif_root"]) / context["source"] / str(manifest["year"]) / Path(context["campaign"]).name / f"round_{context['round']:04d}"
-            index = annual_tif.export_source(manifest, output_root)
-            manifest.update(adaptive_collection=COLLECTION_NAME, adaptive_round=context["round"],
-                            annual_tif_index=index, annual_tif_root=str(output_root.resolve()))
-            save_json(manifest_path, manifest)
-            handoff["sha256"] = file_sha256(manifest_path)
-        save_json(Path(result["registry"]), bundle)
-        save_json(folder / "completed.json", {"source": context["source"], "round": context["round"],
-                                               "handoffs": bundle["handoffs"]})
+        pending = {**result, "status": "pending_retry", "reason": "annual_tiff_publication_pending"}
+        # Keep assessment blocked even if this process stops during local publication.
+        save_json(state_path, pending)
+        try:
+            bundle = read_json(result["registry"], {})
+            from crop_pipeline.imagery import annual_tif
+            for handoff in bundle["handoffs"]:
+                manifest_path = Path(handoff["path"])
+                manifest = read_json(manifest_path, {})
+                output_root = Path(context["annual_tif_root"]) / context["source"] / str(manifest["year"]) / Path(context["campaign"]).name / f"round_{context['round']:04d}"
+                index = annual_tif.export_source(manifest, output_root)
+                manifest.update(adaptive_collection=COLLECTION_NAME, adaptive_round=context["round"],
+                                annual_tif_index=index, annual_tif_root=str(output_root.resolve()))
+                save_json(manifest_path, manifest)
+                handoff["sha256"] = file_sha256(manifest_path)
+            save_json(Path(result["registry"]), bundle)
+            save_json(folder / "completed.json", {"source": context["source"], "round": context["round"],
+                                                   "handoffs": bundle["handoffs"]})
+        except Exception as error:
+            save_json(state_path, {**pending, "reason": "annual_tiff_publication_failed",
+                                   "error": str(error)})
+            raise
+        save_json(state_path, result)
+    elif persist_state:
+        save_json(state_path, result)
     return result
 
 
@@ -269,19 +289,32 @@ def require_targets(report_folder, policy=None):
 
 
 def prepare_round_batches(source, features, archive_root, report_folder, provenance,
-                          parcels_per_crop=100, inward_buffer_metres=10, candidate_crops=None):
+                          parcels_per_crop=ROUND_PARCELS_PER_CROP, inward_buffer_metres=10, candidate_crops=None):
     """Add a separate extension while preserving existing jobs and the campaign split."""
     campaign = root(report_folder)
     round_number = read_json(campaign / "feedback.json", {}).get("next_round", 1)
     label = f"overnight_{parcels_per_crop}"
     extension_folder = campaign / "rounds" / f"{round_number:04d}" / f"{source}_{label}"
+    empty_selection = read_json(extension_folder / "selection.json", {})
+    if empty_selection.get("status") == "no_candidates_for_deficits":
+        # A deliberately expanded reference pool can fill an otherwise empty
+        # round. Keep the old empty selection as an audit record.
+        from crop_pipeline.imagery.batch_export import content_key
+        pool = sorted({physical_key(source, feature["properties"]) for feature in features
+                       if feature["properties"].get("source_split", "train") == "train"
+                       and feature["properties"].get("crop") in (candidate_crops or annual.TARGET_CROPS)})
+        label += "_refs_" + content_key(pool)[:8]
+        extension_folder = campaign / "rounds" / f"{round_number:04d}" / f"{source}_{label}"
     batches = []
     for path in sorted((campaign / "rounds" / f"{round_number:04d}").glob("*/context.json")):
         context = read_json(path, {})
-        if context.get("source") != source or path.parent == extension_folder:
+        if context.get("source") != source:
             continue
         state = read_json(path.parent / "state.json", {})
-        if state.get("status") in {"completed", "skipped"}:
+        if state.get("status") in {"completed", "skipped"} and path.parent != extension_folder:
+            continue
+        if not context.get("candidate_parcels") and not context.get("plan_path"):
+            batches.append((None, context))
             continue
         plan_path = context.get("plan_path")
         if not plan_path and state.get("retry_queue"):
@@ -298,7 +331,34 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
                     break
         if not plan_path or not Path(plan_path).is_file():
             raise ValueError(f"Cannot resume the existing batch in {path.parent}; its saved plan is missing")
-        batches.append((read_json(plan_path, {}), context))
+        saved_plan = read_json(plan_path, {})
+        from crop_pipeline.sources import preparation_cache
+        run_folder = Path(saved_plan["run_folder"])
+        if saved_plan.get("years") and preparation_cache.load_prepared(run_folder) is None:
+            configuration = read_json(run_folder / "run_configuration.json", {})
+            from crop_pipeline.sources import annual_identity
+            original_planner = configuration.get("planning_sha256") or annual_identity.LEGACY_PLANNERS.get(configuration.get("helper_sha256"))
+            if original_planner != annual_identity.planning_fingerprint(Path(annual.__file__)):
+                raise ValueError("Saved masks need the original planner for repair; existing jobs were preserved.")
+            import hashlib
+            current = [feature for feature in features if feature["properties"].get("crop") in annual.TARGET_CROPS]
+            footprint_hash = hashlib.sha256(json.dumps(current, sort_keys=True).encode()).hexdigest()
+            if configuration.get("footprints_sha256") != footprint_hash:
+                raise ValueError("Saved masks need repair but the reference inventory changed. Restore the original references; existing jobs were preserved.")
+            repaired = annual.prepare_source(source, features, run_folder.parents[3],
+                configuration["provenance"], inward_buffer_metres=configuration["inward_buffer_metres"],
+                tile_pixels=configuration["tile_pixels"], candidate_groups=configuration.get("candidate_groups"))
+            if Path(repaired["run_folder"]) != run_folder:
+                raise ValueError("Mask repair requires the original planner/recipe; existing jobs were preserved.")
+            saved_plan = repaired
+        if saved_plan.get("source", source) != source:
+            raise ValueError(f"Saved plan source differs in {path.parent}; existing jobs were preserved")
+        # A selected round is immutable. Resume its original plan/provenance rather
+        # than generating another archive when notebook orchestration changes.
+        batches.append((saved_plan, context))
+    if any(Path(context["folder"]) == extension_folder for _, context in batches):
+        print(f"Round {round_number}: resuming saved {source} selections and original collection plans.")
+        return batches
     plan, context = prepare_batch(source, features, archive_root, report_folder, provenance,
         inward_buffer_metres=inward_buffer_metres, batch_label=label,
         round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops)
@@ -311,9 +371,12 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
 def collect_batches(batches, project, enabled=False, authenticate=False, **kwargs):
     """Collect/submit every active batch once; never wait overnight inside this call."""
     results = []
-    for index, (plan, context) in enumerate(batches):
+    authenticate_next = authenticate
+    for plan, context in batches:
         result = collect_batch(plan, context, project, enabled=enabled,
-                               authenticate=authenticate and index == 0, **kwargs)
+                               authenticate=authenticate_next and plan is not None, **kwargs)
+        if plan is not None:
+            authenticate_next = False
         results.append({"batch": Path(context["folder"]).name, "result": result})
     states = [entry["result"]["status"] for entry in results]
     status = ("disabled" if not enabled else "completed"

@@ -1,4 +1,4 @@
-"""Keep supplementary collection safe, reproducible and offline by default."""
+"""Keep supplementary collection safe, reproducible and explicitly offline."""
 
 import copy
 import csv
@@ -367,11 +367,8 @@ class CropHarvestRunTests(unittest.TestCase):
             )
             labels = root / "data/external/cropharvest/labels.geojson"
             labels_payload = json.dumps({"type": "FeatureCollection", "features": features}).encode()
-            original_ensure = cropharvest.ensure_labels
-
-            def ensure_fixture_labels(path, download_if_missing):
-                import hashlib
-                return original_ensure(path, download_if_missing, expected_md5=hashlib.md5(labels_payload).hexdigest())
+            labels.parent.mkdir(parents=True)
+            labels.write_bytes(labels_payload)
             forbidden = AssertionError(
                 "Offline source notebook attempted a network operation"
             )
@@ -380,8 +377,8 @@ class CropHarvestRunTests(unittest.TestCase):
                 chdir(root),
                 redirect_stdout(io.StringIO()),
                 patch("requests.sessions.Session.request", side_effect=forbidden),
-                patch.object(cropharvest, "ensure_labels", side_effect=ensure_fixture_labels),
-                patch.object(cropharvest, "download_labels_payload", side_effect=lambda destination: destination.write_bytes(labels_payload)),
+                patch.object(cropharvest, "download_labels_payload", side_effect=forbidden),
+                patch("subprocess.check_call", side_effect=forbidden),
                 patch.object(batch_export, "submit_daily", side_effect=forbidden),
                 patch.object(batch_export, "submit_composites", side_effect=forbidden),
                 patch.object(batch_export, "submit_permanent", side_effect=forbidden),
@@ -389,14 +386,20 @@ class CropHarvestRunTests(unittest.TestCase):
                 for cell in notebook["cells"]:
                     if cell["cell_type"] == "code":
                         source = "".join(cell["source"])
-                        source = source.replace("run_satellite_collection = True", "run_satellite_collection = False")
-                        source = source.replace("authenticate_now = True", "authenticate_now = False")
+                        source = source.replace('reference_mode = "reuse"', 'reference_mode = "offline"')
                         exec(source, namespace)
-            self.assertEqual(namespace["labels_download"]["status"], "downloaded")
+            self.assertEqual(namespace["labels_download"]["status"], "reused")
+            self.assertEqual(labels.read_bytes(), labels_payload)
+            self.assertEqual(namespace["reference_mode"], "offline")
+            self.assertFalse(namespace["authenticate_now"])
             self.assertTrue(labels.is_file())
             self.assertTrue((root / "settings.local.json").is_file())
             self.assertFalse(namespace["run_satellite_collection"])
             self.assertEqual(len(namespace["annual_plan"]["years"]), 1)
+            self.assertEqual(set(namespace["reviewed_labels"].crop), {"carrot", "cabbage", "potato"})
+            self.assertTrue(namespace["reviewed_labels"].reliable.all())
+            self.assertEqual(len(namespace["reference_features"]), 3)
+            self.assertEqual(namespace["inward_buffer_metres"], 10)
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertTrue(
                 (

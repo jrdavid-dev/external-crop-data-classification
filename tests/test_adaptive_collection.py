@@ -229,6 +229,100 @@ class AdaptiveCollectionTests(unittest.TestCase):
             self.assertEqual(again, batches)
             self.assertTrue(all(old["assignments"][group] == adaptive.assignments(report)[group] for group in old["groups"]))
 
+    def test_round_resume_preserves_saved_plan_provenance_and_job_ledger(self):
+        for source in ("sen4agrinet", "francecrops", "cropharvest"):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as folder:
+                report = Path(folder) / "inventory"
+                features = [reference_feature("one", width=50)]
+                run = Path(folder) / "saved_run"
+                original = {"source": source, "run_folder": str(run), "years": {}, "estimate": {}}
+                save_json(run / "collection_plan.json", original)
+                ledger = run / "batch/jobs.json"
+                save_json(ledger, [{"task_id": "existing-task", "state": "RUNNING"}])
+                before = ledger.read_bytes()
+                with patch.object(adaptive.annual, "prepare_source", return_value=original) as prepare:
+                    first = adaptive.prepare_round_batches(source, features, folder, report, {"review": "old"})
+                    selection = Path(first[0][1]["folder"]) / "selection.json"
+                    selection_before = selection.read_bytes()
+                    save_json(Path(first[0][1]["folder"]) / "state.json", {"status": "pending_retry"})
+                    again = adaptive.prepare_round_batches(source, features, folder, report,
+                        {"review": "notebook-reorganized"}, inward_buffer_metres=5)
+                self.assertEqual(prepare.call_count, 1)
+                self.assertEqual(again, first)
+                self.assertEqual(ledger.read_bytes(), before)
+                self.assertEqual(selection.read_bytes(), selection_before)
+
+    def test_empty_round_can_use_expanded_references_without_overwriting_audit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "inventory"
+            empty = adaptive.prepare_round_batches("sen4agrinet", [], folder, report, {})
+            old_selection = Path(empty[0][1]["folder"]) / "selection.json"
+            before = old_selection.read_bytes()
+            plan = {"run_folder": str(Path(folder)/"new_run"), "years": {}, "estimate": {}}
+            save_json(Path(plan["run_folder"]) / "collection_plan.json", plan)
+            features = [reference_feature("new", width=50)]
+            with patch.object(adaptive.annual, "prepare_source", return_value=plan) as prepare:
+                expanded = adaptive.prepare_round_batches("sen4agrinet", features, folder, report, {})
+                again = adaptive.prepare_round_batches("sen4agrinet", features, folder, report, {})
+            self.assertEqual(prepare.call_count, 1)
+            self.assertEqual(again, expanded)
+            self.assertEqual(sum(context["candidate_parcels"] for _, context in expanded), 1)
+            self.assertTrue(any(Path(context["folder"]) != old_selection.parent for plan, context in expanded if plan is not None))
+            self.assertEqual(old_selection.read_bytes(), before)
+
+    def test_saved_round_repairs_missing_mask_using_original_buffer_and_plan(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "inventory"
+            features = [reference_feature("one", width=50)]
+            batches = adaptive.prepare_round_batches("sen4agrinet", features, folder, report, {}, inward_buffer_metres=0)
+            plan, context = batches[0]
+            run = Path(plan["run_folder"])
+            configuration_before = (run / "run_configuration.json").read_bytes()
+            region = annual.read_regions(plan["years"]["2020"])[0]
+            mask = Path(region["properties"]["sampling_mask"])
+            before = mask.read_bytes()
+            mask.unlink()
+            again = adaptive.prepare_round_batches("sen4agrinet", features, folder, report, {"changed": True}, inward_buffer_metres=10)
+            self.assertEqual(again[0][0]["run_folder"], plan["run_folder"])
+            self.assertEqual(mask.read_bytes(), before)
+            self.assertEqual((run / "run_configuration.json").read_bytes(), configuration_before)
+
+    def test_changed_references_refuse_mask_repair_without_touching_saved_work(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "inventory"
+            features = [reference_feature("one", width=50)]
+            plan, context = adaptive.prepare_round_batches("sen4agrinet", features, folder, report, {}, inward_buffer_metres=0)[0]
+            run = Path(plan["run_folder"])
+            region = annual.read_regions(plan["years"]["2020"])[0]
+            Path(region["properties"]["sampling_mask"]).unlink()
+            # An absent receipt must not bypass validation either.
+            (run / "preparation_cache.json").unlink()
+            save_json(run / "batch/jobs.json", [{"task_id": "keep", "state": "RUNNING"}])
+            paths = [run / "collection_plan.json", run / "run_configuration.json", run / "batch/jobs.json",
+                     Path(context["folder"]) / "selection.json"]
+            before = {path: path.read_bytes() for path in paths}
+            with patch.object(adaptive.annual, "prepare_source") as prepare:
+                with self.assertRaisesRegex(ValueError, "reference inventory changed"):
+                    adaptive.prepare_round_batches("sen4agrinet", features + [reference_feature("new", left=501000)],
+                        folder, report, {})
+                prepare.assert_not_called()
+            self.assertEqual({path: path.read_bytes() for path in paths}, before)
+
+    def test_larger_saved_round_is_not_trimmed_by_new_limit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "inventory"
+            features = [reference_feature(str(index), left=500000+index*100, width=50) for index in range(120)]
+            plan = {"run_folder": str(Path(folder)/"large_run"), "years": {}, "estimate": {}}
+            save_json(Path(plan["run_folder"]) / "collection_plan.json", plan)
+            with patch.object(adaptive.annual, "prepare_source", return_value=plan) as prepare:
+                original = adaptive.prepare_round_batches("sen4agrinet", features, folder, report, {}, parcels_per_crop=250)
+                selection = Path(original[0][1]["folder"]) / "selection.json"
+                before = selection.read_bytes()
+                resumed = adaptive.prepare_round_batches("sen4agrinet", features, folder, report, {}, parcels_per_crop=100)
+                self.assertEqual(prepare.call_count, 1)
+            self.assertEqual(sum(context["candidate_parcels"] for _, context in resumed), 120)
+            self.assertEqual(selection.read_bytes(), before)
+
     def test_multi_batch_collection_resumes_each_plan_and_authenticates_once(self):
         batches = [({"run_folder":"old"}, {"folder":"/old"}),
                    ({"run_folder":"extra"}, {"folder":"/extra"})]

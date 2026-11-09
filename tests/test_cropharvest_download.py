@@ -186,11 +186,17 @@ class CropHarvestLabelDownloadTests(unittest.TestCase):
                     for cell in notebook["cells"][:15]
                     if cell["cell_type"] == "code"
                 ]:
-                    exec(
-                        compile("".join(cell["source"]), str(notebook_path), "exec"),
-                        namespace,
+                    source = "".join(cell["source"]).replace(
+                        'reference_mode = "reuse"', 'reference_mode = "download_missing"'
                     )
-            self.assertTrue(namespace["download_missing_labels"])
+                    # Stop after audit identity creation: this test uses a minimal
+                    # GeoJSON fixture to check retrieval precedes content hashing.
+                    source = source.split("label_review = cropharvest_review.review_labels(")[0]
+                    exec(compile(source, str(notebook_path), "exec"), namespace)
+                    if "run_folder" in namespace:
+                        break
+            self.assertEqual(namespace["reference_mode"], "download_missing")
+            self.assertTrue(namespace["reference_options"]["download_if_missing"])
             self.assertEqual(namespace["labels_download"]["status"], "downloaded")
             self.assertEqual(
                 namespace["run_configuration"]["labels_sha256"],

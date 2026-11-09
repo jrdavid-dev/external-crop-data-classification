@@ -1,5 +1,6 @@
 """A fresh kernel can reuse a completed full-release inventory entirely offline."""
 
+import ast
 import io
 import json
 import tempfile
@@ -101,6 +102,9 @@ def make_crop_fields(projector, crop, crop_number):
 
 
 def execute_without_remote_services(folder):
+    # Install observers against real classes before the offline test substitutes them.
+    from crop_pipeline import progress_observers
+    progress_observers.enable()
     notebook = json.loads(NOTEBOOK_PATH.read_text())
     retriever = MagicMock()
     retriever.year = 2020
@@ -154,21 +158,56 @@ def execute_without_remote_services(folder):
 
 
 class SequentialNotebookTests(unittest.TestCase):
+    def test_source_notebooks_share_round_budget_and_resumable_collection(self):
+        for path in sorted(NOTEBOOK_PATH.parent.glob("0[123]*.ipynb")):
+            with self.subTest(notebook=path.name):
+                notebook = json.loads(path.read_text())
+                tree = ast.parse("\n".join(
+                    "".join(cell["source"]) for cell in notebook["cells"]
+                    if cell["cell_type"] == "code"
+                ))
+                limits = [ast.unparse(node.value) for node in ast.walk(tree)
+                          if isinstance(node, ast.Assign)
+                          and any(isinstance(target, ast.Name) and target.id == "candidate_parcels_per_crop"
+                                  for target in node.targets)]
+                self.assertEqual(limits, ["source_workflow.ROUND_PARCELS_PER_CROP"])
+                calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name) and node.func.value.id == "adaptive"]
+                preparation = [node for node in calls if node.func.attr == "prepare_round_batches"]
+                self.assertEqual(len(preparation), 1)
+                budget = next(keyword.value for keyword in preparation[0].keywords
+                              if keyword.arg == "parcels_per_crop")
+                self.assertEqual(budget.id, "candidate_parcels_per_crop")
+                self.assertEqual(sum(node.func.attr == "collect_batches" for node in calls), 1)
+                stage_calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                               and isinstance(node.func, ast.Attribute)
+                               and isinstance(node.func.value, ast.Name)
+                               and node.func.value.id == "pipeline_progress"
+                               and node.func.attr == "begin_stage"]
+                from crop_pipeline import source_workflow
+                self.assertEqual([node.args[0].value for node in stage_calls], source_workflow.STAGES)
+                buffers = [node.value.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                           and any(isinstance(target, ast.Name) and target.id == "inward_buffer_metres"
+                                   for target in node.targets)]
+                self.assertEqual(buffers, [0 if path.name.startswith("01") else 10])
+
     def test_run_all_reuses_completed_release_with_no_raw_files_or_downloads(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             prepare_saved_fields(folder)
             namespace = execute_without_remote_services(folder)
-            self.assertFalse(namespace["retrieve_reference_masks"])
-            self.assertFalse(namespace["rebuild_field_inventory"])
+            self.assertEqual(namespace["reference_mode"], "reuse")
+            self.assertFalse(namespace["reference_options"]["download_if_missing"])
+            self.assertTrue(namespace["reference_options"]["cached_only"])
             self.assertFalse(namespace["dataset_folder"].exists())
             plan = namespace["annual_plan"]
-            self.assertEqual(namespace["candidate_parcels_per_crop"], 250)
-            # The fixture has only 120 eligible parcels per crop.
-            self.assertEqual(plan["estimate"]["parcels"], 240)
+            self.assertEqual(namespace["candidate_parcels_per_crop"], 100)
+            # Select only 100 of the 120 eligible fixture parcels per crop.
+            self.assertEqual(plan["estimate"]["parcels"], 200)
             self.assertEqual(
                 plan["years"]["2020"]["pixels_per_crop"],
-                {"carrot": 12000, "potato": 12000},
+                {"carrot": 10000, "potato": 10000},
             )
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertFalse(namespace["run_satellite_collection"])

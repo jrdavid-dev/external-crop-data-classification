@@ -1,17 +1,24 @@
-# CropHarvest source preparation
+# CropHarvest: notebook 03
 
-The first cell installs missing dependencies and creates local settings when absent; see [fresh-clone setup](fresh_clone.md).
+[Notebook 03](../notebooks/03_cropharvest_preparation.ipynb) audits carrot, cabbage and potato labels, selects up to **100 eligible parcels per available crop per round**, and collects annual Sentinel-2 histories through Earth Engine.
 
-Run [notebook 03](../notebooks/03_cropharvest_preparation.ipynb) before window selection. It automatically downloads missing `data/external/cropharvest/labels.geojson` when Run All executes, using the [official pinned Zenodo release 10251170](https://zenodo.org/records/10251170). Existing labels are validated and reused without overwriting them. Only the label file is fetched; the large feature and imagery archives are not requested.
+## Run All steps
 
-The notebook keeps explicit crop aliases, mixed-label exclusions, reliable-source checks, polygon validation, duplicate screening and upstream test exclusions. Observation years must be supported by the documented export period or an explicit override. A January 1 placeholder can identify a supported season year; it is not a planting date. Decisions are saved in `labels/observation_year_audit.csv` in a versioned label-review folder.
+1. **Setup:** install missing dependencies, create or preserve local settings, and configure Earth Engine access.
+2. **Obtain labels:** obtain missing `data/external/cropharvest/labels.geojson` in `download_missing` mode from the pinned release. Existing labels are validated and reused. Imagery and feature archives are not downloaded.
+3. **Audit labels:** apply explicit crop aliases and mixed-label exclusions; review source reliability, polygon geometry, duplicates and dates. Save the label audit and observation-year decisions.
+4. **Prepare candidates:** exclude upstream test labels, require a resolved observation year, and select a bounded, geographically/year-stratified batch. Apply the 10 m inward buffer and contested-location exclusions before imagery requests.
+5. **Collect:** submit or retrieve imagery using original saved plans.
+6. **Summarize:** inspect verified tiles, job states, saved paths and the next action. Finish pending work before notebook 04.
 
-Every eligible target parcel and resolved Sentinel-2-era reference year enters the **full-year collection**, without candidate budgets or per-parcel pixel quotas. A 10 m inward buffer and contested-location exclusion remain. There is no timing gate in this source notebook.
+A source date can support the observation year; it is not automatically a planting date. January 1 placeholders need a supported season year. Source reliability grades are screening judgments, not independent proof of crop accuracy. Optional country borders can be omitted; dataset names provide the recorded fallback.
 
-`download_missing_labels = True`, `run_satellite_collection = True` and `authenticate_now = True` are configured for the next Run All. Nothing starts merely by opening the notebook. To inspect files entirely offline, set all three to `False` and supply existing valid labels.
+## Switches and outputs
 
-The label downloader configures trusted certificates before its request, verifies the release MD5 and GeoJSON structure, and publishes a validated file atomically. Failed downloads are cleaned up and can be retried with Run All. A `.download.json` sidecar records the source release and SHA-256. The normal label-content hash then determines the versioned processing run.
+The shared `reference_mode` is `reuse` by default. Choose `download_missing` to obtain missing labels, or `offline` to use local inputs and installed dependencies without sign-in, installation or satellite calls. `run_satellite_collection = False` allows reference preparation without satellite work; it preserves existing operational job states.
 
-Satellite collection uses Earth Engine processing and checkpointed local GeoTIFF storage. All annual files must finish before a source registry is published. See [full-year collection](full_year_collection.md) for storage, completion and restart details.
+The notebook uses the same six sections as 01–02. Label screening lives in a reusable helper; one crop-level summary and saved audit paths replace the previous lengthy inline audit. Its eligibility rules are unchanged. The existing **10 m inward buffer** on polygon parcels is preserved.
 
-Notebook 04 requires all three source registries and performs timing and quality selection afterward. Notebooks 05 and 06 handle features and training. Old CropHarvest runs, pilot imagery and models stay separate.
+Label downloads verify the pinned release MD5 and GeoJSON structure before atomic publication. A `.download.json` receipt records the source and local SHA-256. Label-content hashes identify versioned review runs; observation-year decisions are saved in `labels/observation_year_audit.csv`.
+
+Completed annual TIFFs are organized by source, year, campaign and round, with separate masks and Parquet transport caches. `completed` confirms saved collection files; notebook 04 still applies timing, completeness and quality checks. Earlier selections, locked partitions and archives are preserved. See [workflow](workflow.md) for resuming jobs and [adaptive training](adaptive_training.md) for sample targets.

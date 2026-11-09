@@ -17,7 +17,7 @@ An annual crop label identifies the reported crop, but does not prove which crop
 
 ## Candidate sampling and imagery
 
-The full-year collection uses every eligible parcel and interior pixel in the supplied inventories, without pilot candidate budgets or per-parcel quotas. Same-parcel fragments share one group. Contested locations are excluded, and bounded tiles preserve the original parcel identity. FranceCrops and CropHarvest retain a 10 m inward buffer; Sen4AgriNet retains its existing declared crop-mask cells.
+The default adaptive workflow selects up to 100 candidate parcels per available crop per source per round, then retains at most 20 usable pixels per parcel after window assessment. The optional full-catalogue workflow uses every eligible parcel and interior pixel in supplied inventories. Same-parcel fragments share one group. Contested locations are excluded, and bounded tiles preserve the original parcel identity. FranceCrops and CropHarvest retain a 10 m inward buffer; Sen4AgriNet retains its existing declared crop-mask cells with no additional inward buffer. This is an existing source-specific rule, not evidence of equivalent boundary uncertainty; adding erosion would change selected pixels and require a separately versioned methodology change.
 
 All three sources use Sentinel-2 surface reflectance from `COPERNICUS/S2_SR_HARMONIZED`:
 
@@ -64,7 +64,7 @@ For each parcel, evaluate qualified windows chronologically. Keep the **earliest
 
 A complete pixel needs five bands—B3, B4, B5, B8, B11—and NDVI, NDRE and NDMI in every interval: **64 finite base features**. Missing bins, low coverage, invalid observation counts and zero index denominators cause exclusion. No imputation is used.
 
-Retain every unique usable external pixel across both policies. Reference-supported rows take precedence for duplicate locations. Preserve registered local evaluation rows and upstream reserved roles. The old 500-pixel pilot cap applies only when deliberately reopening a pilot collection.
+For adaptive collection, deduplicate usable locations and apply the per-parcel sampling budget and locked partitions. The optional full-catalogue workflow retains every unique usable external pixel across both policies. Reference-supported rows take precedence for duplicate locations. Preserve registered local evaluation rows and upstream reserved roles. The old 500-pixel pilot cap applies only when deliberately reopening a pilot collection.
 
 Timing, cycle-selection and usable-selection audits explain losses. Source collection and window selection are separate; changing the latter can reuse the annual archive. See [full-year collection](full_year_collection.md).
 

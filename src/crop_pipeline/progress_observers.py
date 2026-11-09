@@ -68,7 +68,7 @@ def enable():
     global _installed
     if _installed:
         return
-    from crop_pipeline.sources import annual, sen4agrinet, francecrops
+    from crop_pipeline.sources import annual, sen4agrinet, francecrops, bounded_references, annual_batch
     from crop_pipeline.windows import annual_archive, seasons, detector
     from crop_pipeline.features import experiments
     from crop_pipeline.training import exploratory, earth_engine
@@ -76,6 +76,16 @@ def enable():
     from crop_pipeline.imagery import quality
     from sklearn.ensemble import RandomForestClassifier
 
+    # Observe current bounded workflows outside their fingerprinted helpers.
+    watch_parent(
+        bounded_references, "prepare", sen4agrinet, "index_checkpoint",
+        lambda arguments: None, "Gathering reference patches", "patch",
+    )
+    from crop_pipeline.imagery.accelerated import AcceleratedRetriever
+    watch_parent(
+        annual_batch, "collect_batch_year", AcceleratedRetriever, "inventory_region",
+        lambda arguments: None, "Gathering annual imagery", "tile",
+    )
     watch_parent(
         sen4agrinet,
         "discover_manifest",
@@ -222,7 +232,8 @@ def enable():
 def call_parent(parent, name, arguments, keywords):
     from crop_pipeline import progress
 
-    if name in {"build_reference_inventory", "audit_source", "download_region"}:
+    if name in {"build_reference_inventory", "audit_source", "download_region",
+                "prepare", "collect_batch_year"}:
         with progress.quiet_output():
             return parent(*arguments, **keywords)
     return parent(*arguments, **keywords)

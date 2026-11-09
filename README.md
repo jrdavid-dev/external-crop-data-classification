@@ -14,7 +14,7 @@ Retain at most 20 pixels per parcel. These are sampling budgets, not a guarantee
 
 ## Setup
 
-A fresh clone needs no existing datasets or settings JSON. Open the repository, select a Python 3.12+ kernel (3.13 recommended), and Run All in source notebooks 01–03. They install missing dependencies, configure portable local settings, and obtain missing reference inputs. Enter an Earth Engine-enabled project ID and sign in when prompted. Nothing starts simply by opening a notebook.
+Open the repository and select a Python 3.12+ kernel (3.13 recommended). Source notebooks 01–03 install missing dependencies and configure local settings. All three share six workflow sections and default to `reference_mode = "reuse"`. On a fresh clone, choose `"download_missing"`; Sen4AgriNet retains an explicit reference patch cap. Use `"offline"` for local inspection without package installation or satellite calls. Enter an Earth Engine-enabled project ID and sign in when prompted. Nothing starts simply by opening a notebook.
 
 Manual installation remains available:
 
@@ -29,7 +29,7 @@ On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 
 ## Notebook loop
 
-1. **01 Sen4AgriNet, 02 FranceCrops, 03 CropHarvest:** notebooks 01 and 03 select at most 25 new eligible parcels per available crop. Notebook 02 targets up to 100 cabbage and 100 potato candidates for an overnight round, preserving and resuming any already submitted smaller batch. Rerun the same notebook to collect its pending jobs.
+1. **01 Sen4AgriNet, 02 FranceCrops, 03 CropHarvest:** notebook 01 targets up to 100 carrot and 100 potato candidates per round from a capped reference subset; notebook 02 targets up to 100 cabbage and 100 potato candidates per round; notebook 03 targets up to 100 eligible parcels per available crop per round. Existing selections and submitted jobs are preserved. Rerun the same notebook to collect its pending jobs.
 2. **04 Four-month windows:** combine completed batches, run the existing timing/quality checks, retain balanced usable samples, and save deficits.
 3. If targets are unmet, repeat **01–03 → 04**. Previously selected parcels and locked partitions are preserved. Only deficit crop/partition combinations get new candidates.
 4. When targets are met, run **05 Feature engineering → 06 Model training**. Adaptive training remains blocked until the targets are satisfied.

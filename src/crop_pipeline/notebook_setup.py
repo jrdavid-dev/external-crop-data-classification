@@ -52,7 +52,7 @@ def missing_packages(requirements):
     return missing
 
 
-def prepare_environment(repository_root):
+def prepare_environment(repository_root, install_missing=True):
     """Make a cloned src layout importable and install missing notebook dependencies."""
     if sys.version_info < (3, 12):
         raise RuntimeError(
@@ -70,6 +70,8 @@ def prepare_environment(repository_root):
         )
     configure_certificates()
     missing = missing_packages(required_packages(requirements_path))
+    if missing and not install_missing:
+        raise RuntimeError("Offline setup requires installed dependencies: " + ", ".join(missing))
     if missing:
         print("Installing missing packages in the active kernel:", missing)
         subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
@@ -80,7 +82,8 @@ def prepare_environment(repository_root):
         if (repository_root / "pyproject.toml").is_file()
         else requirements_path.parent
     )
-    ensure_editable_package(package_root)
+    if install_missing:
+        ensure_editable_package(package_root)
     print("Notebook environment ready:", sys.executable)
 
 

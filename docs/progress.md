@@ -21,7 +21,9 @@ During collection, the total counts **tiles attempted**, including retries that 
 - During measurable final-stage work, such as annual tile collection, current throughput can supply a rough remaining notebook estimate. Authentication, network throttling, tile size, cache reuse and final export overhead can change it.
 - Optional or disabled stages are marked skipped. Pending training and failed runs do not become completed timing profiles.
 
-Bars use notebook widgets when available and text progress otherwise. Verbose per-file collector messages are saved in a `.log` file beside the timing report rather than printed in the cell. Authentication prompts, final summaries and error tracebacks remain visible. Progress observes successful calls without changing arguments, selected windows, model parameters or parcel splits.
+Bars use notebook widgets when available and text progress otherwise. Bounded reference scans and annual batch collection reuse this same bar: they do not create a row for each patch, Earth Engine task or download page. Gathering counts completed inventory calls; these are not verified imagery completion or elapsed-time percentages. When a bounded scan can stop early or remote work has no measurable total, the bar shows counts without a percentage. Final collection summaries still report verified local completion and cloud states.
+
+Verbose per-file collector messages are saved in a `.log` file beside the timing report rather than printed in the cell. Authentication prompts, final summaries and error tracebacks remain visible. Progress observes successful calls without changing arguments, selected windows, model parameters or parcel splits.
 
 ## Saved timing reports
 

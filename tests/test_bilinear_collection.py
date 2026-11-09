@@ -146,7 +146,8 @@ class BilinearCollectionTests(unittest.TestCase):
             notebook = json.loads((Path(__file__).parents[1] / "notebooks" / f"{name}.ipynb").read_text())
             source = "\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
             self.assertIn("run_satellite_collection = True", source)
-            self.assertIn("authenticate_now = True", source)
+            self.assertIn("authenticate_now = run_satellite_collection", source)
+            self.assertIn('reference_mode != "offline"', source)
             self.assertTrue("adaptive.collect_batch(" in source or "adaptive.collect_batches(" in source)
             self.assertNotIn("select_timing_plans(", source)
         self.assertEqual(

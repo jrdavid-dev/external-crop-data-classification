@@ -82,6 +82,28 @@ class NotebookSetupTests(unittest.TestCase):
                 [sys.executable, "-m", "pip", "install", "numpy==2.5.4"]
             )
 
+    def test_offline_bootstrap_never_installs_packages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "requirements-notebooks.txt").write_text("numpy\n")
+            with (
+                patch.object(notebook_setup, "missing_packages", return_value=["numpy"]),
+                patch.object(notebook_setup.subprocess, "check_call") as install,
+                patch.object(notebook_setup, "ensure_editable_package") as editable,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Offline setup requires installed dependencies"):
+                    notebook_setup.prepare_environment(root, install_missing=False)
+                install.assert_not_called()
+                editable.assert_not_called()
+            with (
+                patch.object(notebook_setup, "missing_packages", return_value=[]),
+                patch.object(notebook_setup.subprocess, "check_call") as install,
+                patch.object(notebook_setup, "ensure_editable_package") as editable,
+            ):
+                notebook_setup.prepare_environment(root, install_missing=False)
+                install.assert_not_called()
+                editable.assert_not_called()
+
     def test_editable_install_is_only_needed_for_another_or_missing_checkout(self):
         import sys
 
@@ -214,15 +236,18 @@ class NotebookSetupTests(unittest.TestCase):
                     side_effect=AssertionError("No real network"),
                 ),
             ):
-                execute_source_cells(notebook, namespace, notebook_path)
+                execute_source_cells(
+                    notebook, namespace, notebook_path, reference_mode="download_missing"
+                )
             self.assertEqual(download.call_count, 3)
             self.assertTrue((root / "settings.local.json").is_file())
             self.assertEqual(namespace["annual_plan"]["estimate"]["parcels"], 2)
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
-            self.assertTrue(namespace["download_missing_reference_tables"])
+            self.assertEqual(namespace["reference_mode"], "download_missing")
+            self.assertTrue(namespace["reference_options"]["download_if_missing"])
 
 
-def execute_source_cells(notebook, namespace, notebook_path):
+def execute_source_cells(notebook, namespace, notebook_path, reference_mode=None):
     """Exercise reference setup with collection disabled and all real network blocked."""
     for cell in [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]:
         source = (
@@ -232,73 +257,64 @@ def execute_source_cells(notebook, namespace, notebook_path):
             )
             .replace("authenticate_now = True", "authenticate_now = False")
         )
+        if reference_mode is not None:
+            source = source.replace(
+                'reference_mode = "reuse"', f"reference_mode = {reference_mode!r}"
+            )
         exec(compile(source, str(notebook_path), "exec"), namespace)
 
 
 class FreshSen4AgriNetNotebookTests(unittest.TestCase):
-    def test_run_all_without_checkpoints_does_not_start_new_reference_downloads(
-        self,
-    ):
+    def test_reuse_without_pinned_manifest_stops_before_remote_discovery(self):
         from contextlib import chdir
-        from types import SimpleNamespace
-        from unittest.mock import MagicMock
-        from test_sen4agrinet_references import write_patch
-        from crop_pipeline.sources import remote_masks
 
         repository = Path(__file__).resolve().parents[1]
         notebook_path = repository / "notebooks/01_sen4agrinet_preparation.ipynb"
         notebook = json.loads(notebook_path.read_text())
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            simulated_server = root / "mock_upstream"
+            namespace = {}
+            with (
+                chdir(root),
+                redirect_stdout(io.StringIO()),
+                patch("huggingface_hub.HfApi") as hub,
+                patch("requests.sessions.Session.request", side_effect=AssertionError("No real network")),
+            ):
+                with self.assertRaisesRegex(FileNotFoundError, "No complete dataset-wide reference discovery"):
+                    execute_source_cells(notebook, namespace, notebook_path)
+            hub.assert_not_called()
+            self.assertTrue((root / "settings.local.json").is_file())
+            self.assertEqual(namespace["reference_mode"], "reuse")
+            self.assertFalse(namespace["reference_options"]["download_if_missing"])
+            self.assertNotIn("collection_result", namespace)
+
+    def test_reuse_with_manifest_but_no_checkpoints_does_not_download_references(self):
+        from contextlib import chdir
+        from test_sen4agrinet_references import manifest_for, write_patch
+        from crop_pipeline.sources import remote_masks, sen4agrinet
+
+        repository = Path(__file__).resolve().parents[1]
+        notebook_path = repository / "notebooks/01_sen4agrinet_preparation.ipynb"
+        notebook = json.loads(notebook_path.read_text())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
             checkout = root / "fresh_clone"
             checkout.mkdir()
-            records = [
-                write_patch(simulated_server, 2019, crop_code=231, parcel_id=1),
-                write_patch(simulated_server, 2020, crop_code=213, parcel_id=2),
-            ]
-            hub = MagicMock()
-            hub.repo_info.return_value.sha = "a" * 40
-            hub.list_repo_tree.return_value = [
-                SimpleNamespace(
-                    path=record["filename"],
-                    size=record["expected_bytes"],
-                    lfs={"sha256": record["sha256"]},
-                    blob_id=None,
-                )
-                for record in records
-            ]
-
-            def fetch_masks(record, manifest, folder, crop_codes, enabled):
-                self.assertTrue(enabled)
-                self.assertEqual(manifest["revision"], "a" * 40)
-                return simulated_server / record["filename"], {
-                    "retrieval": "http_range_masks_only",
-                    "network_bytes_this_run": 0,
-                }
-
+            record = write_patch(root / "mock_upstream", 2019, crop_code=231, parcel_id=1)
             namespace = {}
             with (
                 chdir(checkout),
                 redirect_stdout(io.StringIO()),
                 patch.dict(os.environ, {"S4A_ROOT": str(checkout / "no_raw_files")}),
-                patch("huggingface_hub.HfApi", return_value=hub),
-                patch.object(
-                    remote_masks, "obtain_reference_masks", side_effect=fetch_masks
-                ) as downloader,
-                patch(
-                    "huggingface_hub.hf_hub_download",
-                    side_effect=AssertionError("Full NetCDF downloads forbidden"),
-                ),
-                patch(
-                    "requests.sessions.Session.request",
-                    side_effect=AssertionError("No real network"),
-                ),
+                patch.object(sen4agrinet, "discover_release", return_value=manifest_for([record])) as discovery,
+                patch.object(remote_masks, "obtain_reference_masks", side_effect=AssertionError("Cache-only mode")) as downloader,
+                patch("huggingface_hub.hf_hub_download", side_effect=AssertionError("Full NetCDF downloads forbidden")),
+                patch("requests.sessions.Session.request", side_effect=AssertionError("No real network")),
             ):
                 with self.assertRaisesRegex(ValueError, "No verified reference patches"):
                     execute_source_cells(notebook, namespace, notebook_path)
-            self.assertEqual(downloader.call_count, 0)
-            self.assertTrue((checkout / "settings.local.json").is_file())
-            self.assertTrue(namespace["reference_cached_only"])
+            self.assertFalse(discovery.call_args.kwargs["enabled"])
+            downloader.assert_not_called()
+            self.assertTrue(namespace["reference_options"]["cached_only"])
             self.assertNotIn("collection_result", namespace)
             self.assertFalse((checkout / "no_raw_files").exists())

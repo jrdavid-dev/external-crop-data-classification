@@ -132,6 +132,63 @@ class ProgressTests(unittest.TestCase):
             self.assertEqual(len(bars), 1)
             self.assertEqual(progress_observers._counters.get(), {})
 
+    def test_bounded_gathering_logs_details_and_reuses_one_bar(self):
+        import io
+        from contextlib import redirect_stdout
+
+        module = SimpleNamespace(__name__="bounded_fixture")
+
+        def index_checkpoint(value):
+            print(f"Patch {value} checked")
+            return value
+
+        def prepare(manifest):
+            return [module.index_checkpoint(value) for value in manifest]
+
+        module.index_checkpoint, module.prepare = index_checkpoint, prepare
+        progress_observers.watch_parent(
+            module, "prepare", module, "index_checkpoint",
+            lambda arguments: None, "Gathering references", "patch",
+        )
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(progress, "make_bar", side_effect=FakeBar) as factory,
+        ):
+            displayed = io.StringIO()
+            with redirect_stdout(displayed):
+                monitor = progress.start_notebook("test", ["gather"], temporary, {})
+                monitor.begin("gather")
+                self.assertEqual(module.prepare([1, 2, 3]), [1, 2, 3])
+                self.assertEqual(factory.call_count, 1)
+                self.assertEqual(monitor.bar.n, 3)
+                self.assertIsNone(monitor.bar.total)
+                monitor.end()
+                progress.finish_notebook()
+            self.assertNotIn("Patch", displayed.getvalue())
+            self.assertIn("Patch 3 checked", monitor.output.path.read_text())
+
+    def test_batch_collection_details_are_logged_and_errors_propagate(self):
+        import io
+        from contextlib import redirect_stdout
+
+        def collect():
+            print("Downloading task 123 page 1")
+            raise ValueError("download failed")
+
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(progress, "make_bar", side_effect=FakeBar),
+        ):
+            displayed = io.StringIO()
+            with redirect_stdout(displayed):
+                monitor = progress.start_notebook("test", ["collect"], temporary, {})
+                monitor.begin("collect")
+                with self.assertRaisesRegex(ValueError, "download failed"):
+                    progress_observers.call_parent(collect, "collect_batch_year", (), {})
+                progress.finish_notebook()
+            self.assertNotIn("Downloading task", displayed.getvalue())
+            self.assertIn("Downloading task", monitor.output.path.read_text())
+
     def test_progress_only_notebook_edits_keep_processing_fingerprint(self):
         original = {"cells": [{"cell_type": "code", "source": ["threshold = 0.8\n"]}]}
         decorated = {
