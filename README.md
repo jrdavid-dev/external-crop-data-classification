@@ -1,70 +1,69 @@
 # External crop data classification
 
-Prepare a repeatable classification workflow for **carrot, cabbage and potato**. The default collection, `full_year_all_parcels`, uses every eligible parcel in the supplied Sen4AgriNet, FranceCrops and CropHarvest references. Earth Engine processes full-year observations; local storage holds 24 half-month composites and dated vegetation summaries. Window selection happens afterward.
+Prepare carrot, cabbage and potato training data with **small, incremental parcel batches**. The default `adaptive_training` workflow collects annual histories for selected candidates, checks their usable four-month windows, and tops up only crops/partitions below the initial sample targets. It does not default to downloading all 18,012 FranceCrops tiles.
 
-Collection is **configured for the next Run All**, but no work starts until cells execute. Old pilot datasets and results remain separate. See [full-year collection](docs/full_year_collection.md) for reference coverage and storage planning.
+Initial targets **per crop**, after quality filtering:
+
+| Partition | Usable pixels | Minimum source parcels |
+| --- | ---: | ---: |
+| Training | 1,200 | 60 |
+| Validation | 400 | 20 |
+| Reserved test | 400 | 20 |
+
+Retain at most 20 pixels per parcel. These are sampling budgets, not a guarantee of accuracy. Keep whole parcels in one partition and assess external-to-local transfer separately.
 
 ## Setup
 
-**A fresh clone needs no existing datasets or settings JSON.** Open the repository in your notebook editor, select a Python 3.12+ kernel (3.13 recommended), and Run All in source notebooks 01–03. They install missing dependencies in the active environment, make the cloned package available to fresh kernels, create portable local settings, and obtain missing reference inputs automatically.
+A fresh clone needs no existing datasets or settings JSON. Open the repository, select a Python 3.12+ kernel (3.13 recommended), and Run All in source notebooks 01–03. They install missing dependencies, configure portable local settings, and obtain missing reference inputs. Enter an Earth Engine-enabled project ID and sign in when prompted. Nothing starts simply by opening a notebook.
 
-Enter your registered Earth Engine project ID once if prompted, then complete sign-in. A compatible Python kernel, pip, internet access and an Earth Engine-enabled account/project are still required. Use a virtual environment to keep dependencies isolated. Nothing starts merely by opening the notebooks.
-
-See the [fresh-clone guide](docs/fresh_clone.md) for the complete sequence and storage paths. Manual installation remains available:
+Manual installation remains available:
 
 ```bash
 python3.13 -m venv .venv
-.venv/bin/python -m pip install -r requirements-notebooks.txt
-.venv/bin/python -m pip install -e .
+source .venv/bin/activate
+python -m pip install -r requirements-notebooks.txt
+python -m pip install -e .
 ```
 
-On Windows, use `py -3.13` and `.venv\Scripts\python.exe`. Local storage is the default; choose another local drive with `annual_archive_root` in the automatically created settings file.
+On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 
-## Notebook order
+## Notebook loop
 
-| Order | Notebook | Purpose |
-|---|---|---|
-| 1 | [Sen4AgriNet preparation](notebooks/01_sen4agrinet_preparation.ipynb) | Discover all upstream years/tiles, extract target references and annual imagery |
-| 2 | [FranceCrops preparation](notebooks/02_francecrops_preparation.ipynb) | Prepare cabbage/table-potato references and annual imagery |
-| 3 | [CropHarvest preparation](notebooks/03_cropharvest_preparation.ipynb) | Screen references and prepare annual imagery |
-| 4 | [Four-month windows](notebooks/04_four_month_windows.ipynb) | Combine selected sources, choose windows and usable pixels |
-| 5 | [Feature engineering](notebooks/05_feature_engineering.ipynb) | Prepare the feature experiments |
-| 6 | [Model training](notebooks/06_model_training.ipynb) | Fit models and evaluate parcel-separated predictions |
+1. **01 Sen4AgriNet, 02 FranceCrops, 03 CropHarvest:** notebooks 01 and 03 select at most 25 new eligible parcels per available crop. Notebook 02 targets up to 100 cabbage and 100 potato candidates for an overnight round, preserving and resuming any already submitted smaller batch. Rerun the same notebook to collect its pending jobs.
+2. **04 Four-month windows:** combine completed batches, run the existing timing/quality checks, retain balanced usable samples, and save deficits.
+3. If targets are unmet, repeat **01–03 → 04**. Previously selected parcels and locked partitions are preserved. Only deficit crop/partition combinations get new candidates.
+4. When targets are met, run **05 Feature engineering → 06 Model training**. Adaptive training remains blocked until the targets are satisfied.
 
-Finish all three source collections before window selection. Missing handoffs stop downstream processing. Sources have no pilot pixel budgets; notebook 04 retains every usable pixel while keeping the existing timing and quality checks. FranceCrops supplies explicit cabbage and table-potato classes, with no carrot class.
+FranceCrops contributes cabbage/table potato, not carrots. Sources with no candidates for remaining deficits are skipped explicitly. Candidate batches are not expected to have a guaranteed usable yield.
 
-## Project folders
+## Annual TIFF folder
 
-Notebooks are in `notebooks/`; shared Python code is in `src/crop_pipeline/`, including the `visualization` helpers. The source-notebook bootstrap installs this clone as an editable package for fresh downstream kernels. Settings, datasets and generated results stay in their existing root-level locations; they do not move into the notebook folder.
+Completed imagery is organized under:
 
-## Collection and evaluation
+```text
+sen4agrinet_work/annual_tifs/<source>/<year>/<campaign>/round_<number>/
+```
 
-Set `annual_archive_root` in local settings to choose local or external-SSD storage. Run sources with collection disabled to inspect reference scope and exact grid-based raster estimates. Sen4AgriNet builds a complete pinned-release reference inventory using selective mask reads, avoiding full NetCDF downloads and preserving the old subset. CropHarvest fetches its pinned labels only when missing; FranceCrops fetches missing pinned reference tables automatically.
+Each tile has one annual TIFF with **168 labelled bands**: all 24 half-month periods × seven measurements. This preserves flexibility to revise four-month windows. Only selected parcel pixels are populated. Sampling masks are stored separately; Parquet files are retained as the compact transport/cache. Notebook 04 reads the annual TIFFs directly. Set `annual_archive_root` in local settings to use another local drive; annual TIFFs are stored in a sibling folder.
 
-Notebooks 04–06 share the selected collection. Local exploratory training keeps parcels separate and balances each crop's total training weight. Formal production exports retain their scientific evidence and freeze requirements. External-source accuracy does not establish Benguet performance.
+Earth Engine jobs use temporary project asset storage; Google Drive is not required. Local files are verified before temporary assets are removed. The original full-year catalogue/archive helpers and earlier explicit collection selectors remain available for deliberate use, but are not the source notebooks' default.
 
-## Essential guides
+## Guides
 
-Start with the [documentation index](docs/README.md) for a short glossary.
+- [Adaptive training and annual TIFFs](docs/adaptive_training.md): budgets, candidate selection, top-ups, locked partitions and file layout.
+- [Fresh clone](docs/fresh_clone.md): environment and source setup.
+- [Progress](docs/progress.md): measured local completion and task states.
+- [Pixel-table transport](docs/pixel_tables.md): export/cache format and the earlier bounded benchmark.
+- [Full-year catalogue archive](docs/full_year_collection.md): optional full-catalogue collection and previous transport modes.
+- [Methodology](docs/methodology.md): imagery rules and timing/quality limitations.
+- [Training](docs/training.md): evaluation and evidence requirements.
 
-- [Progress and estimates](docs/progress.md): measured stage ETAs and saved notebook timings.
-- [Fresh clone](docs/fresh_clone.md): Run All without existing datasets or settings files.
-- [Sen4AgriNet references](docs/sen4agrinet.md): dataset-wide discovery, Run All, checkpoints and raw-file preservation.
-- [Full-year collection](docs/full_year_collection.md): scope, storage estimates, switches and completed handoffs.
-- [CropHarvest](docs/cropharvest.md): run modes, observation years, safe batch collection and supplemental handoffs.
-- [Workflow](docs/workflow.md): run modes, notebook steps, saved files and common problems.
-- [Methodology](docs/methodology.md): imagery rules, four-month timing, usable pixels and limitations.
-- [Feature experiments](docs/feature_experiments.md): SAVI, temporal shape, bilinear processing and model comparisons.
-- [Training and evaluation](docs/training.md): field partitions, required evidence, model inputs and metrics.
+Raw data, generated files, credentials, local settings and environments stay out of Git. The upstream dataset licenses do not assign a license to this project's code.
 
 ## Development
-
-Run the test suite:
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-On Windows, use `.\.venv\Scripts\python.exe` instead. Tests verify software behavior; they do not establish crop-label or phenology accuracy.
-
-Code, workflow notebooks, tests and documentation belong in Git. Raw data, imagery, generated results, credentials, `.venv` and local settings are excluded. Attribute the upstream datasets when using their data; their licenses do not assign a license to this project's code.
+Tests verify software behavior and numerical transport; they do not establish crop-label or phenology accuracy.

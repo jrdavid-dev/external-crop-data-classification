@@ -217,7 +217,9 @@ def supplementary_handoffs(bundle_path, expected_hash, collection_name):
 
 def resolve_collection(report_root, collection_name):
     """Follow an explicitly activated, hash-checked supplement into a separate analysis."""
-    from crop_pipeline.sources import annual
+    from crop_pipeline.sources import annual, adaptive
+    if collection_name == adaptive.COLLECTION_NAME:
+        return adaptive.resolve_collection(report_root)
     if collection_name == annual.COLLECTION_NAME:
         return annual.resolve_collection(report_root)
     handoff_folder = Path(report_root).parent / "source_handoffs"

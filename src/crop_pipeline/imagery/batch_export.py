@@ -20,8 +20,10 @@ import rasterio
 from affine import Affine
 
 from crop_pipeline.common import save_json
+from crop_pipeline.imagery import timelines, sampling_mask
 
 INDEX_BANDS = [("NDVI", "B4"), ("NDRE", "B5"), ("NDMI", "B11")]
+MAX_OUTSTANDING_TASKS = 100  # Leave room in the project queue for other work.
 FINISHED_STATES = {"SUCCEEDED", "COMPLETED"}
 FAILED_STATES = {"FAILED", "CANCELLED", "CANCELLING"}
 # Table assets reject rows without a geometry; exported rows carry this placeholder,
@@ -51,6 +53,9 @@ def settings_fingerprint(settings):
 def request_fingerprint(plan):
     """Bind remote work to settings and acquisition IDs, not just a parcel name."""
     payload = {"settings": plan["settings"], "acquisitions": plan["acquisitions"]}
+    if plan.get("fragment", {}).get("properties", {}).get("sampling_mask"):
+        payload["daily_contract"] = timelines.summary_contract(
+            plan, sampling_mask.load_selection(plan), 0.8)
     return content_key(payload)
 
 
@@ -152,6 +157,11 @@ def task_state(ee, project, task_id):
     )
 
 
+def outstanding_tasks(ledger):
+    return sum(not entry.get("collected") and entry.get("state") not in FAILED_STATES
+               for entry in ledger)
+
+
 def in_flight(ledger):
     """Work items covered by tasks that are submitted and not yet collected or failed."""
     covered = set()
@@ -239,53 +249,41 @@ def day_entries(acquisitions, start=None, end=None):
 
 def daily_collection(ee, retriever, plans):
     """One feature per region-date with the median and count of each index."""
-    reducer = ee.Reducer.median().combine(ee.Reducer.count(), sharedInputs=True)
     regions = []
     for plan in plans:
-        grid = plan["settings"]["grid"]
-        footprint = ee.Geometry(
-            plan["fragment"]["geometry"], proj="EPSG:4326", geodesic=False
-        )
-        regions.append(
-            ee.Feature(
-                footprint,
-                {
-                    "region_id": plan["fragment_id"],
-                    "crs": grid["crs"],
-                    "transform": grid["transform"],
-                    "days": day_entries(plan["acquisitions"]),
-                    "indices": region_indices(plan["acquisitions"]),
-                },
-            )
-        )
+        selection = sampling_mask.load_selection(plan)
+        grid = selection["grid"]
+        regions.append(ee.Feature(sampling_mask.grid_footprint(ee, grid), {
+            "region_id": plan["fragment_id"], "crs": grid["crs"],
+            "transform": grid["transform"], "width": grid["width"], "height": grid["height"],
+            "selected_ids": selection["selected_ids"],
+            "days": day_entries(plan["acquisitions"]), "indices": region_indices(plan["acquisitions"]),
+        }))
 
     def region_days(feature):
         feature = ee.Feature(feature)
-        geometry = feature.geometry()
+        selected = sampling_mask.selection_image(ee, {
+            "crs": feature.get("crs"), "transform": feature.get("transform"),
+            "width": ee.Number(feature.get("width")), "height": ee.Number(feature.get("height")),
+        }, feature.get("selected_ids"))
         sources = granule_sources(ee, retriever, feature.get("indices"))
+        reducer = ee.Reducer.median().unweighted().combine(ee.Reducer.count(), sharedInputs=True)
 
         def one_day(entry):
             parts = ee.String(entry).split(";")
-            image = daily_index_image(
-                ee, masked_mosaic(ee, retriever, sources, parts.get(1))
-            )
+            daily = masked_mosaic(ee, retriever, sources, parts.get(1))
+            image = timelines.daily_index_image(daily, ee).updateMask(selected)
             statistics = image.reduceRegion(
-                reducer=reducer,
-                geometry=geometry,
-                crs=feature.get("crs"),
-                crsTransform=feature.get("transform"),
-                maxPixels=1000000,
-            )
+                reducer=reducer, geometry=feature.geometry(), crs=feature.get("crs"),
+                crsTransform=feature.get("transform"), maxPixels=1000000)
             return ee.Feature(ee.Geometry.Point(PLACEHOLDER), statistics).set(
-                {"date": parts.get(0), "region_id": feature.get("region_id")}
-            )
-
+                {"date": parts.get(0), "region_id": feature.get("region_id")})
         return ee.FeatureCollection(ee.List(feature.get("days")).map(one_day))
 
     return ee.FeatureCollection(regions).map(region_days).flatten()
 
 
-def composite_collection(ee, retriever, items):
+def composite_collection(ee, retriever, items, selected_only=False):
     """One feature per grid pixel of each (region, interval) half-month composite."""
     bands, outputs, nodata = (
         retriever.spectral_bands,
@@ -308,6 +306,8 @@ def composite_collection(ee, retriever, items):
                     "region_id": plan["fragment_id"],
                     "crs": grid["crs"],
                     "transform": grid["transform"],
+                    "selected_ids": sampling_mask.load_selection(plan)["selected_ids"] if selected_only else [],
+                    "width": grid["width"], "height": grid["height"],
                     "intervals": [
                         interval["name"]
                         + "".join(
@@ -350,10 +350,16 @@ def composite_collection(ee, retriever, items):
             composite = ee.Image(
                 ee.Algorithms.If(days.size().gt(0), built, empty)
             ).toFloat()
+            if selected_only:
+                selected = sampling_mask.selection_image(ee, {
+                    "crs": feature.get("crs"), "transform": feature.get("transform"),
+                    "width": ee.Number(feature.get("width")), "height": ee.Number(feature.get("height"))
+                }, feature.get("selected_ids"))
+                composite = composite.updateMask(selected)
             samples = composite.addBands(ee.Image.pixelCoordinates(projection)).sample(
                 region=rectangle,
                 projection=projection,
-                dropNulls=False,
+                dropNulls=selected_only,
                 geometries=False,
             )
             return samples.map(
@@ -399,15 +405,16 @@ def start_export(ee, collection, asset_id, description):
 
 def missing_daily_checkpoints(plans, timeline_folder):
     """Plans without the checkpoint file retrieve_observed_timelines would reuse."""
-    return [
-        plan
-        for plan in plans
-        if not (
-            Path(timeline_folder)
-            / "observed_checkpoints"
-            / f"{plan['fragment_id']}_{settings_fingerprint(plan['settings'])}.json"
-        ).exists()
-    ]
+    return [plan for plan in plans if not daily_checkpoint(plan, timeline_folder).exists()]
+
+
+def daily_checkpoint(plan, folder):
+    if plan.get("fragment", {}).get("properties", {}).get("sampling_mask"):
+        selection = sampling_mask.load_selection(plan)
+        contract = timelines.summary_contract(plan, selection, 0.8)
+        return timelines.checkpoint_path(folder, plan["fragment_id"], contract)
+    return Path(folder) / "observed_checkpoints" / (
+        f"{plan['fragment_id']}_{settings_fingerprint(plan['settings'])}.json")
 
 
 def submit_daily(
@@ -419,14 +426,17 @@ def submit_daily(
     temp_folder,
     year,
     region_days_per_task=6000,
+    checkpoint_folder=None,
 ):
     """Submit daily-summary tasks for regions without a local checkpoint; return at once."""
     ledger = load_ledger(ledger_path)
     covered = in_flight(ledger)
     missing = [
         plan
-        for plan in missing_daily_checkpoints(plans, timeline_folder)
-        if work_item("daily", plan) not in covered
+        for plan in plans
+        if not daily_checkpoint(plan, checkpoint_folder(plan) if checkpoint_folder
+                                else timeline_folder).exists()
+        and work_item("daily", plan) not in covered
     ]
     ensure_folder(ee, temp_folder)
     submitted = []
@@ -436,6 +446,8 @@ def submit_daily(
         region_days_per_task,
     )
     for group in groups:
+        if outstanding_tasks(ledger) >= MAX_OUTSTANDING_TASKS:
+            break
         key = hashlib.sha256(
             "|".join(work_item("daily", plan) for plan in group).encode()
         ).hexdigest()[:10]
@@ -460,6 +472,7 @@ def submit_daily(
             "collected": False,
         }
         ledger.append(entry)
+        save_ledger(ledger_path, ledger)
         submitted.append(entry)
     save_ledger(ledger_path, ledger)
     return {
@@ -504,42 +517,49 @@ def pending_composites(retriever, plans):
 
 
 def submit_composites(
-    ee, retriever, plans, ledger_path, temp_folder, year, pixels_per_task=60000
+    ee, retriever, plans, ledger_path, temp_folder, year, pixels_per_task=60000,
+    selected_only=False,
 ):
     """Submit composite tasks for qualified bins not yet saved locally; return at once."""
     ledger = load_ledger(ledger_path)
     covered = in_flight(ledger)
     work = []
-    for plan, intervals in pending_composites(retriever, plans):
+    from crop_pipeline.imagery import pixel_tables
+    pending_work = pixel_tables.pending if selected_only else pending_composites
+    kind = "pixel_table" if selected_only else "composite"
+    for plan, intervals in pending_work(retriever, plans):
         intervals = [
-            i for i in intervals if work_item("composite", plan, i) not in covered
+            i for i in intervals if work_item(kind, plan, i) not in covered
         ]
         if intervals:
             work.append((plan, intervals))
     ensure_folder(ee, temp_folder)
     grid_pixels = lambda item: (
-        item[0]["settings"]["grid"]["width"]
-        * item[0]["settings"]["grid"]["height"]
+        (item[0]["fragment"]["properties"]["selected_pixels"] if selected_only else
+         item[0]["settings"]["grid"]["width"] * item[0]["settings"]["grid"]["height"])
         * len(item[1])
     )
     submitted = []
     for group in chunk(work, grid_pixels, pixels_per_task):
+        if outstanding_tasks(ledger) >= MAX_OUTSTANDING_TASKS:
+            break
         names = [
-            work_item("composite", plan, interval)
+            work_item(kind, plan, interval)
             for plan, intervals in group
             for interval in intervals
         ]
         key = hashlib.sha256("|".join(names).encode()).hexdigest()[:10]
-        asset_id = f"{temp_folder}/composites_{year}_{key}"
+        asset_id = f"{temp_folder}/{kind}_{year}_{key}"
         task_id = start_export(
             ee,
-            composite_collection(ee, retriever, group),
+            composite_collection(ee, retriever, group, selected_only=True) if selected_only
+            else composite_collection(ee, retriever, group),
             asset_id,
             f"cropharvest_composites_{year}_{key}",
         )
         entry = {
             "task_id": task_id,
-            "kind": "composite",
+            "kind": kind,
             "year": year,
             "asset_id": asset_id,
             "items": names,
@@ -551,6 +571,7 @@ def submit_composites(
             "collected": False,
         }
         ledger.append(entry)
+        save_ledger(ledger_path, ledger)
         submitted.append(entry)
     save_ledger(ledger_path, ledger)
     return {
@@ -562,10 +583,31 @@ def submit_composites(
 # ----------------------------------------------------------------------------- collect
 
 
-def read_table(ee, asset_id):
-    return ee.data.computeFeatures(
-        {"expression": ee.FeatureCollection(asset_id), "fileFormat": "PANDAS_DATAFRAME"}
-    )
+def read_table(ee, asset_id, cache_dir=None):
+    from crop_pipeline.imagery.table_download import download
+    return download(ee, asset_id, cache_dir=cache_dir)
+
+
+def read_pixel_table_csv(ee, asset_id):
+    """Retrieve only measurement fields, avoiding per-feature GeoJSON overhead."""
+    from io import BytesIO
+    from zipfile import ZipFile, is_zipfile
+    import pandas as pd
+    import requests
+    selectors = ["region_id", "interval", "x", "y", "B3", "B4", "B5", "B8", "B11", "B2", "clear_count"]
+    url = ee.FeatureCollection(asset_id).getDownloadURL(filetype="CSV", selectors=selectors)
+    with requests.get(url, timeout=(30, 180)) as response:
+        response.raise_for_status()
+        content = BytesIO(response.content)
+    if is_zipfile(content):
+        with ZipFile(content) as archive:
+            files = [name for name in archive.namelist() if name.lower().endswith(".csv")]
+            if len(files) != 1:
+                raise ValueError("Unexpected CSV download archive")
+            with archive.open(files[0]) as stream:
+                return pd.read_csv(stream, float_precision="round_trip")
+    content.seek(0)
+    return pd.read_csv(content, float_precision="round_trip")
 
 
 def finite_or_none(value):
@@ -621,20 +663,17 @@ def write_daily_checkpoints(
                     },
                 }
             )
-        path = (
-            Path(timeline_folder)
-            / "observed_checkpoints"
-            / f"{region_id}_{settings_fingerprint(plan['settings'])}.json"
-        )
-        save_json(
-            path,
-            {
-                "settings": plan["settings"],
-                "retrieved_at": datetime.now(timezone.utc).isoformat(),
-                "rows": output,
-                "retrieval": "earth_engine_batch_export",
-            },
-        )
+        checkpoint = {
+            "settings": plan["settings"],
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+            "rows": output,
+            "retrieval": "earth_engine_batch_export",
+        }
+        if properties.get("sampling_mask"):
+            selection = sampling_mask.load_selection(plan)
+            checkpoint["contract"] = timelines.summary_contract(plan, selection, minimum_fraction)
+            timelines.validate_cached_rows(output, plan, minimum_fraction)
+        save_json(daily_checkpoint(plan, timeline_folder), checkpoint)
         written += 1
     # Regions whose plan has no matched dates export no rows; the live code saves them empty.
     return written
@@ -733,12 +772,16 @@ def collect(
     ledger = load_ledger(ledger_path)
     report = []
     for entry in ledger:
+        download_cache = None
         if entry["kind"] not in kinds or (
             year is not None and entry.get("year") != year
         ):
             continue
         if entry.get("collected"):
             report.append({**_summary(entry), "note": "already collected"})
+            continue
+        if entry.get("state") in {"FAILED", "CANCELLED"}:
+            report.append({**_summary(entry), "note": "previous failed/cancelled attempt; submit retries missing work"})
             continue
         if entry["kind"] != "permanent" and plans_by_id is not None:
             validate_task_requests(entry, plans_by_id)
@@ -750,7 +793,16 @@ def collect(
             if handler is None:
                 note = "permanent asset saved"
             else:
-                note = handler(entry, read_table(ee, entry["asset_id"]))
+                print(f"Downloading {entry['kind']} result {entry['task_id']}…", flush=True)
+                started = time.monotonic()
+                download_cache = Path(ledger_path).parent / "download_pages" / entry["task_id"]
+                table = read_table(ee, entry["asset_id"], cache_dir=download_cache)
+                entry["download_seconds"] = time.monotonic() - started
+                entry["download_rows"] = len(table)
+                started = time.monotonic()
+                note = handler(entry, table)
+                entry["local_write_seconds"] = time.monotonic() - started
+                print(f"Verified and saved {len(table):,} result rows.", flush=True)
                 ee.data.deleteAsset(entry["asset_id"])
                 note += "; temporary asset deleted"
             entry["collected"] = True
@@ -759,6 +811,9 @@ def collect(
             note = "failed: the submit cell will resubmit this work"
         save_ledger(ledger_path, ledger)
         report.append({**_summary(entry), "note": note})
+        if entry.get("collected") and download_cache is not None:
+            import shutil
+            shutil.rmtree(download_cache, ignore_errors=True)
     return report
 
 

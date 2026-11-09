@@ -33,10 +33,14 @@ def watch_parent(
             "enabled", False
         ):
             return parent(*arguments, **keywords)
+        if parent_name == "collect_source" and bound.arguments.get("collection_backend") == "batch":
+            # Remote jobs do not call the serial tile child. Their artifact snapshot
+            # reports actual completion; a synchronous attempted-tile bar would stay at zero.
+            return parent(*arguments, **keywords)
         with progress.WorkCounter(total(bound.arguments), description, unit) as counter:
             token = _counters.set({**_counters.get(), child_key: counter})
             try:
-                return parent(*arguments, **keywords)
+                return call_parent(parent, parent_name, arguments, keywords)
             finally:
                 _counters.reset(token)
 
@@ -50,7 +54,7 @@ def watch_child(module, name, key):
 
     @functools.wraps(child)
     def observed_child(*arguments, **keywords):
-        result = child(*arguments, **keywords)
+        result = call_child(child, name, arguments, keywords)
         counter = _counters.get().get(key)
         if counter is not None:
             counter.update()
@@ -130,11 +134,11 @@ def enable():
         annual,
         "collect_source",
         annual,
-        "collect_region",
+        "collect_tile_safely",
         lambda arguments: sum(
             inputs["regions"] for inputs in arguments["plan"]["years"].values()
         ),
-        "Annual imagery tiles",
+        "Annual imagery tiles attempted",
         "tile",
     )
     watch_parent(
@@ -213,3 +217,21 @@ def enable():
         "model",
     )
     _installed = True
+
+
+def call_parent(parent, name, arguments, keywords):
+    from crop_pipeline import progress
+
+    if name in {"build_reference_inventory", "audit_source", "download_region"}:
+        with progress.quiet_output():
+            return parent(*arguments, **keywords)
+    return parent(*arguments, **keywords)
+
+
+def call_child(child, name, arguments, keywords):
+    from crop_pipeline import progress
+
+    if name == "collect_tile_safely" and progress.active_monitor() is not None:
+        with progress.quiet_output():
+            return child(*arguments, **keywords)
+    return child(*arguments, **keywords)

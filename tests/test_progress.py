@@ -28,7 +28,10 @@ class FakeBar:
     def set_postfix_str(self, *arguments, **keywords):
         pass
 
-    def set_description(self, *arguments):
+    def reset(self, total):
+        self.total, self.n = total, 0
+
+    def set_description(self, *arguments, **keywords):
         pass
 
 
@@ -125,7 +128,8 @@ class ProgressTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "original failure"):
                 module.parent([values[0], "fail"])
             self.assertEqual(bars[-1].n, 1)
-            self.assertTrue(bars[-1].closed)
+            self.assertFalse(bars[-1].closed)
+            self.assertEqual(len(bars), 1)
             self.assertEqual(progress_observers._counters.get(), {})
 
     def test_progress_only_notebook_edits_keep_processing_fingerprint(self):
@@ -157,3 +161,63 @@ class ProgressTests(unittest.TestCase):
             self.assertNotEqual(
                 progress.processing_notebook_fingerprint(path), original_fingerprint
             )
+
+    def test_nested_file_work_uses_one_total_bar_and_logs_filenames(self):
+        import io
+        from contextlib import redirect_stdout
+
+        bars = []
+
+        def create_bar(**arguments):
+            bar = FakeBar(**arguments)
+            bars.append(bar)
+            return bar
+
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(progress, "make_bar", side_effect=create_bar),
+        ):
+            displayed = io.StringIO()
+            with redirect_stdout(displayed):
+                monitor = progress.start_notebook("test", ["collect"], temporary, {})
+                monitor.begin("collect")
+                with progress.WorkCounter(10, "Total tiles", "tile") as total:
+                    total.update()
+                    with progress.WorkCounter(24, "Files", "file") as files:
+                        files.update()
+                        self.assertEqual(bars[0].n, 1)
+                        self.assertEqual(bars[0].total, 10)
+                        self.assertEqual(len(bars), 1)
+                        with progress.quiet_output():
+                            print("private_file_name.tif downloaded")
+                    total.update()
+                    self.assertEqual(bars[0].n, 2)
+                monitor.end()
+                progress.finish_notebook()
+            self.assertNotIn("private_file_name.tif", displayed.getvalue())
+            self.assertIn("private_file_name.tif", monitor.output.path.read_text())
+
+    def test_sign_in_prompts_stay_visible_while_tile_messages_are_logged(self):
+        import io
+        from contextlib import redirect_stdout
+
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(progress, "make_bar", side_effect=FakeBar),
+        ):
+            displayed = io.StringIO()
+            with redirect_stdout(displayed):
+                monitor = progress.start_notebook("test", ["collect"], temporary, {})
+                monitor.begin("collect")
+                progress_observers.call_parent(
+                    lambda: print("Complete sign-in"), "collect_source", (), {}
+                )
+                result = progress_observers.call_child(
+                    lambda: print("one_tile.tif"), "collect_tile_safely", (), {}
+                )
+                monitor.end()
+                progress.finish_notebook()
+            self.assertIn("Complete sign-in", displayed.getvalue())
+            self.assertNotIn("one_tile.tif", displayed.getvalue())
+            self.assertIn("one_tile.tif", monitor.output.path.read_text())
+            self.assertIsNone(result)

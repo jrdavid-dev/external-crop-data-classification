@@ -7,6 +7,8 @@ otherwise it remains explicitly unknown rather than guessing future stages.
 
 import ast
 import hashlib
+import io
+from contextlib import nullcontext, redirect_stdout
 import json
 import sys
 import threading
@@ -61,6 +63,9 @@ class NotebookProgress:
         self.last_work_remaining = None
         self.results, self.previous = {}, {}
         self.item_bars = []
+        self.visible_work = None
+        self.displayed_work = None
+        self.output = ProgressOutput(self)
         self.hook = None
         self.stop_heartbeat = threading.Event()
         self.bar = make_bar(total=len(stages), desc=name, unit="stage", leave=True)
@@ -105,6 +110,7 @@ class NotebookProgress:
             raise ValueError(f"Unknown progress stage: {stage}")
         self.current, self.stage_started = stage, time.monotonic()
         self.last_work_remaining = None
+        self.visible_work = None
         self.refresh()
 
     def end(self, status="completed"):
@@ -115,6 +121,7 @@ class NotebookProgress:
             "seconds": time.monotonic() - self.stage_started,
         }
         self.current = None
+        self.visible_work = None
         self.bar.n = sum(
             result["status"] in {"completed", "skipped"}
             for result in self.results.values()
@@ -142,7 +149,26 @@ class NotebookProgress:
         )
         return max(0, estimate - elapsed)
 
+    def sync_display(self):
+        work = self.visible_work
+        if work is not self.displayed_work:
+            self.bar.reset(total=work.total if work is not None else len(self.stages))
+            self.displayed_work = work
+        if work is not None:
+            self.bar.n, self.bar.unit = work.bar.n, work.unit
+            self.bar.set_description(f"{self.name}: {work.description}", refresh=False)
+            return
+        self.bar.n = sum(
+            result["status"] in {"completed", "skipped"}
+            for result in self.results.values()
+        )
+        self.bar.unit = "stage"
+        self.bar.set_description(
+            f"{self.name}: {self.current or 'stages'}", refresh=False
+        )
+
     def refresh(self):
+        self.sync_display()
         basis = (
             "previous comparable run; rough"
             if self.previous
@@ -177,6 +203,7 @@ class NotebookProgress:
                 "workload": self.workload,
                 "elapsed_seconds": time.monotonic() - self.started,
                 "stages": self.results,
+                "detail_log": str(self.output.path),
             },
         )
 
@@ -198,6 +225,7 @@ class NotebookProgress:
             shell.events.unregister("post_run_cell", self.hook)
             self.hook = None
         self.bar.close()
+        self.output.close()
 
 
 def load_previous(folder, name, workload_key):
@@ -248,32 +276,27 @@ def set_workload(workload):
 
 
 def message(text):
-    """Keep successful per-item messages from overwhelming notebook progress output."""
     if _active_monitor is None:
         print(text)
-    elif _active_monitor.item_bars:
-        _active_monitor.item_bars[-1].set_postfix_str(str(text), refresh=False)
+    else:
+        _active_monitor.output.write(str(text) + "\n")
+
+
+def quiet_output():
+    """Capture verbose collector messages only; authentication remains outside this scope."""
+    monitor = active_monitor()
+    return redirect_stdout(monitor.output) if monitor is not None else nullcontext()
 
 
 def track(items, description, total=None, unit="item", size_of=None):
-    """Yield unchanged records; advance only after the caller finishes their work."""
-    monitor = _active_monitor
-    if monitor is None:
+    if active_monitor() is None:
         yield from items
         return
     total = len(items) if total is None and hasattr(items, "__len__") else total
-    bar = make_bar(
-        total=total, desc=description, unit=unit, leave=False, unit_scale=unit == "B"
-    )
-    monitor.item_bars.append(bar)
-    try:
+    with WorkCounter(total, description, unit) as counter:
         for item in items:
             yield item
-            bar.update(size_of(item) if size_of else 1)
-            monitor.refresh()
-    finally:
-        monitor.item_bars.remove(bar)
-        bar.close()
+            counter.update(size_of(item) if size_of else 1)
 
 
 def active_monitor():
@@ -287,15 +310,20 @@ class WorkCounter:
         self.monitor = active_monitor()
         self.started = time.monotonic()
         self.total = total
-        self.bar = make_bar(total=total, desc=description, unit=unit, leave=False)
+        self.description, self.unit = description, unit
+        self.bar = SilentCount()
         self.primary = not self.monitor.item_bars
 
     def __enter__(self):
         self.monitor.item_bars.append(self.bar)
+        if self.primary:
+            self.monitor.visible_work = self
+            self.monitor.last_work_remaining = None
+        self.monitor.refresh()
         return self
 
-    def update(self):
-        self.bar.update(1)
+    def update(self, amount=1):
+        self.bar.update(amount)
         if self.primary and self.total is not None and self.bar.n:
             self.monitor.last_work_remaining = (
                 (time.monotonic() - self.started)
@@ -310,6 +338,49 @@ class WorkCounter:
         return False
 
 
+class SilentCount:
+    """Nested work remains observable without creating another output widget."""
+
+    def __init__(self):
+        self.n = 0
+        self.closed = False
+
+    def update(self, amount):
+        self.n += amount
+
+    def refresh(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class ProgressOutput(io.TextIOBase):
+    """Keep per-file diagnostics in a local log rather than the notebook display."""
+
+    def __init__(self, monitor):
+        super().__init__()
+        self.path = monitor.folder / monitor.name / "runs" / f"{monitor.run_id}.log"
+        self.stream = None
+
+    def write(self, text):
+        if self.stream is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.stream = self.path.open("a", encoding="utf-8", buffering=1)
+        self.stream.write(text)
+        return len(text)
+
+    def flush(self):
+        if self.stream is not None and not self.stream.closed:
+            self.stream.flush()
+
+    def close(self):
+        self.flush()
+        if self.stream is not None:
+            self.stream.close()
+        super().close()
+
+
 class ProgressOnlyStatements(ast.NodeTransformer):
     """Keep existing processing hashes stable when only notebook UI statements change."""
 
@@ -321,7 +392,7 @@ class ProgressOnlyStatements(ast.NodeTransformer):
 
     def visit_Assign(self, node):
         if any(
-            isinstance(target, ast.Name) and target.id == "notebook_progress"
+            isinstance(target, ast.Name) and target.id in {"notebook_progress", "download_workers", "intervals_per_request"}
             for target in node.targets
         ):
             return None
@@ -339,6 +410,12 @@ class ProgressOnlyStatements(ast.NodeTransformer):
 
     def visit_Call(self, node):
         function = node.func
+        # Transport knobs must not create a new label-review or imagery archive.
+        if (isinstance(function, ast.Attribute)
+            and isinstance(function.value, ast.Name)
+            and (function.value.id, function.attr) in {("annual", "collect_source"), ("adaptive", "collect_batch"), ("adaptive", "collect_batches")}):
+            node.keywords = [keyword for keyword in node.keywords
+                             if keyword.arg not in {"download_workers", "intervals_per_request"}]
         if (
             isinstance(function, ast.Attribute)
             and isinstance(function.value, ast.Name)

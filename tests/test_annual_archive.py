@@ -118,6 +118,7 @@ class AnnualArchiveTests(unittest.TestCase):
             retriever.inventory_region.return_value = {
                 "fragment_id": "region",
                 "settings": {},
+                "fragment": {"properties": {"crop": "carrot", "selected_pixels": 1}},
             }
             retriever.download_region.return_value = [
                 {
@@ -149,16 +150,35 @@ class AnnualArchiveTests(unittest.TestCase):
             )
             completion.assert_called_once()
 
-    def test_missing_daily_checkpoint_stops_before_images_and_handoff(self):
+    def test_missing_daily_checkpoint_keeps_images_pending_without_stopping_them(self):
         with tempfile.TemporaryDirectory() as temporary:
             retriever = MagicMock(year=2020)
-            retriever.inventory_region.return_value = {"fragment_id": "region"}
+            region = {
+                "properties": {
+                    "fragment_id": "region",
+                    "crop": "carrot",
+                    "selected_pixels": 1,
+                }
+            }
+            retriever.inventory_region.return_value = {
+                "fragment_id": "region",
+                "fragment": region,
+                "settings": {},
+                "settings": {},
+            }
+            retriever.download_region.return_value = []
             with patch.object(
                 annual.timelines, "retrieve_observed_timelines", return_value=[]
             ):
-                with self.assertRaisesRegex(RuntimeError, "Daily summaries incomplete"):
-                    annual.collect_region(retriever, {}, {"timeline_folder": temporary})
-            retriever.download_region.assert_not_called()
+                result = annual.collect_region(
+                    retriever,
+                    region,
+                    {"timeline_folder": temporary, "report_folder": temporary},
+                )
+            retriever.download_region.assert_called_once()
+            self.assertEqual(result["status"], "pending_retry")
+            self.assertFalse(result["daily_complete"])
+            self.assertEqual(len(result["pending_images"]), 24)
 
     def test_all_three_bundles_required_and_modified_handoff_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -225,6 +245,7 @@ class AnnualArchiveTests(unittest.TestCase):
             retriever.inventory_region.return_value = {
                 "fragment_id": "region",
                 "fragment": region,
+                "settings": {},
             }
             results = [
                 {"status": "reused", "region_id": "region", "name": interval["name"]}
@@ -240,8 +261,9 @@ class AnnualArchiveTests(unittest.TestCase):
             ):
                 annual.collect_region(retriever, region, inputs)
                 results[-1]["status"] = "failed"
-                with self.assertRaisesRegex(ValueError, "all planned intervals"):
-                    annual.collect_region(retriever, region, inputs)
+                incomplete = annual.collect_region(retriever, region, inputs)
+                self.assertEqual(incomplete["status"], "pending_retry")
+                self.assertEqual(len(incomplete["pending_images"]), 1)
 
     def test_francecrops_includes_potato_and_preserves_reserved_roles(self):
         import pyarrow as arrow

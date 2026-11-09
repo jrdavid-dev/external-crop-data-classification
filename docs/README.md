@@ -1,3 +1,5 @@
+The current default workflow is [incremental adaptive training with annual TIFFs](adaptive_training.md). Earlier full-catalogue guides describe optional legacy collection modes.
+
 # Workflow guides
 
 The goal is a repeatable workflow: **labelled parcels → satellite observations → usable windows → features → models → saved evaluation**. Full-year collection precedes usable-window selection.
@@ -26,3 +28,5 @@ The goal is a repeatable workflow: **labelled parcels → satellite observations
 | Pending | A requirement is not ready; inspect its explanation before proceeding |
 
 The default collection is `full_year_all_parcels`; source notebooks are configured for Run All; nothing executes until you run their cells. Old runs remain separate. Local exploratory training works from complete pixel tables; formal production exports have additional evidence and freeze requirements.
+
+- [Annual selected-pixel tables](pixel_tables.md): full-year histories, compact archives, editable windows and the bounded live benchmark.

@@ -18,7 +18,7 @@ DEFAULT_SETTINGS = {
     "imagery_root": "./ground_truth/sentinel2_pilot_composites",
     "report_root": "./sen4agrinet_work/inventory",
     "annual_archive_root": "./sen4agrinet_work/annual_archive",
-    "analysis_collection": "full_year_all_parcels",
+    "analysis_collection": "adaptive_training",
     "earth_engine_project": "",
 }
 

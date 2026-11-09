@@ -147,7 +147,7 @@ class BilinearCollectionTests(unittest.TestCase):
             source = "\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
             self.assertIn("run_satellite_collection = True", source)
             self.assertIn("authenticate_now = True", source)
-            self.assertIn("annual.collect_source(", source)
+            self.assertTrue("adaptive.collect_batch(" in source or "adaptive.collect_batches(" in source)
             self.assertNotIn("select_timing_plans(", source)
         self.assertEqual(
             collection.CANDIDATE_BUDGETS,

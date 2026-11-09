@@ -229,7 +229,7 @@ class DatasetReferenceTests(unittest.TestCase):
                 )
             self.assertEqual(old.read_bytes(), before)
 
-    def test_fresh_kernel_run_all_builds_full_release_before_satellite_stage(self):
+    def test_explicit_scan_opt_in_builds_capped_inventory_before_satellite_stage(self):
         notebook_path = (
             Path(__file__).resolve().parents[1]
             / "notebooks/01_sen4agrinet_preparation.ipynb"
@@ -240,7 +240,7 @@ class DatasetReferenceTests(unittest.TestCase):
             raw_root = root / "existing_raw"
             records = [
                 write_patch(raw_root, 2019, crop_code=231, parcel_id=1),
-                write_patch(raw_root, 2020, crop_code=213, parcel_id=2),
+                write_patch(raw_root, 2020, crop_code=510, parcel_id=2),
             ]
             # Both years intentionally use the same coordinates; year-scoped identities remain separate.
             hub = MagicMock()
@@ -296,6 +296,7 @@ class DatasetReferenceTests(unittest.TestCase):
                             "run_satellite_collection = False",
                         )
                         .replace("authenticate_now = True", "authenticate_now = False")
+                        .replace("reference_cached_only = True", "reference_cached_only = False")
                     )
                     exec(compile(source, str(notebook_path), "exec"), namespace)
             self.assertTrue(namespace["retrieve_reference_masks"])

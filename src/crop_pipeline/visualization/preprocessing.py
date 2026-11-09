@@ -117,7 +117,7 @@ def load_context(report_root, run_name):
             }
             intervals = season_workflow.window_intervals(window)
             images = [
-                load_image(quality_map[interval["name"]]["image_path"], region)
+                load_image(quality_map[interval["name"]]["image_path"], region, interval["name"])
                 for interval in intervals
             ]
             contexts[crop] = {
@@ -142,16 +142,41 @@ def load_context(report_root, run_name):
     return contexts
 
 
-def load_image(path, region):
+def load_image(path, region, interval=None):
     if not path:
         raise FileNotFoundError(
             "The example's selected window has a missing image path."
         )
-    with rasterio.open(path) as image:
-        values = image.read(masked=True).filled(np.nan).astype(float)
-        extent = plotting_extent(image)
-        transform = image.transform
-        crs = image.crs
+    if Path(path).suffix == ".parquet":
+        if interval is None:
+            raise ValueError("Choose a half-month period for the annual pixel table")
+        import pyarrow.parquet as parquet
+        from affine import Affine
+        from crop_pipeline.imagery.quality import STUDY_BANDS
+        grid = region["properties"]["sampling_grid"]
+        frame = parquet.read_table(path, filters=[("interval", "=", interval)]).to_pandas()
+        if not len(frame):
+            raise ValueError("The chosen period is absent from the pixel table")
+        values = np.full((7, grid["height"], grid["width"]), np.nan)
+        values[:, frame["row"].to_numpy(), frame["column"].to_numpy()] = frame[STUDY_BANDS + ["clear_count"]].to_numpy().T
+        values[values == -9999] = np.nan
+        transform = Affine(*grid["transform"])
+        crs = rasterio.crs.CRS.from_user_input(grid["crs"])
+        extent = plotting_extent(values[0], transform=transform)
+    else:
+        with rasterio.open(path) as image:
+            if image.count == 168:
+                if interval is None:
+                    raise ValueError("Choose a half-month period for the annual TIFF")
+                from crop_pipeline.imagery.quality import STUDY_BANDS
+                indices = [image.descriptions.index(f"{interval}__{band}") + 1
+                           for band in STUDY_BANDS + ["clear_count"]]
+                values = image.read(indices, masked=True).filled(np.nan).astype(float)
+            else:
+                values = image.read(masked=True).filled(np.nan).astype(float)
+            extent = plotting_extent(image)
+            transform = image.transform
+            crs = image.crs
     with rasterio.open(region["properties"]["sampling_mask"]) as mask:
         if (
             mask.crs != crs

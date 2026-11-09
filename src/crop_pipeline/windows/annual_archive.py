@@ -73,7 +73,8 @@ def audit_source(source, analysis_folder, minimum_fraction):
     regions = json.loads(
         (field_folder / "sampled_download_regions.geojson").read_text()
     )["features"]
-    manifests = manifest_paths(source["progress_folder"])
+    table_mode = source.get("archive_format") == "selected_pixel_parquet_v1"
+    manifests = {} if table_mode else manifest_paths(source["progress_folder"])
     all_quality, observed, partitions = [], [], {}
     for region in regions:
         identifier = region["properties"]["fragment_id"]
@@ -84,18 +85,33 @@ def audit_source(source, analysis_folder, minimum_fraction):
             imagery_request_version=source["request_version"],
         )
         output_folder = Path(analysis_folder) / "quality/tiles" / identifier
-        region_quality, pixels = quality.quality_check(
-            [region],
-            source["progress_folder"],
-            source["imagery_folder"],
-            field_folder,
-            output_folder,
-            source["cloud_threshold"],
-            minimum_fraction,
-            int(source["year"]),
-            source["request_version"],
-            progress_paths=manifests.get(identifier, []),
-        )
+        if table_mode:
+            from crop_pipeline.imagery import pixel_tables
+            from crop_pipeline.windows.seasons import file_sha256
+            if source.get("annual_tif_index"):
+                from crop_pipeline.imagery import annual_tif
+                region_quality, pixels = annual_tif.audit_region(source, region, minimum_fraction)
+            else:
+                receipt = source["pixel_table_index"][identifier]
+                if file_sha256(Path(receipt["path"])) != receipt["sha256"]:
+                    raise ValueError("Pixel-table receipt changed after source registration")
+                plan = pixel_tables.plan_from_receipt(receipt["path"])
+                if plan["fragment"]["properties"]["sampling_grid"] != region["properties"]["sampling_grid"]:
+                    raise ValueError("Pixel-table grid differs from source")
+                region_quality, pixels = pixel_tables.audit_region(source["pixel_table_root"], plan, minimum_fraction)
+        else:
+            region_quality, pixels = quality.quality_check(
+                [region],
+                source["progress_folder"],
+                source["imagery_folder"],
+                field_folder,
+                output_folder,
+                source["cloud_threshold"],
+                minimum_fraction,
+                int(source["year"]),
+                source["request_version"],
+                progress_paths=manifests.get(identifier, []),
+            )
         partition = output_folder / "pixel_bands.parquet"
         write_pixel_partition(partition, pixels)
         partitions[identifier] = partition

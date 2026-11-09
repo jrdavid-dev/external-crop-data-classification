@@ -1,6 +1,6 @@
 # Progress bars and notebook estimates
 
-All six notebooks show a stage bar, elapsed time and notebook ETA after setup. Inner bars count completed work:
+All six notebooks show **one overall bar** after setup, with elapsed time and notebook ETA. The same bar switches from stage counts to the active stage’s total work:
 
 | Notebook | Main progress units |
 |---|---|
@@ -11,17 +11,17 @@ All six notebooks show a stage bar, elapsed time and notebook ETA after setup. I
 | 05 Feature engineering | Pixel windows enhanced and feature-handoff stages |
 | 06 Training | Completed Random Forest designs and evaluation/package stages |
 
-A stage percentage is a count of completed stages, **not a percentage of total running time**. A model unit advances after a whole forest finishes, not after each tree. Elapsed time continues updating during long calls. Unknown-length discovery or remote jobs do not show a fabricated completion percentage.
+During collection, the total counts **tiles attempted**, including retries that remain pending. It does not count individual filenames or imply that all images passed. Between work stages, the bar counts completed notebook stages, **not a percentage of total running time**. A model unit advances after a whole forest finishes, not after each tree. Elapsed time continues updating during long calls. Unknown-length discovery or remote jobs do not show a fabricated completion percentage.
 
 ## How estimates work
 
-- Inner-bar ETAs use measured item throughput. They become useful after some work finishes and adjust as rates change.
+- Active-stage ETAs use measured item throughput. They become useful after some work finishes and adjust as rates change.
 - The first whole-notebook ETA says **learning** when future stages have not been timed. The active stage still has its own bar and estimate.
 - A comparable completed run supplies rough timings for remaining notebook stages. Different input/run identities are kept separate.
 - During measurable final-stage work, such as annual tile collection, current throughput can supply a rough remaining notebook estimate. Authentication, network throttling, tile size, cache reuse and final export overhead can change it.
 - Optional or disabled stages are marked skipped. Pending training and failed runs do not become completed timing profiles.
 
-Bars use notebook widgets when available and text progress otherwise. Existing diagnostic messages remain available. Progress observes successful calls without changing arguments, selected windows, model parameters or parcel splits.
+Bars use notebook widgets when available and text progress otherwise. Verbose per-file collector messages are saved in a `.log` file beside the timing report rather than printed in the cell. Authentication prompts, final summaries and error tracebacks remain visible. Progress observes successful calls without changing arguments, selected windows, model parameters or parcel splits.
 
 ## Saved timing reports
 

@@ -42,7 +42,7 @@ Old pilot results remain in `analysis/bilinear_expanded/`. Set `analysis_collect
 | Reference retrieval failed | Fix the displayed network or validation error, then resume Run All; incomplete inputs are not treated as crop absence |
 | Certificate failure | Run the trusted-certificate cell before authentication |
 | Required source handoff missing | Finish the named source collection; partial source sets cannot proceed |
-| Interrupted collection | Restart with the same settings; verified files are reused |
+| Interrupted collection or `pending_retry` | Restart Kernel → Run All with the same settings; verified files are reused and pending work retried |
 | Few usable pixels | Examine timing, missing-bin and coverage exclusions separately |
 | Formal partitions are zero | Inspect registry/review requirements; local exploratory splitting is separate |
 | Training input changed | Create a new output run rather than replacing a locked evaluation |

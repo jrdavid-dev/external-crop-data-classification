@@ -100,3 +100,54 @@ class BatchExportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class BatchResumeTests(unittest.TestCase):
+    def test_mask_contract_controls_checkpoint_and_task_identity(self):
+        from unittest.mock import patch
+        from crop_pipeline.imagery import timelines
+        region = plan()
+        region["fragment"]["properties"]["sampling_mask"] = "mask.tif"
+        selection = {"mask_sha256": "first", "selected_pixels": 4}
+        with tempfile.TemporaryDirectory() as folder, patch.object(
+            batch_export.sampling_mask, "load_selection", return_value=selection
+        ):
+            path = batch_export.daily_checkpoint(region, folder)
+            expected = timelines.checkpoint_path(
+                folder, "region", timelines.summary_contract(region, selection, 0.8))
+            self.assertEqual(path, expected)
+            fingerprint = batch_export.request_fingerprint(region)
+            selection["mask_sha256"] = "changed"
+            self.assertNotEqual(batch_export.daily_checkpoint(region, folder), path)
+            self.assertNotEqual(batch_export.request_fingerprint(region), fingerprint)
+
+    def test_submission_is_checkpointed_before_next_task_starts(self):
+        from unittest.mock import Mock, patch
+        regions = [plan(), plan()]
+        regions[1]["fragment_id"] = "other"
+        calls = []
+        with tempfile.TemporaryDirectory() as folder:
+            ledger = Path(folder) / "ledger.json"
+            def start(*args):
+                calls.append(len(batch_export.load_ledger(ledger)))
+                return f"task{len(calls)}"
+            with patch.object(batch_export, "ensure_folder"), \
+                 patch.object(batch_export, "daily_collection"), \
+                 patch.object(batch_export, "start_export", side_effect=start):
+                batch_export.submit_daily(Mock(), Mock(), regions, folder, ledger,
+                                          "projects/test/assets/temp", 2019,
+                                          region_days_per_task=1)
+            self.assertEqual(calls, [0, 1])
+            self.assertEqual(len(batch_export.load_ledger(ledger)), 2)
+
+class FailedAttemptTests(unittest.TestCase):
+    def test_terminal_failed_attempts_do_not_requery_or_block_new_requests(self):
+        from unittest.mock import Mock, patch
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger = Path(temporary) / "ledger.json"
+            batch_export.save_ledger(ledger, [{"task_id": "old", "kind": "daily", "year": 2020,
+                "items": ["old-work"], "state": "FAILED", "collected": False,
+                "request_fingerprints": {"removed-region": "old-settings"}}])
+            with patch.object(batch_export, "task_state", side_effect=AssertionError("terminal task must not be queried")):
+                rows = batch_export.collect(Mock(), "project", ledger, {"daily": Mock()}, plans_by_id={})
+            self.assertEqual(rows[0]["state"], "FAILED")
+            self.assertFalse(rows[0]["collected"])

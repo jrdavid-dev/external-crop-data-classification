@@ -163,6 +163,8 @@ class SequentialNotebookTests(unittest.TestCase):
             self.assertFalse(namespace["rebuild_field_inventory"])
             self.assertFalse(namespace["dataset_folder"].exists())
             plan = namespace["annual_plan"]
+            self.assertEqual(namespace["candidate_parcels_per_crop"], 250)
+            # The fixture has only 120 eligible parcels per crop.
             self.assertEqual(plan["estimate"]["parcels"], 240)
             self.assertEqual(
                 plan["years"]["2020"]["pixels_per_crop"],

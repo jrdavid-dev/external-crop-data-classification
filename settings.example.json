@@ -4,7 +4,7 @@
   "report_root": "./sen4agrinet_work/inventory",
   "earth_engine_project": "YOUR_EARTH_ENGINE_PROJECT",
   "annual_archive_root": "./sen4agrinet_work/annual_archive",
-  "analysis_collection": "full_year_all_parcels",
+  "analysis_collection": "adaptive_training",
   "cropharvest_root": "./cropharvest",
   "atok_imagery_root": "/path/to/THS-SENTINEL2",
   "atok_kml_path": "./data/atok/atok_benguet.kml",

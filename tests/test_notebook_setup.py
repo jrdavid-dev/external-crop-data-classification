@@ -236,7 +236,7 @@ def execute_source_cells(notebook, namespace, notebook_path):
 
 
 class FreshSen4AgriNetNotebookTests(unittest.TestCase):
-    def test_run_all_without_raw_files_or_settings_fetches_the_full_reference_release(
+    def test_run_all_without_checkpoints_does_not_start_new_reference_downloads(
         self,
     ):
         from contextlib import chdir
@@ -295,10 +295,10 @@ class FreshSen4AgriNetNotebookTests(unittest.TestCase):
                     side_effect=AssertionError("No real network"),
                 ),
             ):
-                execute_source_cells(notebook, namespace, notebook_path)
-            self.assertEqual(downloader.call_count, 2)
+                with self.assertRaisesRegex(ValueError, "No verified reference patches"):
+                    execute_source_cells(notebook, namespace, notebook_path)
+            self.assertEqual(downloader.call_count, 0)
             self.assertTrue((checkout / "settings.local.json").is_file())
-            self.assertEqual(namespace["reference_summary"]["files_scanned"], 2)
-            self.assertEqual(set(namespace["annual_plan"]["years"]), {"2019", "2020"})
-            self.assertEqual(namespace["collection_result"]["status"], "disabled")
+            self.assertTrue(namespace["reference_cached_only"])
+            self.assertNotIn("collection_result", namespace)
             self.assertFalse((checkout / "no_raw_files").exists())
