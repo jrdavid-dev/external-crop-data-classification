@@ -17,3 +17,5 @@ pyshp
 certifi
 h5py==3.16.0
 tqdm
+
+geopandas==1.2.0

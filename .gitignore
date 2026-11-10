@@ -10,6 +10,7 @@ crop_inspection/
 decoded_geometry/
 sentinel2_field/
 visual_inspection/
+/analysis/
 sentinel2_*/
 *.nc
 *.tif
