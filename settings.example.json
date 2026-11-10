@@ -8,5 +8,9 @@
   "cropharvest_root": "./cropharvest",
   "atok_imagery_root": "/path/to/THS-SENTINEL2",
   "atok_kml_path": "./data/atok/atok_benguet.kml",
-  "atok_landuse_path": "./data/atok/elum2023_benguet.gpkg"
+  "atok_landuse_path": "./data/atok/elum2023_benguet.gpkg",
+  "pagasa_baguio_path": "./data/climate/pagasa_baguio_monthly.csv",
+  "pagasa_station_elevation_m": 1500,
+  "analysis_root": "./analysis",
+  "atok_boundary_path": "./data/atok/paoay_boundary_2023.geojson"
 }
