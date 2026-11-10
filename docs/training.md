@@ -32,7 +32,7 @@ Completed local runs are reused only after their experiment receipt and artifact
 
 Saved results include feature provenance, parcel assignments, configuration, training weights, validation/test predictions, feature selection, model files, metrics and figures. The selected-model package contains the model, ordered predictors, crop codes, imagery/scaling rules, four-month window and feature recipe, source references and checksums. It is a **pilot model for evaluation**, not a claim of local accuracy. Only load trusted joblib files.
 
-The next project stage is to prepare matching four-month Paoay imagery, classify it with this fixed model, and compare predictions with dated local ground truth. That mapping/evaluation stage is separate from notebooks 01–06; the existing experimental notebooks 07–10 are not their automatic continuation.
+The next project stage is to prepare matching four-month Paoay imagery, classify it with this fixed model, and compare predictions with dated local ground truth. That mapping/evaluation stage is separate from notebooks 01–06; the existing experimental notebooks 12–15 are not their automatic continuation.
 
 ## Separate production path
 

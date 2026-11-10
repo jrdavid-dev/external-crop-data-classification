@@ -36,7 +36,7 @@ On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 
 FranceCrops contributes cabbage/table potato, not carrots. Sources with no candidates for remaining deficits are skipped explicitly. Candidate batches are not expected to have a guaranteed usable yield.
 
-The intended next stage is independent testing in Paoay, Atok, Benguet: prepare matching four-month imagery, classify with the fixed model, and compare with dated local ground truth. Existing notebooks 07–10 are separate experiments, not the automatic continuation of 01–06. Low pilot accuracy is a reportable result, not a reason to relax quality checks.
+The **five-notebook Paoay workflow** is complete: **07 references → 08 satellite inputs → 09 fixed-model application → 10 screening/maps → 11 reference and field review**. It preserves raw three-crop scores, maps only reference boundaries, keeps Unknown/missing inputs separate, and saves screening flags without hard exclusions. Notebook 11 freezes the preliminary map and prepares separate January observations/correction proposals. See the [Paoay guide](docs/paoay_workflow.md) and [field-check guide](docs/paoay_field_checks.md). Calendar notes and later visits do not establish historical accuracy. Original entry points are archived with checksums; older experiments remain 12–15.
 
 ## Annual TIFF folder
 
@@ -59,6 +59,7 @@ Earth Engine jobs use temporary project asset storage; Google Drive is not requi
 - [Full-year catalogue archive](docs/full_year_collection.md): optional full-catalogue collection and previous transport modes.
 - [Methodology](docs/methodology.md): imagery rules and timing/quality limitations.
 - [Training](docs/training.md): evaluation and evidence requirements.
+- [Paoay application](docs/paoay_workflow.md): the five application notebooks, screening flags and frozen reference review.
 
 Raw data, generated files, credentials, local settings and environments stay out of Git. The upstream dataset licenses do not assign a license to this project's code.
 

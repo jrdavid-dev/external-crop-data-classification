@@ -56,7 +56,7 @@ Each notebook uses concise setup, input checks, processing, saved outputs and a 
 
 Timing, eight-bin completeness, imagery quality and the 20-pixel-per-parcel cap remain unchanged. Reference-supported and satellite-estimated windows remain distinguishable. All feature designs use the same samples; notebook 06 reads notebook 05’s saved values directly. Validation macro-F1 selects the design before test scoring. Low accuracy does not block a pilot result.
 
-Handoffs and model inputs are content-keyed and hash-verified. Changed inputs create separate artifacts; previous imagery, jobs, partitions and results stay intact. The selected-model package records the preprocessing recipe needed for later Paoay inference. Local mapping and comparison with dated KMZ ground truth are a later stage; existing notebooks 07–10 remain separate experiments.
+Handoffs and model inputs are content-keyed and hash-verified. Changed inputs create separate artifacts; previous imagery, jobs, partitions and results stay intact. The selected-model package records the preprocessing recipe needed for later Paoay inference. Local mapping and comparison with dated KMZ ground truth are a later stage; existing notebooks 12–15 remain separate experiments.
 
 ## Results and troubleshooting
 
@@ -65,3 +65,7 @@ The final summary lists batch states, reported verified tiles, queued/running/fa
 Default annual TIFFs are under `sen4agrinet_work/annual_tifs/<source>/<year>/<campaign>/round_<number>/`. Each tile stores 24 half-month periods × seven measurements. Sampling masks and Parquet transport caches are separate. Use the printed paths for the exact run.
 
 For missing references, check the mode and paths. For errors, inspect the detail log and traceback. Keep quality thresholds unchanged when usable yield is low. Use pilot mode for a smaller qualifying experiment; do not fabricate missing values, move locked parcels or mark production reviews complete. Revised windows can reuse annual histories; cross-year windows need explicit adjacent-year imagery.
+
+## Paoay application
+
+The [five-notebook Paoay workflow 07–11](paoay_workflow.md) is implemented: references → matching satellite inputs → exact features/fixed-model predictions → boundary-limited maps and screening flags → reference/field review. Follow the stage pointers in order. Raw probabilities, model/input files and original outputs remain preserved. Screening is flags only; Unknown and missing inputs stay separate. Notebook 11 freezes the preliminary map and prepares separate observations/correction proposals; calendar notes and later January visits do not establish historical accuracy. See the [field-check guide](paoay_field_checks.md). Original entry points are archived; older experiments remain 12–15.

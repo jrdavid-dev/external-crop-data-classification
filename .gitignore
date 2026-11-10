@@ -44,3 +44,14 @@ __pycache__/
 
 # Editable install metadata
 *.egg-info/
+
+# Local serialized model artifacts
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+*.h5
+*.hdf5
+*.keras

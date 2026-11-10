@@ -13,9 +13,14 @@ Start with [fresh-clone setup](fresh_clone.md), then follow the [notebook workfl
 | [Methodology](methodology.md) | Imagery, timing and quality rules |
 | [Feature designs](feature_experiments.md) | Compare the three model inputs |
 | [Training](training.md) | Evaluation outputs and evidence requirements |
+| [Paoay application](paoay_workflow.md) | Run the five-notebook application and preserve preliminary predictions |
 | [Pixel tables](pixel_tables.md) | Understand the compact imagery transport/cache |
 | [Full-year catalogue](full_year_collection.md) | Use optional earlier collection modes |
 
 A **candidate** still needs timing and quality checks. A **usable pixel** passes those checks in its selected window. A **parcel group** stays in one locked partition. A **handoff** records saved inputs for the next notebook.
 
 Collection completion confirms saved files; it does not establish crop-label accuracy or local model performance.
+
+See [Paoay field checks](paoay_field_checks.md) for January observations and separate correction proposals.
+
+For a concise restart summary and planned experiments, see [Project handoff and future TODOs](future_todos.md).

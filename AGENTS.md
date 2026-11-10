@@ -9,14 +9,11 @@
 - Inspect `git status` before editing. Preserve existing tracked and untracked work; never reset, discard, or overwrite changes you did not make.
 - Give concise updates on meaningful findings and progress. Finish with what changed, checks run, and any remaining limitations. Distinguish completed verification from checks that could not run.
 
-## Subagent delegation
+## Solo execution
 
-- Use subagents when independent investigation, implementation, or review can materially improve speed or quality. This file explicitly authorizes appropriate subagent use for repository tasks.
-- Keep small tasks and tightly dependent steps with the main agent. Do not delegate merely to fill available slots.
-- Give each subagent a bounded objective, relevant context, expected deliverable, and explicit edit scope. Use read-only investigation or review when shared-file edits would conflict.
-- Assign separate files or modules to concurrent implementers. All agents share the workspace: coordinate ownership before overlapping edits and preserve each other's work.
-- The main agent owns integration, resolves conflicting findings, reviews delegated changes, and runs the appropriate combined verification. A subagent's completion message is not sufficient evidence that the overall task is complete.
-- Prefer a small team, typically two or three subagents at most, within the available runtime limits. Avoid redundant investigations and recursive delegation without a concrete benefit.
+- Work with one agent only. Do not spawn subagents or delegate investigation, implementation, review, or verification.
+- Handle the full task in the current agent, including integration and checks.
+- Use multiple agents only if the user explicitly requests an exception for that task.
 
 ## Project context and conventions
 
