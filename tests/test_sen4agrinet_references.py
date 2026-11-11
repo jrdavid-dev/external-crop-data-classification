@@ -232,7 +232,7 @@ class DatasetReferenceTests(unittest.TestCase):
     def test_explicit_scan_opt_in_builds_capped_inventory_before_satellite_stage(self):
         notebook_path = (
             Path(__file__).resolve().parents[1]
-            / "notebooks/01_sen4agrinet_preparation.ipynb"
+            / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
         )
         notebook = json.loads(notebook_path.read_text())
         with tempfile.TemporaryDirectory() as temporary:

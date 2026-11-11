@@ -206,6 +206,39 @@ def masked_mosaic(ee, retriever, sources, indices_csv):
     return ee.ImageCollection.fromImages(images).mosaic()
 
 
+OBSERVATION_COUNTS = ("pre_mask_count", "cloud_shadow_count", "other_rejection_count")
+
+
+def screening_flags(retriever, image, probability):
+    scl = image.select("SCL")
+    present = image.select("B3").mask()
+    cloudy = scl.remap([3, 8, 9, 10], [1, 1, 1, 1], 0).unmask(0)
+    cloudy = cloudy.Or(probability.select("probability").gte(retriever.cloud_probability_threshold).unmask(0))
+    return present.rename("present").addBands(cloudy.And(present).rename("cloudy")).unmask(0)
+
+
+def classify_screened_date(flags, clear):
+    """A date with any clear granule survives. Count rejected dates only once."""
+    present = flags.select("present").unmask(0, sameFootprint=False).Or(clear)
+    rejected = present.And(clear.Not())
+    cloud = rejected.And(flags.select("cloudy").unmask(0, sameFootprint=False))
+    return present.rename("pre_mask_count").addBands(cloud.rename("cloud_shadow_count")).addBands(
+        rejected.And(cloud.Not()).rename("other_rejection_count")
+    )
+
+
+def daily_screening(ee, retriever, sources, indices_csv, clear):
+    granules, probabilities = sources
+
+    def flags(index):
+        match = ee.Filter.eq("system:index", ee.String(index))
+        return screening_flags(retriever, ee.Image(granules.filter(match).first()),
+                               ee.Image(probabilities.filter(match).first()))
+
+    daily = ee.ImageCollection.fromImages(ee.String(indices_csv).split(",").map(flags)).max()
+    return classify_screened_date(daily, clear)
+
+
 def daily_index_image(ee, daily):
     """Explicit ratios preserve negative reflectance values and mask zero denominators."""
     indices = []
@@ -290,6 +323,8 @@ def composite_collection(ee, retriever, items, selected_only=False):
         retriever.output_bands,
         retriever.nodata_value,
     )
+    if selected_only:
+        outputs = [*outputs, *OBSERVATION_COUNTS]
     regions = []
     for plan, intervals in items:
         grid = plan["settings"]["grid"]
@@ -332,11 +367,15 @@ def composite_collection(ee, retriever, items, selected_only=False):
         def one_interval(entry):
             parts = ee.String(entry).split(";")
             days = parts.slice(1)
-            dailies = days.map(
-                lambda day: masked_mosaic(
-                    ee, retriever, sources, ee.String(day).split("=").get(1)
-                )
-            )
+            def build_day(day):
+                indices = ee.String(day).split("=").get(1)
+                mosaic = masked_mosaic(ee, retriever, sources, indices)
+                if selected_only:
+                    clear = mosaic.select("B3").mask().unmask(0)
+                    mosaic = mosaic.addBands(daily_screening(ee, retriever, sources, indices, clear))
+                return mosaic
+
+            dailies = days.map(build_day)
             daily_images = ee.ImageCollection.fromImages(dailies)
             median = daily_images.median().select(bands)
             clear_count = (
@@ -346,7 +385,10 @@ def composite_collection(ee, retriever, items, selected_only=False):
                 .unmask(0, sameFootprint=False)
             )
             built = median.unmask(nodata, sameFootprint=False).addBands(clear_count)
-            empty = ee.Image.constant([nodata] * len(bands) + [0]).rename(outputs)
+            if selected_only:
+                counts = daily_images.select(list(OBSERVATION_COUNTS)).sum().unmask(0, sameFootprint=False)
+                built = built.addBands(counts)
+            empty = ee.Image.constant([nodata] * len(bands) + [0] * (len(outputs) - len(bands))).rename(outputs)
             composite = ee.Image(
                 ee.Algorithms.If(days.size().gt(0), built, empty)
             ).toFloat()

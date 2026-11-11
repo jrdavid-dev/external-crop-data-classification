@@ -75,3 +75,7 @@ This is a three-class pipeline for known carrot, cabbage and potato parcels. Gen
 ## Saved preprocessing examples
 
 Section 15 of the window notebook displays one deterministic example per crop using saved files only: reference/sample locations, post-mask pixel eligibility, daily timelines with the selected four-month window, and eight half-month composites. PNGs and the example-selection manifest are saved in the selected analysis folder’s `preprocessing_visuals/`. Original unmasked scenes are not stored, so the screening view is not a before/after cloud-removal comparison.
+
+### Observation loss accounting
+
+New external selected-pixel exports record the number of dates with B3 support in matched granules before screening, clear dates, cloud or shadow rejection, and other rejection. A date with any surviving granule counts as clear. If none survives, a cloud or shadow flag on a supported granule takes precedence over other reasons. Granule matches and acquisition dates are reported separately from pixel-date counts. Legacy files can still be read and show unavailable diagnostics as null. New Paoay downloads use the same daily screening definitions. Their receipts store totals over ROI pixel-dates and the fraction rejected by cloud or shadow. The seven classifier bands stay compatible with saved rasters. Previously downloaded intervals retain acquisition matching and usable coverage, and their cloud and shadow loss remains unavailable.

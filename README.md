@@ -27,16 +27,12 @@ python -m pip install -e .
 
 On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 
-## Notebook loop
+## Notebook workflow
 
-1. **01 Sen4AgriNet, 02 FranceCrops, 03 CropHarvest:** notebook 01 targets up to 100 carrot and 100 potato candidates per round from a capped reference subset; notebook 02 targets up to 100 cabbage and 100 potato candidates per round; notebook 03 targets up to 100 eligible parcels per available crop per round. Existing selections and submitted jobs are preserved. Rerun the same notebook to collect its pending jobs.
-2. **04 Four-month windows:** combine completed batches, run the existing timing/quality checks, retain balanced usable samples, and save deficits.
-3. If more data is needed, repeat **01–03 → 04** for deficient crop/partition combinations. Existing selections, imagery, jobs and locked partitions remain preserved.
-4. Run **05 Feature engineering → 06 Model training** using the same collection and `analysis_mode = "pilot"` (default) or `"strict"`. Notebook 05 consumes 04’s saved window handoff; 06 consumes 05’s exact feature bundle and exports the validation-selected model with its input recipe. Pilot mode permits unmet budgets, but requires complete inputs, at least five usable parcel groups per crop, and every crop in each locked split.
-
-FranceCrops contributes cabbage/table potato, not carrots. Sources with no candidates for remaining deficits are skipped explicitly. Candidate batches are not expected to have a guaranteed usable yield.
-
-The **five-notebook Paoay workflow** is complete: **07 references → 08 satellite inputs → 09 fixed-model application → 10 screening/maps → 11 reference and field review**. It preserves raw three-crop scores, maps only reference boundaries, keeps Unknown/missing inputs separate, and saves screening flags without hard exclusions. Notebook 11 freezes the preliminary map and prepares separate January observations/correction proposals. See the [Paoay guide](docs/paoay_workflow.md) and [field-check guide](docs/paoay_field_checks.md). Calendar notes and later visits do not establish historical accuracy. Original entry points are archived with checksums; older experiments remain 12–15.
+1. [Preprocessing](notebooks/preprocessing) audits references, collects Sen4AgriNet and FranceCrops in incremental batches, and prepares a separate CropHarvest JECAM test campaign. Run 05–07 on the completed local annual handoffs to assess imagery, select windows, and export development and test features. Each notebook prints the handoff path for the next one.
+2. [External evaluation](notebooks/external_evaluation) fits and freezes Random Forests using development data, then scores CropHarvest. The matched comparison holds pixel locations constant. January–April and green-up-aligned windows also have separate usable coverage counts.
+3. [Paoay](notebooks/paoay) runs 01–05 from references through field review. For the January–April 2024 map, set `paoay_model_manifest` in local settings to the `fixed_full` manifest printed by external evaluation 01. See the [Paoay guide](docs/paoay_workflow.md).
+4. [Archived notebooks](notebooks/archive) retain earlier experiment outputs and provenance.
 
 ## Annual TIFF folder
 
@@ -46,7 +42,7 @@ Completed imagery is organized under:
 sen4agrinet_work/annual_tifs/<source>/<year>/<campaign>/round_<number>/
 ```
 
-Each tile has one annual TIFF with **168 labelled bands**: all 24 half-month periods × seven measurements. This preserves flexibility to revise four-month windows. Only selected parcel pixels are populated. Sampling masks are stored separately; Parquet files are retained as the compact transport/cache. Notebook 04 reads the annual TIFFs directly. Set `annual_archive_root` in local settings to use another local drive; annual TIFFs are stored in a sibling folder.
+Each tile has one annual TIFF with **168 labelled bands**: all 24 half-month periods × seven measurements. This preserves flexibility to revise four-month windows. Only selected parcel pixels are populated. Sampling masks are stored separately; Parquet files are retained as the compact transport/cache. Preprocessing 05 reads the annual TIFFs directly. New external pixel-table exports also store three observation diagnostics per interval, for 240 bands. Older 168-band archives remain readable. Set `annual_archive_root` in local settings to use another local drive; annual TIFFs are stored in a sibling folder.
 
 Earth Engine jobs use temporary project asset storage; Google Drive is not required. Local files are verified before temporary assets are removed. The original full-year catalogue/archive helpers and earlier explicit collection selectors remain available for deliberate use, but are not the source notebooks' default.
 

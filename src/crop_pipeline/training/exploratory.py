@@ -515,10 +515,32 @@ def prepare_feature_inputs(feature_handoff, output_root):
     return rows, configuration, split_summary(rows), manifest_path
 
 
+def inference_imagery_recipe():
+    from crop_pipeline.imagery.retrieval import REQUEST_VERSION, RESAMPLING_POLICY
+
+    return {"collection": "COPERNICUS/S2_SR_HARMONIZED", "request_version": REQUEST_VERSION,
+                    "resampling": RESAMPLING_POLICY, "spectral_scale": 0.0001,
+                    "bands": list(season_workflow.FEATURE_BANDS),
+                    "feature_bands": list(season_workflow.FEATURE_BANDS),
+                    "collection_bands": ["B3", "B4", "B5", "B8", "B11", "B2"],
+                    "valid_data_rule": "all six collection bands must be valid before compositing",
+                    "clear_counts_scaled": False,
+                    "output_resolution_metres": 10,
+                    "grid": "saved sampling-grid CRS and affine transform",
+                    "input_nodata_value": -9999,
+                    "nodata_handling": "mask nodata before reflectance scaling",
+                    "cloud_probability_threshold": 40,
+                    "cloud_probability_rule": "probability < threshold",
+                    "excluded_scl_classes": [0, 1, 3, 8, 9, 10, 11],
+                    "cloud_probability_collection": "COPERNICUS/S2_CLOUD_PROBABILITY",
+                    "missing_cloud_probability": "exclude",
+                    "scene_edges": "valid_B8A_and_B9",
+                    "compositing": "same_date_mosaics_then_calendar_half_month_medians"}
+
+
 def export_selected_model(output_folder, feature_handoff):
     """Package the validation-selected fitted model for later local inference, without refitting."""
     import shutil
-    from crop_pipeline.imagery.retrieval import REQUEST_VERSION, RESAMPLING_POLICY
 
     output_folder = Path(output_folder)
     rows, configuration, coverage, feature_manifest = feature_experiments.load_pilot_feature_handoff(feature_handoff)
@@ -556,24 +578,7 @@ def export_selected_model(output_folder, feature_handoff):
         "study_classes": list(CLASSES), "class_codes": {crop: index + 1 for index, crop in enumerate(CLASSES)},
         "nodata_code": 0,
         "probability_columns": "classifier.classes_; map class labels through class_codes",
-        "imagery": {"collection": "COPERNICUS/S2_SR_HARMONIZED", "request_version": REQUEST_VERSION,
-                    "resampling": RESAMPLING_POLICY, "spectral_scale": 0.0001,
-                    "bands": list(season_workflow.FEATURE_BANDS),
-                    "feature_bands": list(season_workflow.FEATURE_BANDS),
-                    "collection_bands": ["B3", "B4", "B5", "B8", "B11", "B2"],
-                    "valid_data_rule": "all six collection bands must be valid before compositing",
-                    "clear_counts_scaled": False,
-                    "output_resolution_metres": 10,
-                    "grid": "saved sampling-grid CRS and affine transform",
-                    "input_nodata_value": -9999,
-                    "nodata_handling": "mask nodata before reflectance scaling",
-                    "cloud_probability_threshold": 40,
-                    "cloud_probability_rule": "probability < threshold",
-                    "excluded_scl_classes": [0, 1, 3, 8, 9, 10, 11],
-                    "cloud_probability_collection": "COPERNICUS/S2_CLOUD_PROBABILITY",
-                    "missing_cloud_probability": "exclude",
-                    "scene_edges": "valid_B8A_and_B9",
-                    "compositing": "same_date_mosaics_then_calendar_half_month_medians"},
+        "imagery": inference_imagery_recipe(),
         "window_recipe": configuration.get("window_recipe", {}),
         "window_convention": "four_calendar_months_eight_half_month_bins_end_exclusive",
         "window_policy": configuration["window_policy"],

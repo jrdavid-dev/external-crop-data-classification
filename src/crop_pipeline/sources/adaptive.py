@@ -95,7 +95,7 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
             if key in seen or key in unique_physical:
                 continue
             unique_physical.add(key)
-            partition = partition_for(key, policy["seed"])
+            partition = "test" if policy.get("test_source") == source else partition_for(key, policy["seed"])
             deficit = feedback.get("counts", {}).get(p["crop"], {}).get(partition)
             if feedback.get("targets_met") or (deficit and deficit["target_met"]):
                 continue

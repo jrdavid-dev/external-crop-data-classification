@@ -75,7 +75,7 @@ def saved_experiments(rows, configuration, output, reuse_completed=False):
 
 
 def execute(name, folder, overrides=None):
-    notebook = json.loads((REPOSITORY / 'notebooks' / name).read_text())
+    notebook = json.loads((REPOSITORY / 'notebooks' / 'archive' / name).read_text())
     cells = [cell for cell in notebook['cells'] if cell['cell_type'] == 'code']
     namespace = {}
     with chdir(folder):

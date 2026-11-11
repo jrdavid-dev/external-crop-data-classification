@@ -68,6 +68,50 @@ class PaoayImageryTests(unittest.TestCase):
              patch.object(imagery.PaoayRetriever, 'fetch_composite', fetch):
             return imagery.collect(request, 'download_missing', earth_engine=object())
 
+    def test_loss_report_survives_reuse_and_preserves_classifier_bands(self):
+        def diagnostic_fetch(retriever, plan, interval, granules, path):
+            fake_fetch(retriever, plan, interval, granules, path)
+            with rasterio.open(path) as raster:
+                base = raster.read()
+                profile = raster.profile
+            extra = np.stack([np.full_like(base[-1], count) for count in (4, 2, 1)])
+            with rasterio.open(path, "w", **{**profile, "count": 10}) as raster:
+                raster.write(np.concatenate([base, extra]))
+
+        handoff = self.download(fetch=diagnostic_fetch)
+        bundle = imagery.load_imagery_bundle(handoff)
+        before = {path: path.read_bytes() for path in bundle["rasters"]}
+        with patch("socket.socket.connect", side_effect=AssertionError("Network forbidden")):
+            self.assertEqual(imagery.collect(self.request), handoff)
+            rows = imagery.observation_report(handoff)
+        self.assertEqual(len(rows), 8)
+        for row in rows:
+            self.assertEqual(row["pre_mask_pixel_dates"], 4 * row["roi_pixels"])
+            self.assertEqual(row["clear_pixel_dates"], row["roi_pixels"])
+            self.assertEqual(row["cloud_shadow_pixel_dates"], 2 * row["roi_pixels"])
+            self.assertEqual(row["other_rejected_pixel_dates"], row["roi_pixels"])
+            self.assertEqual(row["cloud_shadow_loss_fraction"], .5)
+        for path, content in before.items():
+            self.assertEqual(path.read_bytes(), content)
+            with rasterio.open(path) as raster:
+                self.assertEqual(list(raster.descriptions), imagery.BANDS)
+
+    def test_legacy_rasters_report_unavailable_cloud_loss(self):
+        handoff = self.download()
+        checksum = references.checksum
+
+        def changed_code(path):
+            return "a" * 64 if Path(path) == Path(imagery.__file__) else checksum(path)
+
+        with patch.object(references, "checksum", side_effect=changed_code), \
+                patch("socket.socket.connect", side_effect=AssertionError("Network forbidden")):
+            reused = imagery.prepare_request(
+                self.reference, "2025-07-01", self.root / "sentinel2"
+            )
+            self.assertEqual(imagery.collect(reused), handoff)
+        self.assertTrue(all(row["cloud_shadow_pixel_dates"] is None
+                            for row in imagery.observation_report(handoff)))
+
     def test_calendar_crosses_year_and_rejects_partial_or_future_periods(self):
         period = imagery.four_month_period('2025-11-01', date(2026, 3, 1))
         self.assertEqual(period['end'], '2026-03-01')

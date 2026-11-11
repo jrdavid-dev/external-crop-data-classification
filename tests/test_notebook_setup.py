@@ -178,7 +178,7 @@ class NotebookSetupTests(unittest.TestCase):
         from shapely.ops import transform
 
         repository = Path(__file__).resolve().parents[1]
-        notebook_path = repository / "notebooks/02_francecrops_preparation.ipynb"
+        notebook_path = repository / "notebooks/preprocessing/03_francecrops_preparation.ipynb"
         notebook = json.loads(notebook_path.read_text())
         labels = [
             {"parcel_id": "cabbage", "y": 4, "split": "train"},
@@ -269,7 +269,7 @@ class FreshSen4AgriNetNotebookTests(unittest.TestCase):
         from contextlib import chdir
 
         repository = Path(__file__).resolve().parents[1]
-        notebook_path = repository / "notebooks/01_sen4agrinet_preparation.ipynb"
+        notebook_path = repository / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
         notebook = json.loads(notebook_path.read_text())
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -294,7 +294,7 @@ class FreshSen4AgriNetNotebookTests(unittest.TestCase):
         from crop_pipeline.sources import remote_masks, sen4agrinet
 
         repository = Path(__file__).resolve().parents[1]
-        notebook_path = repository / "notebooks/01_sen4agrinet_preparation.ipynb"
+        notebook_path = repository / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
         notebook = json.loads(notebook_path.read_text())
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

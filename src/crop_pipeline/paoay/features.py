@@ -75,6 +75,10 @@ def load_model_recipe(path):
     if references.checksum(source) != recipe["source_feature_manifest_sha256"]:
         raise ValueError("Training feature provenance changed; preserve the original feature handoff")
     feature_manifest = json.loads(source.read_text())
+    if manifest.get("experiment_cohort") in {"full", "matched"}:
+        if feature_manifest.get("implementation_sha256") != references.checksum(inspect.getfile(experiments)):
+            raise ValueError("Training feature implementation differs")
+        return {"manifest": manifest, "recipe": recipe, "source_feature_handoff": source}
     if (feature_manifest.get("kind") != "local_parcel_feature_experiments" or feature_manifest.get("format_version") != 1
             or feature_manifest.get("feature_sets") != experiments.feature_sets()
             or feature_manifest.get("feature_policy") != recipe["feature_policy"]
@@ -93,6 +97,11 @@ def _inputs(guidance_handoff):
 
 def validate_imagery(recipe, image):
     """Require the exported acquisition/scaling recipe; never relabel legacy data."""
+    window = recipe.get("window_recipe", {})
+    if window.get("type") in {"fixed", "aligned"}:
+        period = image["manifest"]["identity"]["period"]
+        if window["type"] != "fixed" or period["start"][5:] != f"{window['start_month']:02d}-01":
+            raise ValueError("The Paoay calendar inputs require a matching fixed-window model")
     saved = recipe["imagery"]
     settings = image["manifest"]["identity"]["settings"]
     for key in ("collection", "resampling", "cloud_probability_collection", "cloud_probability_threshold", "excluded_scl_classes"):

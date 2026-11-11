@@ -71,12 +71,12 @@ class CombinedNotebookTests(unittest.TestCase):
         before=dict(self.fixture.upstream)
         with patch('socket.socket.connect',side_effect=AssertionError('No network')), \
              patch('sklearn.ensemble.RandomForestClassifier.fit',side_effect=AssertionError('No fitting')):
-            application=self.execute('09_paoay_model_application.ipynb')
+            application=self.execute('03_model_application.ipynb')
             self.assertEqual(resolve_stage_pointer(application['prediction_pointer']),application['prediction_handoff'])
             with patch('joblib.load',side_effect=AssertionError('Cached predictions must reuse')):
-                again=self.execute('09_paoay_model_application.ipynb')
-                result=self.execute('10_paoay_maps.ipynb')
-                repeated=self.execute('10_paoay_maps.ipynb')
+                again=self.execute('03_model_application.ipynb')
+                result=self.execute('04_maps.ipynb')
+                repeated=self.execute('04_maps.ipynb')
         self.assertEqual(application['prediction_handoff'],again['prediction_handoff'])
         self.assertEqual(result['screening_handoff'],repeated['screening_handoff'])
         self.assertEqual(resolve_stage_pointer(result['crop_pointer']),result['crop_baseline_handoff'])
@@ -99,21 +99,21 @@ class CombinedNotebookTests(unittest.TestCase):
              patch.object(features,'load_feature_bundle',return_value=pending), \
              patch('crop_pipeline.paoay.predictions.build',side_effect=AssertionError('No inference')):
             with self.assertRaisesRegex(RuntimeError,'No ready feature pixels'):
-                self.execute('09_paoay_model_application.ipynb')
+                self.execute('03_model_application.ipynb')
         for pointer in ('features/feature_stage.json','predictions/prediction_stage.json'):
             with self.assertRaisesRegex(RuntimeError,'pending'):
                 resolve_stage_pointer(self.paoay/pointer)
 
     def test_pending_sources_block_new_predictions_and_maps(self):
-        self.execute('09_paoay_model_application.ipynb')
+        self.execute('03_model_application.ipynb')
         write_stage_pointer(self.paoay/'sentinel2/imagery_stage.json',status='pending',reason='New imagery incomplete')
         with self.assertRaisesRegex(RuntimeError,'pending'):
-            self.execute('09_paoay_model_application.ipynb')
+            self.execute('03_model_application.ipynb')
         for pointer in ('features/feature_stage.json','predictions/prediction_stage.json'):
             with self.assertRaisesRegex(RuntimeError,'pending'):
                 resolve_stage_pointer(self.paoay/pointer)
         with self.assertRaisesRegex(RuntimeError,'pending'):
-            self.execute('10_paoay_maps.ipynb')
+            self.execute('04_maps.ipynb')
         for pointer in ('maps/map_stage.json','screening/screening_stage.json','crop_baseline/crop_baseline_stage.json'):
             with self.assertRaisesRegex(RuntimeError,'pending'):
                 resolve_stage_pointer(self.paoay/pointer)

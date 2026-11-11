@@ -38,12 +38,14 @@ def export_source(source, destination):
             if len(intervals) != 24:
                 raise ValueError("An annual TIFF requires all 24 half-month periods")
             frame = pq.read_table(table_path).to_pandas()
-            values = np.full((len(intervals) * 7, grid["height"], grid["width"]), -9999, dtype="float32")
+            bands = BANDS + [name for name in pixel_tables.batch.OBSERVATION_COUNTS if name in frame]
+            stride = len(bands)
+            values = np.full((len(intervals) * stride, grid["height"], grid["width"]), -9999, dtype="float32")
             descriptions = []
             for number, interval in enumerate(intervals):
                 rows = frame[frame["interval"] == interval["name"]]
-                values[number * 7:(number + 1) * 7, rows["row"].to_numpy(), rows["column"].to_numpy()] = rows[BANDS].to_numpy(dtype="float32").T
-                descriptions.extend(f"{interval['name']}__{band}" for band in BANDS)
+                values[number * stride:(number + 1) * stride, rows["row"].to_numpy(), rows["column"].to_numpy()] = rows[bands].to_numpy(dtype="float32").T
+                descriptions.extend(f"{interval['name']}__{band}" for band in bands)
             temporary = path.with_suffix(".tif.part")
             try:
                 with rasterio.open(temporary, "w", driver="GTiff", width=grid["width"], height=grid["height"],
@@ -55,15 +57,20 @@ def export_source(source, destination):
                     image.update_tags(archive="annual_selected_pixels_v1", region_id=identifier,
                                       year=str(source["year"]), pixels="saved parcel selection only")
                 with rasterio.open(temporary) as image:
-                    if image.descriptions != tuple(descriptions) or image.count != 168:
+                    if image.descriptions != tuple(descriptions) or image.count != len(descriptions):
                         raise ValueError("Annual TIFF band labels differ from the requested year")
                     np.testing.assert_array_equal(image.read(), values)
                 temporary.replace(path)
                 save_json(receipt, {"table_sha256": table_sha, "sha256": file_sha256(path),
-                                    "bands": descriptions, "grid": grid, "selected_pixels_only": True})
+                                    "bands": descriptions, "grid": grid, "selected_pixels_only": True,
+                                    "acquisition_summary": json.loads(receipt_path.read_text()).get(
+                                        "acquisition_summary", {})})
             finally:
                 temporary.unlink(missing_ok=True)
         index[identifier] = {"path": str(path.resolve()), "sha256": file_sha256(path)}
+        diagnostics = json.loads(receipt.read_text()).get("acquisition_summary")
+        if diagnostics:
+            index[identifier]["acquisition_summary"] = diagnostics
     return index
 
 
@@ -80,20 +87,23 @@ def audit_region(source, region, minimum_fraction=0.8):
     grid = region["properties"]["sampling_grid"]
     intervals = interval_bins(int(source["year"]))
     plan = {"fragment_id": identifier, "fragment": region,
-            "settings": {"grid": grid}, "download_intervals": intervals}
+            "settings": {"grid": grid}, "download_intervals": intervals,
+            "acquisition_summary": record.get("acquisition_summary", {})}
     selection = sampling_mask.load_selection(plan)
     rows, columns = np.divmod(selection["selected_ids"], grid["width"])
-    descriptions = tuple(f"{interval['name']}__{band}" for interval in intervals for band in BANDS)
     frames = []
     with rasterio.open(path) as image:
-        if (image.count != 168 or image.descriptions != descriptions
+        bands = BANDS + list(pixel_tables.batch.OBSERVATION_COUNTS) if image.count == 240 else BANDS
+        stride = len(bands)
+        descriptions = tuple(f"{interval['name']}__{band}" for interval in intervals for band in bands)
+        if (image.descriptions != descriptions
                 or image.transform != Affine(*grid["transform"])
                 or image.crs != rasterio.crs.CRS.from_user_input(grid["crs"])
                 or image.shape != (grid["height"], grid["width"]) or image.nodata != -9999):
             raise ValueError("Annual TIFF bands or grid differ from source")
         for index, interval in enumerate(intervals):
-            values = image.read(list(range(index*7+1, index*7+8)))[:, rows, columns].T
-            frame = pd.DataFrame(values, columns=BANDS)
+            values = image.read(list(range(index*stride+1, (index+1)*stride+1)))[:, rows, columns].T
+            frame = pd.DataFrame(values, columns=bands)
             frame["interval"], frame["row"], frame["column"] = interval["name"], rows, columns
             frames.append(frame)
     frame = pd.concat(frames, ignore_index=True)

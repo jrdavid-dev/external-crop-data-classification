@@ -17,6 +17,7 @@ import rasterio
 from rasterio.features import geometry_mask
 
 from crop_pipeline.common import interval_bins
+from crop_pipeline.imagery.batch_export import OBSERVATION_COUNTS
 from crop_pipeline.imagery.retrieval import SatelliteRetriever
 from crop_pipeline.paoay import references
 
@@ -47,6 +48,8 @@ def four_month_period(start, today=None):
 class PaoayRetriever(SatelliteRetriever):
     """Use shared masking/compositing with an explicit four-month date range."""
 
+    download_observation_diagnostics = True
+
     def __init__(self, ee, period, folder):
         super().__init__(ee, int(period["start"][:4]), folder / "rasters", folder / "metadata")
         self.start_date, self.end_date = period["start"], period["end"]
@@ -62,16 +65,35 @@ def prepare_request(reference_handoff, start, output_root, today=None):
     retriever = PaoayRetriever(None, period, Path(output_root))
     settings = retriever.request_settings(fragment)
     grid = settings["grid"]
-    if max(grid["width"], grid["height"]) >= 10000 or grid["width"] * grid["height"] * 28 >= 30 * 1024**2:
-        raise ValueError("ROI exceeds the bounded direct-download limit; explicit tiling is required")
-    identity = {"version": VERSION, "reference_sha256": references.checksum(reference_handoff),
-                "period": period, "settings": settings,
-                "implementation_sha256": references.checksum(__file__),
-                "retrieval_sha256": references.checksum(inspect.getfile(SatelliteRetriever))}
-    request_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
+    contract = {"version": VERSION, "reference_sha256": references.checksum(reference_handoff),
+                "period": period, "settings": settings}
+    identity = {**contract, "implementation_sha256": references.checksum(__file__),
+                "retrieval_sha256": references.checksum(inspect.getfile(SatelliteRetriever)),
+                "observation_diagnostics_version": 1}
+    request_id = _digest(identity)[:20]
+    requests_root = Path(output_root) / "requests"
+    folder = requests_root / request_id
+    if not folder.exists():
+        # A diagnostics-only change must not invalidate a scientifically identical archive.
+        for filename in ("imagery_handoff.json", "acquisitions.json"):
+            compatible = []
+            for saved_path in sorted(requests_root.glob(f"*/{filename}")):
+                saved = json.loads(saved_path.read_text()).get("identity", {})
+                if (all(saved.get(key) == value for key, value in contract.items())
+                        and _digest(saved)[:20] == saved_path.parent.name):
+                    compatible.append((saved_path.parent, saved))
+            if compatible:
+                folder, identity = compatible[-1]
+                request_id = folder.name
+                break
+    if not (folder / "imagery_handoff.json").is_file():
+        bytes_per_pixel = 4 * (len(BANDS) + len(OBSERVATION_COUNTS))
+        if (max(grid["width"], grid["height"]) >= 10000
+                or grid["width"] * grid["height"] * bytes_per_pixel >= 30 * 1024**2):
+            raise ValueError("ROI exceeds the bounded direct-download limit; explicit tiling is required")
     return {"request_id": request_id, "identity": identity, "period": period, "settings": settings,
             "fragment": fragment, "reference_handoff": str(Path(reference_handoff).resolve()),
-            "folder": Path(output_root) / "requests" / request_id}
+            "folder": folder}
 
 
 def _publish_json(path, record):
@@ -124,6 +146,37 @@ def inspect_raster(path, request, interval=None):
     return {"roi_pixels": int(roi.sum()), "clear_roi_pixels": int(valid.sum()),
             "clear_roi_fraction": float(valid.sum() / roi.sum()),
             "empty_after_screening": not bool(valid.any())}
+
+
+def separate_observation_diagnostics(download, raster_path, request, interval):
+    """Summarize extra download bands and keep the saved classifier raster unchanged."""
+    duration = (date.fromisoformat(interval["end"]) - date.fromisoformat(interval["start"])).days
+    with rasterio.open(download) as raster:
+        if raster.count == len(BANDS):
+            return None
+        if raster.count != len(BANDS) + len(OBSERVATION_COUNTS):
+            raise ValueError("Unexpected observation diagnostics band count")
+        base = raster.read(list(range(1, len(BANDS) + 1)))
+        pre, cloud, other = raster.read(list(range(len(BANDS) + 1, raster.count + 1)))
+        counts = np.stack([pre, cloud, other])
+        if (not np.all(np.isfinite(counts) & (counts >= 0) & (counts == np.floor(counts)))
+                or np.any(pre > duration) or np.any(pre != base[-1] + cloud + other)):
+            raise ValueError("Inconsistent Paoay observation diagnostics")
+        profile = raster.profile.copy()
+    roi = _roi_mask(request)
+    totals = {
+        "pre_mask_pixel_dates": int(pre[roi].sum()),
+        "clear_pixel_dates": int(base[-1][roi].sum()),
+        "cloud_shadow_pixel_dates": int(cloud[roi].sum()),
+        "other_rejected_pixel_dates": int(other[roi].sum()),
+    }
+    totals["cloud_shadow_loss_fraction"] = (
+        totals["cloud_shadow_pixel_dates"] / totals["pre_mask_pixel_dates"]
+        if totals["pre_mask_pixel_dates"] else None
+    )
+    with rasterio.open(raster_path, "w", **{**profile, "count": len(BANDS)}) as raster:
+        raster.write(base)
+    return totals
 
 
 def _paths(request, interval):
@@ -214,11 +267,17 @@ def collect(request, mode="reuse", earth_engine=None, iterator=None):
             with tempfile.TemporaryDirectory(prefix=".download-", dir=path.parent) as temporary:
                 pending = Path(temporary) / path.name
                 retriever.fetch_composite({"settings": request["settings"], "fragment": request["fragment"]}, interval, granules, pending)
+                classifier_raster = pending.with_name("classifier.tif")
+                diagnostics = separate_observation_diagnostics(pending, classifier_raster, request, interval)
+                if diagnostics is not None:
+                    pending = classifier_raster
                 retriever.finish_raster(pending)
                 quality = inspect_raster(pending, request, interval)
                 record = {"request_id": request["request_id"], "interval": interval,
                           "sha256": references.checksum(pending), "quality": quality,
                           "granules": granules, "matched_dates": sorted({row["date"] for row in granules if row.get("cloud_probability_id")})}
+                if diagnostics is not None:
+                    record["observation_diagnostics"] = diagnostics
                 # No replacement of existing files, even if another process completed first.
                 os.link(pending, path)  # Atomic publication, fails if destination exists.
                 _publish_json(receipt, record)
@@ -279,3 +338,25 @@ def load_imagery_bundle(path):
     references.load_reference_bundle(reference)
     return {"manifest": manifest, "folder": path.parent,
             "rasters": [path.parent / f"rasters/{item['name']}.tif" for item in period["intervals"]]}
+
+
+def observation_report(handoff):
+    """Report local coverage and matching gaps using verified imagery receipts."""
+    path = Path(handoff)
+    load_imagery_bundle(path)
+    manifest = json.loads(path.read_text())
+    rows = []
+    for interval in manifest["period"]["intervals"]:
+        receipt = json.loads((path.parent / "rasters" / f"{interval['name']}.json").read_text())
+        granules = receipt.get("granules")
+        rows.append({
+            "interval": interval["name"],
+            "acquisition_dates": len({r["date"] for r in granules}) if granules is not None else None,
+            "unmatched_granules": sum(not r.get("cloud_probability_id") for r in granules)
+            if granules is not None else None,
+            **receipt["quality"],
+            **dict.fromkeys(("pre_mask_pixel_dates", "clear_pixel_dates", "cloud_shadow_pixel_dates",
+                             "other_rejected_pixel_dates", "cloud_shadow_loss_fraction")),
+            **receipt.get("observation_diagnostics", {}),
+        })
+    return rows

@@ -323,7 +323,7 @@ class CropHarvestRunTests(unittest.TestCase):
                 pilot_sources.resolve_collection(root / "inventory", "pilot")
 
     def test_full_source_notebook_runs_offline_with_local_references(self):
-        notebook_path = ROOT / "notebooks/03_cropharvest_preparation.ipynb"
+        notebook_path = ROOT / "notebooks/preprocessing/04_cropharvest_test_preparation.ipynb"
         notebook = json.loads(notebook_path.read_text())
         projector = Transformer.from_crs("EPSG:32631", "EPSG:4326", always_xy=True)
         features = []
@@ -337,7 +337,7 @@ class CropHarvestRunTests(unittest.TestCase):
                     "type": "Feature",
                     "geometry": mapping(geometry),
                     "properties": {
-                        "dataset": "ile-de-france",
+                        "dataset": "jecam",
                         "index": index,
                         "label": crop,
                         "is_crop": 1,
@@ -356,8 +356,8 @@ class CropHarvestRunTests(unittest.TestCase):
             )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "notebooks").mkdir()
-            (root / "notebooks/03_cropharvest_preparation.ipynb").write_bytes(
+            (root / "notebooks/preprocessing").mkdir(parents=True)
+            (root / "notebooks/preprocessing/04_cropharvest_test_preparation.ipynb").write_bytes(
                 notebook_path.read_bytes()
             )
             batch_path = root / "src/crop_pipeline/imagery/batch_export.py"
@@ -375,6 +375,7 @@ class CropHarvestRunTests(unittest.TestCase):
             namespace = {}
             with (
                 chdir(root),
+                patch("crop_pipeline.sources.test_cohort.completed_sources", return_value=[]),
                 redirect_stdout(io.StringIO()),
                 patch("requests.sessions.Session.request", side_effect=forbidden),
                 patch.object(cropharvest, "download_labels_payload", side_effect=forbidden),

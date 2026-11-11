@@ -114,7 +114,7 @@ class FieldReviewTests(unittest.TestCase):
         paoay=self.root/'paoay'
         for name,path in [('maps/map_stage.json',self.map),('crop_baseline/crop_baseline_stage.json',self.baseline),('screening/screening_stage.json',self.flags)]:
             write_stage_pointer(paoay/name,path)
-        notebook=json.loads((ROOT/'notebooks/paoay/11_paoay_reference_field_review.ipynb').read_text())
+        notebook=json.loads((ROOT/'notebooks/paoay/05_reference_field_review.ipynb').read_text())
         def execute():
             namespace={}
             try:
@@ -156,8 +156,8 @@ class FiveNotebookWorkflowTests(unittest.TestCase):
             model=models.fitted_model(root)
             original_model={p:p.read_bytes() for p in model.parent.iterdir() if p.is_file()}
             fake_ee=SimpleNamespace(Initialize=lambda **kwargs:None,EEException=RuntimeError)
-            names=['07_paoay_reference_review.ipynb','08_paoay_satellite_inputs.ipynb','09_paoay_model_application.ipynb',
-                   '10_paoay_maps.ipynb','11_paoay_reference_field_review.ipynb']
+            names=['01_reference_review.ipynb','02_satellite_inputs.ipynb','03_model_application.ipynb',
+                   '04_maps.ipynb','05_reference_field_review.ipynb']
             with chdir(root),redirect_stdout(io.StringIO()),patch.dict('sys.modules',{'ee':fake_ee}), \
                  patch('crop_pipeline.notebook_setup.configure_certificates'), \
                  patch('socket.socket.connect',side_effect=AssertionError('No network')), \
@@ -174,9 +174,9 @@ class FiveNotebookWorkflowTests(unittest.TestCase):
                             if cell['cell_type']=='code':
                                 exec(compile(''.join(cell['source']),name,'exec'),namespace)
                                 namespace['show_preview']=False
-                                if name.startswith('08') and 'request' not in namespace:
+                                if name.startswith('02') and 'request' not in namespace:
                                     namespace.update(imagery_mode='download_missing',dynamic_world_mode='download_missing')
-                                if name.startswith('09') and 'request' not in namespace:namespace['model_manifest']=str(model)
+                                if name.startswith('03') and 'request' not in namespace:namespace['model_manifest']=str(model)
                     finally:progress.finish_notebook()
                 final=field_review.load_bundle(resolve_stage_pointer(namespace['field_pointer']))
             self.assertEqual(final['manifest']['observation_count'],0)

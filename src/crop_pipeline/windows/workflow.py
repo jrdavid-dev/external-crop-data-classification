@@ -46,7 +46,7 @@ class WindowAnalysis:
         self.plot_files = sorted((self.timeline_folder / 'composite_plots').glob('*.png'))
 
 
-    def select(self):
+    def select(self, *, candidates_only=False, excluded_sensitivity_groups=()):
         self.detector_settings = dict(crop_workflow.DEFAULT_DETECTOR)
         self.detector_settings['relative_threshold'] = 0.2
         self.observed_path = self.timeline_folder / 'observed_timelines.json'
@@ -65,7 +65,8 @@ class WindowAnalysis:
         self.sensitivity_rows = self.detector_rows
         if self.source_run_name == adaptive.COLLECTION_NAME:
             self.locked = adaptive.assignments(self.report_folder)
-            self.sensitivity_rows = [row for row in self.detector_rows if self.locked.get(row.get('partition_group')) != 'test']
+            self.sensitivity_rows = [row for row in self.detector_rows if self.locked.get(row.get('partition_group')) != 'test'
+                                     and row.get('partition_group') not in excluded_sensitivity_groups]
         for fraction in [0.15, 0.2, 0.25]:
             self.results = crop_workflow.detect_greenup(self.sensitivity_rows, {**self.detector_settings, 'relative_threshold': fraction})
             self.sensitivity[str(fraction)] = self.results
@@ -136,6 +137,8 @@ class WindowAnalysis:
         self.estimated_feature_rows = [row for row in self.estimated_feature_rows if row['partition_group'] not in self.reserved_groups]
         season_workflow.write_records(self.feature_folder / 'all_complete_features.csv', self.feature_rows)
         season_workflow.write_records(self.estimated_feature_folder / 'all_complete_features.csv', self.estimated_feature_rows)
+        if candidates_only:
+            return
         self.pilot_registry = season_workflow.read_table(self.registry_path) if self.registry_path.exists() else []
         if self.source_run_name == adaptive.COLLECTION_NAME:
             self.feature_rows, self.estimated_feature_rows, self.usable_selection_summary = adaptive.select_usable(self.feature_rows, self.estimated_feature_rows, self.report_folder)
@@ -207,7 +210,7 @@ class WindowAnalysis:
         self.exploratory_input_folder = self.season_folder / 'exploratory_training_input'
         self.exploratory_handoff_path = season_workflow.export_training_handoff(self.exploratory_input_folder, self.exploratory_rows, self.exploratory_configuration, self.coverage_summary)
         self.report_artifacts = [self.season_folder / 'cycle_selection_audit.csv', *sorted(self.cycle_candidate_folder.glob('*.csv')), self.season_folder / 'usable_pixel_selection.csv', self.feature_folder / 'all_complete_features.csv', self.estimated_feature_folder / 'all_complete_features.csv', self.season_folder / 'season_review_audit.csv', self.season_folder / 'accepted_seasons.csv', self.season_folder / 'accepted_seasons.json', self.season_folder / 'estimated_windows.csv', self.season_folder / 'estimated_windows.json', self.season_folder / 'estimated_proposals.csv', self.season_folder / 'estimated_proposals.json', self.season_folder / 'automatic_timing_audit.csv', self.season_folder / 'automatic_timing_policy.json', self.season_folder / 'exploratory_partitioned_features.csv', self.estimated_feature_folder / 'complete_features.csv', self.estimated_feature_folder / 'feature_exclusions.csv', self.estimated_feature_folder / 'sample_losses.csv', self.estimated_feature_folder / 'bin_coverage.csv', self.exploratory_handoff_path, self.exploratory_input_folder / 'partitioned_features.csv', self.exploratory_input_folder / 'configuration.json', self.exploratory_input_folder / 'coverage.json', self.feature_folder / 'complete_features.csv', self.feature_folder / 'feature_exclusions.csv', self.feature_folder / 'sample_losses.csv', self.feature_folder / 'bin_coverage.csv', self.season_folder / 'partitioned_features.csv', self.season_folder / 'sample_counts.csv', self.handoff_path, self.training_input_folder / 'partitioned_features.csv', self.training_input_folder / 'configuration.json', self.training_input_folder / 'coverage.json']
-        self.preprocessing_manifest = season_workflow.package_run(self.season_folder / 'preprocessing_package', self.configuration, input_paths=[self.configuration_path, self.reviews_path, self.registry_path, self.greenup_folder / 'candidate_greenup.json', self.greenup_folder / 'detector_settings.json', self.analysis_folder / 'quality' / ('selected_pixel_bands.index.json' if self.source_run_name in {annual.COLLECTION_NAME, adaptive.COLLECTION_NAME} else 'selected_pixel_bands.csv'), self.analysis_folder / 'quality' / 'composite_quality.csv', self.analysis_folder / 'source_inputs.json', Path('src/crop_pipeline/sources/sampling.py'), Path('src/crop_pipeline/sources/pilot_sources.py'), Path('src/crop_pipeline/sources/francecrops.py'), Path('src/crop_pipeline/imagery/retrieval.py'), Path('notebooks/02_francecrops_preparation.ipynb'), Path('src/crop_pipeline/common.py'), Path('src/crop_pipeline/imagery/quality.py'), Path('src/crop_pipeline/windows/seasons.py'), Path('src/crop_pipeline/windows/timing_quality.py'), Path('src/crop_pipeline/windows/cycle_windows.py'), Path('src/crop_pipeline/windows/detector.py'), Path('requirements-notebooks.txt'), Path('notebooks/01_sen4agrinet_preparation.ipynb'), Path('notebooks/04_four_month_windows.ipynb')], artifact_paths=self.report_artifacts + self.experiment_artifacts, coverage=self.coverage_summary)
+        self.preprocessing_manifest = season_workflow.package_run(self.season_folder / 'preprocessing_package', self.configuration, input_paths=[self.configuration_path, self.reviews_path, self.registry_path, self.greenup_folder / 'candidate_greenup.json', self.greenup_folder / 'detector_settings.json', self.analysis_folder / 'quality' / ('selected_pixel_bands.index.json' if self.source_run_name in {annual.COLLECTION_NAME, adaptive.COLLECTION_NAME} else 'selected_pixel_bands.csv'), self.analysis_folder / 'quality' / 'composite_quality.csv', self.analysis_folder / 'source_inputs.json', Path('src/crop_pipeline/sources/sampling.py'), Path('src/crop_pipeline/sources/pilot_sources.py'), Path('src/crop_pipeline/sources/francecrops.py'), Path('src/crop_pipeline/imagery/retrieval.py'), Path('notebooks/preprocessing/03_francecrops_preparation.ipynb'), Path('src/crop_pipeline/common.py'), Path('src/crop_pipeline/imagery/quality.py'), Path('src/crop_pipeline/windows/seasons.py'), Path('src/crop_pipeline/windows/timing_quality.py'), Path('src/crop_pipeline/windows/cycle_windows.py'), Path('src/crop_pipeline/windows/detector.py'), Path('requirements-notebooks.txt'), Path('notebooks/preprocessing/02_sen4agrinet_preparation.ipynb'), Path('notebooks/archive/04_four_month_windows.ipynb')], artifact_paths=self.report_artifacts + self.experiment_artifacts, coverage=self.coverage_summary)
         print('Primary training handoff:', self.handoff_path)
         print('Exploratory training handoff:', self.exploratory_handoff_path)
         print('Preparation status:', self.coverage_summary['preparation_status'])

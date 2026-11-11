@@ -132,10 +132,10 @@ class SatelliteRetriever:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def check_raster(self, path, grid):
+    def check_raster(self, path, grid, *, band_count=None):
         """Check dimensions, CRS, transform, band count and sample readability."""
         with rasterio.open(path) as raster:
-            if raster.count != len(self.output_bands):
+            if raster.count != (len(self.output_bands) if band_count is None else band_count):
                 raise ValueError("Unexpected downloaded band count.")
             if (raster.width, raster.height) != (grid["width"], grid["height"]):
                 raise ValueError("Downloaded raster dimensions do not match the plan.")
@@ -229,6 +229,11 @@ class SatelliteRetriever:
 
     def make_composite(self, fragment, interval, granules):
         """Use at most one observation per date, then take the semi-monthly median."""
+        diagnostics = getattr(self, "download_observation_diagnostics", False)
+        if diagnostics:
+            from crop_pipeline.imagery.batch_export import (
+                OBSERVATION_COUNTS, classify_screened_date, screening_flags,
+            )
         matched_granules = [row for row in granules if row.get("cloud_probability_id")]
         dates = sorted(set((row["date"] for row in matched_granules)))
         daily_images = []
@@ -237,14 +242,16 @@ class SatelliteRetriever:
                 [row for row in matched_granules if row["date"] == observation_date],
                 key=lambda row: row["image_index"],
             )
-            images = [
-                self.mask_acquisition(
-                    self.ee.Image(row["image_id"]),
-                    self.ee.Image(row["cloud_probability_id"]),
-                )
-                for row in same_date
-            ]
+            pairs = [(self.ee.Image(row["image_id"]), self.ee.Image(row["cloud_probability_id"]))
+                     for row in same_date]
+            images = [self.mask_acquisition(image, probability) for image, probability in pairs]
             daily = self.ee.ImageCollection.fromImages(images).mosaic()
+            if diagnostics:
+                flags = self.ee.ImageCollection.fromImages([
+                    screening_flags(self, image, probability) for image, probability in pairs
+                ]).max()
+                clear = daily.select("B3").mask().unmask(0, sameFootprint=False)
+                daily = daily.addBands(classify_screened_date(flags, clear))
             daily_images.append(daily)
         if daily_images:
             daily_collection = self.ee.ImageCollection.fromImages(daily_images)
@@ -262,6 +269,10 @@ class SatelliteRetriever:
             result = self.ee.Image.constant(
                 [self.nodata_value] * len(self.spectral_bands) + [0]
             ).rename(self.output_bands)
+        if diagnostics:
+            counts = (daily_collection.select(list(OBSERVATION_COUNTS)).sum() if daily_images
+                      else self.ee.Image.constant([0] * len(OBSERVATION_COUNTS)).rename(list(OBSERVATION_COUNTS)))
+            result = result.addBands(counts.unmask(0, sameFootprint=False))
         return result.toFloat()
 
     def inventory_region(self, region, refresh=False):
@@ -454,7 +465,11 @@ class SatelliteRetriever:
         with requests.get(url, stream=True, timeout=(30, 180)) as response:
             response.raise_for_status()
             self.write_response(response, destination)
-        self.check_raster(destination, grid)
+        if getattr(self, "download_observation_diagnostics", False):
+            from crop_pipeline.imagery.batch_export import OBSERVATION_COUNTS
+            self.check_raster(destination, grid, band_count=len(self.output_bands) + len(OBSERVATION_COUNTS))
+        else:
+            self.check_raster(destination, grid)
 
     @staticmethod
     def write_response(response, destination):

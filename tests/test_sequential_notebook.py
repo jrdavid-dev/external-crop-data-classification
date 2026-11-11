@@ -20,7 +20,7 @@ from crop_pipeline.windows.seasons import file_sha256
 
 
 NOTEBOOK_PATH = (
-    Path(__file__).resolve().parents[1] / "notebooks/01_sen4agrinet_preparation.ipynb"
+    Path(__file__).resolve().parents[1] / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
 )
 
 
@@ -159,7 +159,7 @@ def execute_without_remote_services(folder):
 
 class SequentialNotebookTests(unittest.TestCase):
     def test_source_notebooks_share_round_budget_and_resumable_collection(self):
-        for path in sorted(NOTEBOOK_PATH.parent.glob("0[123]*.ipynb")):
+        for path in sorted(NOTEBOOK_PATH.parent.glob("0[23]*.ipynb")):
             with self.subTest(notebook=path.name):
                 notebook = json.loads(path.read_text())
                 tree = ast.parse("\n".join(
@@ -190,7 +190,7 @@ class SequentialNotebookTests(unittest.TestCase):
                 buffers = [node.value.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
                            and any(isinstance(target, ast.Name) and target.id == "inward_buffer_metres"
                                    for target in node.targets)]
-                self.assertEqual(buffers, [0 if path.name.startswith("01") else 10])
+                self.assertEqual(buffers, [0 if path.name.startswith("02") else 10])
 
     def test_run_all_reuses_completed_release_with_no_raw_files_or_downloads(self):
         with tempfile.TemporaryDirectory() as temporary:

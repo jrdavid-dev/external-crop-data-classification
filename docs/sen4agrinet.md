@@ -1,6 +1,6 @@
 # Sen4AgriNet: notebook 01
 
-[Notebook 01](../notebooks/01_sen4agrinet_preparation.ipynb) prepares carrot and potato candidate parcels, then collects full-calendar-year Sentinel-2 histories through Earth Engine. Cabbage is supplied by FranceCrops. The default workflow uses bounded reference subsets and records their coverage.
+[Notebook 01](../notebooks/preprocessing/02_sen4agrinet_preparation.ipynb) prepares carrot and potato candidate parcels, then collects full-calendar-year Sentinel-2 histories through Earth Engine. Cabbage is supplied by FranceCrops. The default workflow uses bounded reference subsets and records their coverage.
 
 ## Review these settings
 

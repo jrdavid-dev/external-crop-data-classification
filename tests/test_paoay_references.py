@@ -158,7 +158,7 @@ class PaoayReferenceTests(unittest.TestCase):
                 references.read_inputs([root/'Crop Area.kmz', root/'Crop Area.kmz'])
 
     def test_notebook_run_all_is_local_and_does_not_fit_or_contact_earth_engine(self):
-        notebook = json.loads((REPOSITORY / 'notebooks/paoay/07_paoay_reference_review.ipynb').read_text())
+        notebook = json.loads((REPOSITORY / 'notebooks/paoay/01_reference_review.ipynb').read_text())
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'pyproject.toml').write_text('[project]\nname="fixture"\n')

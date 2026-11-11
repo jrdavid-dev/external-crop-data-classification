@@ -142,10 +142,11 @@ class BilinearCollectionTests(unittest.TestCase):
             self.assertTrue((Path(folder) / "timing_gate.json").is_file())
 
     def test_annual_notebooks_enable_collection_and_defer_timing(self):
-        for name in ["01_sen4agrinet_preparation", "02_francecrops_preparation", "03_cropharvest_preparation"]:
-            notebook = json.loads((Path(__file__).parents[1] / "notebooks" / f"{name}.ipynb").read_text())
+        for name in ["02_sen4agrinet_preparation", "03_francecrops_preparation", "04_cropharvest_test_preparation"]:
+            notebook = json.loads((Path(__file__).parents[1] / "notebooks" / "preprocessing" / f"{name}.ipynb").read_text())
             source = "\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
-            self.assertIn("run_satellite_collection = True", source)
+            enabled = not name.startswith("04")
+            self.assertIn(f"run_satellite_collection = {enabled}", source)
             self.assertIn("authenticate_now = run_satellite_collection", source)
             self.assertIn('reference_mode != "offline"', source)
             self.assertTrue("adaptive.collect_batch(" in source or "adaptive.collect_batches(" in source)

@@ -2,6 +2,12 @@
 
 Run **04 Four-month windows → 05 Feature engineering → 06 Model training**. All three use the same `analysis_collection` (`adaptive_training` by default) and explicit `analysis_mode`.
 
+## Current external evaluation
+
+Run [preprocessing 05–07](../notebooks/preprocessing) after completing the development and dedicated CropHarvest JECAM imagery collections. Use the printed paths for [external evaluation 01–02](../notebooks/external_evaluation). Train and tune on locked Sen4AgriNet and FranceCrops development parcels. Score CropHarvest with the frozen packages. The controlled comparison uses the same locations in both recipes and the full cohorts show each recipe's coverage. A missing test crop suppresses the three-class summary.
+
+Use the `fixed_full` model manifest for January–April Paoay imagery. Below is the documentation for the archived pooled pilot workflow.
+
 ## Pilot and strict modes
 
 - **`analysis_mode = "pilot"` (default):** train with qualifying available data while reporting unmet collection budgets. Low accuracy does not block completion.

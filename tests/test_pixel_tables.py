@@ -11,7 +11,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from crop_pipeline.common import interval_bins
-from crop_pipeline.imagery import pixel_tables, sampling_mask, quality
+from crop_pipeline.imagery import batch_export, pixel_tables, sampling_mask, quality
 from test_daily_sampling_mask import mask_plan
 
 
@@ -95,7 +95,7 @@ class PixelTableTests(unittest.TestCase):
             pixel_tables.write_tables(retriever, {plan["fragment_id"]: plan}, frame, [plan["fragment_id"]])
             tq, tp = pixel_tables.audit_region(retriever.imagery_folder / "pixel_tables", plan)
             rq, rp = quality.quality_check([plan["fragment"]], progress, folder, folder, folder / "audit", year=2020, required_request_version=4)
-            self.assertEqual([{k: v for k, v in row.items() if k != "image_path"} for row in tq],
+            self.assertEqual([{k: v for k, v in row.items() if k not in {"image_path", "clear_pixel_dates", "acquisition_dates", "unmatched_granules", *batch_export.OBSERVATION_COUNTS}} for row in tq],
                              [{k: v for k, v in row.items() if k != "image_path"} for row in rq])
             rp = [{k: (None if v == "" else v) for k, v in row.items()} for row in rp]
             self.assertEqual(tp, rp)

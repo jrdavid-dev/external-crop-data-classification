@@ -367,7 +367,7 @@ class GroupedCollectionTests(unittest.TestCase):
                 self.assertGreater(raster.read(1).sum(), 0)
 
     def test_notebook_transport_options_do_not_change_processing_identity(self):
-        notebook_path = Path("notebooks/03_cropharvest_preparation.ipynb")
+        notebook_path = Path("notebooks/preprocessing/04_cropharvest_test_preparation.ipynb")
         notebook = json.loads(notebook_path.read_text())
         before = progress.processing_notebook_fingerprint(notebook_path)
         for cell in notebook["cells"]:

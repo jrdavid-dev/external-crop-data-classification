@@ -6,11 +6,11 @@ Notebooks 01–06 remain the external preprocessing/training workflow. The **fiv
 
 | Notebook | Responsibility |
 | --- | --- |
-| [07 Boundaries and references](../notebooks/paoay/07_paoay_reference_review.ipynb) | Read KMZ notes, audit geometry and review reference suitability |
-| [08 Satellite inputs](../notebooks/paoay/08_paoay_satellite_inputs.ipynb) | Prepare matching Sentinel-2 and Dynamic World inputs |
-| [09 Model application](../notebooks/paoay/09_paoay_model_application.ipynb) | Calculate exact saved-model features and preserve raw crop predictions |
-| [10 Screening and maps](../notebooks/paoay/10_paoay_maps.ipynb) | Create boundary-limited maps and separate screening flags |
-| [11 Reference and field review](../notebooks/paoay/11_paoay_reference_field_review.ipynb) | Summarize notes, freeze the preliminary map and prepare January records |
+| [01 Boundaries and references](../notebooks/paoay/01_reference_review.ipynb) | Read KMZ notes, audit geometry and review reference suitability |
+| [02 Satellite inputs](../notebooks/paoay/02_satellite_inputs.ipynb) | Prepare matching Sentinel-2 and Dynamic World inputs |
+| [03 Model application](../notebooks/paoay/03_model_application.ipynb) | Calculate exact saved-model features and preserve raw crop predictions |
+| [04 Screening and maps](../notebooks/paoay/04_maps.ipynb) | Create boundary-limited maps and separate screening flags |
+| [05 Reference and field review](../notebooks/paoay/05_reference_field_review.ipynb) | Summarize notes, freeze the preliminary map and prepare January records |
 
 Use the existing project kernel; **Restart Kernel → Run All** for each notebook in order. Nothing runs just by opening a notebook. The original eight entry points, outputs and metadata remain in the [checksum-verified archive](../notebooks/paoay/archive/eight_notebook_workflow/README.md). Do not run archived entry points in the active sequence.
 

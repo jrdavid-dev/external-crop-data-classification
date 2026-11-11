@@ -42,7 +42,7 @@ class BatchOneTests(unittest.TestCase):
             return dynamic_world.collect(self.world_request, 'download_missing', object())
 
     def run_notebook(self, changes=None):
-        notebook = json.loads((ROOT/'notebooks/paoay/08_paoay_satellite_inputs.ipynb').read_text())
+        notebook = json.loads((ROOT/'notebooks/paoay/02_satellite_inputs.ipynb').read_text())
         namespace = {}
         try:
             with chdir(self.root), redirect_stdout(io.StringIO()):

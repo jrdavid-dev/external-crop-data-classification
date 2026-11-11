@@ -52,6 +52,15 @@ def validate_frame(frame, plan):
     values = frame[quality.STUDY_BANDS + ["clear_count"]].to_numpy(dtype=float)
     if not np.isfinite(values).all():
         raise ValueError("Pixel tables must represent missing values with explicit nodata")
+    diagnostics = set(batch.OBSERVATION_COUNTS) & set(frame)
+    if diagnostics:
+        if diagnostics != set(batch.OBSERVATION_COUNTS):
+            raise ValueError("Incomplete observation diagnostics")
+        extras = frame[list(batch.OBSERVATION_COUNTS)].to_numpy(dtype=float)
+        if (not np.isfinite(extras).all() or np.any(extras < 0)
+                or np.any(extras != np.floor(extras))
+                or np.any(extras[:, 0] != frame["clear_count"] + extras[:, 1] + extras[:, 2])):
+            raise ValueError("Invalid observation diagnostics")
     counts = frame["clear_count"].to_numpy(dtype=float)
     if np.any(counts < 0) or np.any(counts != np.floor(counts)):
         raise ValueError("Invalid clear-observation counts")
@@ -82,6 +91,20 @@ def pending(retriever, plans):
     return [(plan, plan["download_intervals"]) for plan in plans if not reusable(root, plan)]
 
 
+def acquisition_summary(plan):
+    """Separate granule inventory from sampled pixel-date screening counts."""
+    return {
+        interval["name"]: {
+            "acquisition_dates": len({row["date"] for row in plan["acquisitions"]
+                                      if interval["start"] <= row["date"] < interval["end"]}),
+            "unmatched_granules": sum(not row.get("cloud_probability_id")
+                                     for row in plan["acquisitions"]
+                                     if interval["start"] <= row["date"] < interval["end"]),
+        }
+        for interval in plan["download_intervals"]
+    }
+
+
 def write_tables(retriever, plans_by_id, table, region_ids):
     """Publish an annual partition only after full selected-pixel validation."""
     root = retriever.imagery_folder / "pixel_tables"
@@ -94,11 +117,12 @@ def write_tables(retriever, plans_by_id, table, region_ids):
         source = table[table["region_id"] == region_id].copy() if len(table) else pd.DataFrame(columns=["interval", "x", "y", *quality.STUDY_BANDS, "clear_count"])
         source["column"] = np.floor(source["x"].to_numpy(dtype=float)).astype("int32")
         source["row"] = np.floor(source["y"].to_numpy(dtype=float)).astype("int32")
-        frame = source[COLUMNS].sort_values(["interval", "row", "column"]).reset_index(drop=True)
+        extra_columns = [name for name in batch.OBSERVATION_COUNTS if name in source]
+        frame = source[COLUMNS + extra_columns].sort_values(["interval", "row", "column"]).reset_index(drop=True)
         validate_frame(frame, plan)
         schema = pa.schema([("interval", pa.string()), ("row", pa.int32()),
                             ("column", pa.int32()),
-                            *[(band, pa.float32()) for band in quality.STUDY_BANDS + ["clear_count"]]])
+                            *[(band, pa.float32()) for band in quality.STUDY_BANDS + ["clear_count"] + extra_columns]])
         path, receipt = paths(root, plan)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".parquet.part")
@@ -110,7 +134,8 @@ def write_tables(retriever, plans_by_id, table, region_ids):
             temporary.replace(path)
             save_json(receipt, {"contract": contract(plan), "path": str(path.resolve()),
                                 "sha256": digest, "rows": len(frame), "bytes": path.stat().st_size,
-                                "fragment_id": region_id, "fragment": plan["fragment"]})
+                                "fragment_id": region_id, "fragment": plan["fragment"],
+                                "acquisition_summary": acquisition_summary(plan)})
         finally:
             temporary.unlink(missing_ok=True)
         total += len(frame)
@@ -123,7 +148,8 @@ def audit_region(root, plan, minimum_fraction=0.8):
         raise ValueError(f"Missing or invalid selected-pixel table for {plan['fragment_id']}")
     path, _ = paths(root, plan)
     frame = pq.read_table(path).to_pandas()
-    return frame_to_window_rows(frame, plan, minimum_fraction, path)
+    receipt = json.loads(paths(root, plan)[1].read_text())
+    return frame_to_window_rows(frame, {**plan, "acquisition_summary": receipt.get("acquisition_summary", {})}, minimum_fraction, path)
 
 
 def frame_to_window_rows(frame, plan, minimum_fraction, path):
@@ -143,7 +169,11 @@ def frame_to_window_rows(frame, plan, minimum_fraction, path):
             "selected_pixels": properties["selected_pixels"], "valid_pixels": int(valid.sum()),
             "valid_fraction": fraction,
             "status": "quality_pass" if fraction >= minimum_fraction else "low_coverage",
-            "image_path": str(path), "error": ""})
+            "image_path": str(path), "error": "",
+            "clear_pixel_dates": int(counts.sum()),
+            **plan.get("acquisition_summary", {}).get(interval["name"], {}),
+            **{name: int(group[name].sum()) if name in group else None
+               for name in batch.OBSERVATION_COUNTS}})
         for index, record in enumerate(group.to_dict("records")):
             x, y = transform @ (record["column"] + 0.5, record["row"] + 0.5)
             pixels.append({"region_id": plan["fragment_id"], "crop": properties["crop"],

@@ -25,9 +25,9 @@ Setup can install missing dependencies in the first two modes. Existing settings
 
 | Notebook | Crops selected | Reference preparation | Edge handling |
 | --- | --- | --- | --- |
-| [01 Sen4AgriNet](../notebooks/01_sen4agrinet_preparation.ipynb) | Carrot, potato | Pinned catalogue and bounded label/parcel-mask extraction | Declared crop-mask cells; **0 m additional buffer** |
-| [02 FranceCrops](../notebooks/02_francecrops_preparation.ipynb) | Cabbage, table potato | Pinned class-map, label and footprint tables | **10 m inward buffer** on parcel polygons |
-| [03 CropHarvest](../notebooks/03_cropharvest_preparation.ipynb) | Available carrot, cabbage, potato | Pinned labels; source, date, duplicate and geometry audit | **10 m inward buffer** on parcel polygons |
+| [01 Sen4AgriNet](../notebooks/preprocessing/02_sen4agrinet_preparation.ipynb) | Carrot, potato | Pinned catalogue and bounded label/parcel-mask extraction | Declared crop-mask cells; **0 m additional buffer** |
+| [02 FranceCrops](../notebooks/preprocessing/03_francecrops_preparation.ipynb) | Cabbage, table potato | Pinned class-map, label and footprint tables | **10 m inward buffer** on parcel polygons |
+| [03 CropHarvest](../notebooks/preprocessing/04_cropharvest_test_preparation.ipynb) | Available carrot, cabbage, potato | Pinned labels; source, date, duplicate and geometry audit | **10 m inward buffer** on parcel polygons |
 
 These existing scientific rules remain different deliberately; shared headings do not imply equivalent boundary uncertainty. No source's checks are relaxed to meet targets. See [methodology](methodology.md).
 

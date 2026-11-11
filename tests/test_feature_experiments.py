@@ -232,7 +232,7 @@ class FeatureHandoffTests(unittest.TestCase):
             destination = season_folder / "feature_input"
             shutil.copytree(handoff.parent, destination)
             (folder / "settings.local.json").write_text(json.dumps({"report_root": str(report)}))
-            notebook = json.loads((root / "notebooks/06_model_training.ipynb").read_text())
+            notebook = json.loads((root / "notebooks/archive/06_model_training.ipynb").read_text())
             cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
             namespace = {}
             with (
