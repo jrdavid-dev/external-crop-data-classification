@@ -375,7 +375,7 @@ class CropHarvestRunTests(unittest.TestCase):
             namespace = {}
             with (
                 chdir(root),
-                patch("crop_pipeline.sources.test_cohort.completed_sources", return_value=[]),
+                patch("crop_pipeline.sources.test_cohort.completed_sources", side_effect=forbidden),
                 redirect_stdout(io.StringIO()),
                 patch("requests.sessions.Session.request", side_effect=forbidden),
                 patch.object(cropharvest, "download_labels_payload", side_effect=forbidden),

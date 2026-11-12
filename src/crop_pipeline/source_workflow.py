@@ -4,7 +4,7 @@ from collections import Counter
 import json
 from pathlib import Path
 
-ROUND_PARCELS_PER_CROP = 100
+ROUND_PARCELS_PER_CROP = 50
 STAGES = [
     "Obtain references",
     "Validate references",
@@ -130,15 +130,15 @@ def print_summary(source, batches, result, reference_mode, buffer_metres, refere
     if result.get("status") == "failed" or "failed" in states or jobs["failed"] or jobs["cancelled"]:
         action = "Inspect the reported errors and detail log, then rerun to resume saved work."
     elif result.get("status") in {"pending_retry", "pending"} or states - {"completed", "skipped", "disabled"}:
-        action = "Rerun this notebook to collect or retry existing jobs; finish launched batches before notebook 04."
+        action = "Rerun this notebook to collect or retry existing jobs; finish launched batches before the combined audit in Notebook 05."
     elif result.get("status") == "disabled":
         action = "Preparation only. Enable satellite collection when ready, then rerun."
         if reference_mode == "offline":
             action += " Leave offline mode to collect; existing cloud jobs are unchanged."
     else:
-        action = "Run notebook 04 to assess completed samples and measured deficits; finish other launched batches first."
+        action = "Run Notebook 05 once the completed development and JECAM batches are available locally."
     print(f"Next: {action}")
     if any(context.get("selection_status") == "no_candidates_for_deficits" for _, context in batches):
-        print("No unselected reference candidates remain for these deficits. Review notebook 04 before expanding references.")
+        print("No unselected reference candidates remain for these deficits. Review the available reference inventory before expanding it.")
         if source == "sen4agrinet":
             print("To expand Sen4AgriNet references deliberately, use download_missing and increase reference_target_parcels_per_crop and, if needed, reference_scan_max_patches; preserve existing selections and jobs.")

@@ -20,7 +20,10 @@ def snapshot(report_folder):
                    if test_cohort.source_role(s["source_name"]) in test_cohort.DEVELOPMENT]
     if {test_cohort.source_role(s["source_name"]) for s in development} != test_cohort.DEVELOPMENT:
         raise ValueError("Complete Sen4AgriNet and FranceCrops imagery batches first")
-    test = test_cohort.completed_sources(report_folder, test_cohort.TEST_POLICY)
+    try:
+        test = test_cohort.completed_sources(report_folder, test_cohort.TEST_POLICY)
+    except FileNotFoundError as error:
+        raise FileNotFoundError("Import a completed Notebook 04 JECAM bundle or finish Notebook 04 locally") from error
     if {test_cohort.source_role(s["source_name"]) for s in test} != {test_cohort.TEST}:
         raise ValueError("Complete the dedicated CropHarvest JECAM collection first")
     _, overlaps = test_cohort.exclude_overlap(
@@ -75,12 +78,17 @@ def audit(report_folder, output_root):
         partition = "test" if is_test else assignment[group]
         if group not in overlaps and (is_test or partition in {"train", "validation"}):
             regions.append({**region, "properties": {**p, "partition": partition, "source_dataset": source}})
-    seasons.write_records(run / "reference_profile.csv", reference_profile(regions, analysis.quality_rows))
+    eligible_ids = {region["properties"]["fragment_id"] for region in regions}
+    quality_rows = [row for row in analysis.quality_rows if row["region_id"] in eligible_ids]
+    seasons.write_records(run / "reference_profile.csv", reference_profile(regions, quality_rows))
+    overlap_report = run / "jecam_overlap.json"
+    save_json(overlap_report, {"excluded_parcels": sorted(overlaps)})
+    print(f"Excluded {len(overlaps)} overlapping JECAM parcels. Report: {overlap_report}")
     handoff = run / "quality.json"
     save_json(handoff, {
-        "regions": regions, "quality_rows": analysis.quality_rows,
-        "composite_rows": analysis.composite_rows,
-        "pixel_paths": {key: str(path) for key, path in analysis.pixel_rows.paths.items()},
+        "regions": regions, "quality_rows": quality_rows,
+        "composite_rows": [row for row in analysis.composite_rows if row["region_id"] in eligible_ids],
+        "pixel_paths": {key: str(path) for key, path in analysis.pixel_rows.paths.items() if key in eligible_ids},
         "sources": sources, "overlap_exclusions": sorted(overlaps),
         "mask_loss": "unavailable for legacy archives without pre-mask counts",
     })

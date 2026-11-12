@@ -55,7 +55,8 @@ def physical_key(source, properties):
 
 
 def prepare_batch(source, features, archive_root, report_folder, provenance,
-                  inward_buffer_metres=10, policy=None, batch_label=None, round_parcels_per_crop=None, candidate_crops=None):
+                  inward_buffer_metres=10, policy=None, batch_label=None, round_parcels_per_crop=None, candidate_crops=None,
+                  count_existing_round=True):
     """Select references before rasterization. Re-running a round selects the same parcels."""
     policy = policy or DEFAULT_POLICY
     candidate_crops = set(annual.TARGET_CROPS if candidate_crops is None else candidate_crops)
@@ -83,7 +84,7 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
                     if read_json(path, {}).get("source") == source]
         seen = {key for selection in previous for key in selection.get("physical_keys", [])}
         round_counts = Counter(groups[group][0]["properties"]["crop"]
-            for selection in previous if selection.get("round") == round_number
+            for selection in previous if count_existing_round and selection.get("round") == round_number
             for group in selection.get("groups", []) if group in groups)
         candidates = defaultdict(lambda: defaultdict(list))
         unique_physical = set()
@@ -131,7 +132,7 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
                "candidate_parcels": len(selected["groups"]), "selection_status": selected["status"]}
     save_json(folder / "context.json", context)
     if not selected_features:
-        print(f"{source}: no new candidates needed/available; run notebook 04 for the current deficits.")
+        print(f"{source}: no new eligible candidates for this batch.")
         return None, context
     archive_batch_root = Path(archive_root) / COLLECTION_NAME / campaign.name / f"round_{round_number:04d}"
     if batch_label:
@@ -152,6 +153,8 @@ def collect_batch(plan, context, project, enabled=False, authenticate=False, **k
     # Offline inspection must not erase the operational state of launched work.
     # In particular, replacing pending_retry with disabled would let notebook 04
     # overlook unfinished jobs. A new preparation can still record its disabled state.
+    if enabled and kwargs.get("submit_only") and read_json(state_path, {}).get("status") == "completed":
+        return read_json(state_path, {})
     persist_state = enabled or not state_path.exists()
     if plan is None:
         result = {"status": "skipped", "reason": context["selection_status"]}
@@ -289,24 +292,37 @@ def require_targets(report_folder, policy=None):
 
 
 def prepare_round_batches(source, features, archive_root, report_folder, provenance,
-                          parcels_per_crop=ROUND_PARCELS_PER_CROP, inward_buffer_metres=10, candidate_crops=None):
-    """Add a separate extension while preserving existing jobs and the campaign split."""
-    campaign = root(report_folder)
+                          parcels_per_crop=ROUND_PARCELS_PER_CROP, inward_buffer_metres=10, candidate_crops=None,
+                          extra_batches=0, policy=None):
+    """Resume saved plans and optionally add numbered batches in the current round."""
+    if type(extra_batches) is not int or extra_batches < 0:
+        raise ValueError("extra_batches must be a nonnegative integer")
+    campaign = root(report_folder, policy)
     round_number = read_json(campaign / "feedback.json", {}).get("next_round", 1)
-    label = f"overnight_{parcels_per_crop}"
-    extension_folder = campaign / "rounds" / f"{round_number:04d}" / f"{source}_{label}"
-    empty_selection = read_json(extension_folder / "selection.json", {})
-    if empty_selection.get("status") == "no_candidates_for_deficits":
-        # A deliberately expanded reference pool can fill an otherwise empty
-        # round. Keep the old empty selection as an audit record.
+    round_folder = campaign / "rounds" / f"{round_number:04d}"
+    label = None if policy and policy.get("test_source") == source else f"overnight_{parcels_per_crop}"
+
+    def selection_folder(batch_label):
+        return round_folder / (f"{source}_{batch_label}" if batch_label else source)
+
+    def expand_empty_selection(batch_label):
+        selection = read_json(selection_folder(batch_label) / "selection.json", {})
+        if selection.get("status") != "no_candidates_for_deficits":
+            return batch_label
+        prefix = f"{batch_label or 'initial'}_refs_"
+        for path in sorted(round_folder.glob(f"{source}_{prefix}*/selection.json")):
+            if read_json(path, {}).get("groups"):
+                return path.parent.name.removeprefix(f"{source}_")
         from crop_pipeline.imagery.batch_export import content_key
         pool = sorted({physical_key(source, feature["properties"]) for feature in features
                        if feature["properties"].get("source_split", "train") == "train"
                        and feature["properties"].get("crop") in (candidate_crops or annual.TARGET_CROPS)})
-        label += "_refs_" + content_key(pool)[:8]
-        extension_folder = campaign / "rounds" / f"{round_number:04d}" / f"{source}_{label}"
+        return f"{prefix}{content_key(pool)[:8]}"
+
+    label = expand_empty_selection(label)
+    extension_folder = selection_folder(label)
     batches = []
-    for path in sorted((campaign / "rounds" / f"{round_number:04d}").glob("*/context.json")):
+    for path in sorted(round_folder.glob("*/context.json")):
         context = read_json(path, {})
         if context.get("source") != source:
             continue
@@ -341,11 +357,17 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
             if original_planner != annual_identity.planning_fingerprint(Path(annual.__file__)):
                 raise ValueError("Saved masks need the original planner for repair; existing jobs were preserved.")
             import hashlib
-            current = [feature for feature in features if feature["properties"].get("crop") in annual.TARGET_CROPS]
+            # Older JECAM plans were built from references screened against
+            # local development data. Recreate that exact input if masks need repair.
+            excluded = set(configuration["provenance"].get("excluded_overlap_groups", []))
+            original_features = [feature for feature in features
+                                 if feature["properties"]["partition_group"] not in excluded]
+            current = [feature for feature in original_features
+                       if feature["properties"].get("crop") in annual.TARGET_CROPS]
             footprint_hash = hashlib.sha256(json.dumps(current, sort_keys=True).encode()).hexdigest()
             if configuration.get("footprints_sha256") != footprint_hash:
                 raise ValueError("Saved masks need repair but the reference inventory changed. Restore the original references; existing jobs were preserved.")
-            repaired = annual.prepare_source(source, features, run_folder.parents[3],
+            repaired = annual.prepare_source(source, original_features, run_folder.parents[3],
                 configuration["provenance"], inward_buffer_metres=configuration["inward_buffer_metres"],
                 tile_pixels=configuration["tile_pixels"], candidate_groups=configuration.get("candidate_groups"))
             if Path(repaired["run_folder"]) != run_folder:
@@ -356,15 +378,27 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
         # A selected round is immutable. Resume its original plan/provenance rather
         # than generating another archive when notebook orchestration changes.
         batches.append((saved_plan, context))
-    if any(Path(context["folder"]) == extension_folder for _, context in batches):
+    resumed_folders = {Path(context["folder"]) for _, context in batches}
+    if extension_folder in resumed_folders:
         print(f"Round {round_number}: resuming saved {source} selections and original collection plans.")
-        return batches
-    plan, context = prepare_batch(source, features, archive_root, report_folder, provenance,
-        inward_buffer_metres=inward_buffer_metres, batch_label=label,
-        round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops)
-    batches.append((plan, context))
-    print(f"Round {round_number}: target up to {parcels_per_crop} candidates per available crop. "
-          f"Resume/submit {len(batches)} batches; previous jobs and locked partitions are preserved.")
+    else:
+        batches.append(prepare_batch(source, features, archive_root, report_folder, provenance,
+            inward_buffer_metres=inward_buffer_metres, batch_label=label, policy=policy,
+            round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops))
+    for index in range(1, extra_batches + 1):
+        batch_label = expand_empty_selection(f"extra_{index:04d}")
+        folder = selection_folder(batch_label)
+        if folder in resumed_folders or read_json(folder / "state.json", {}).get("status") in {"completed", "skipped"}:
+            continue
+        plan, context = prepare_batch(source, features, archive_root, report_folder, provenance,
+            inward_buffer_metres=inward_buffer_metres, batch_label=batch_label, policy=policy,
+            round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops,
+            count_existing_round=False)
+        batches.append((plan, context))
+        if plan is None:
+            break
+    print(f"Round {round_number}: up to {parcels_per_crop} candidates per crop in each new batch. "
+          f"Resume/submit {len(batches)} batches.")
     return batches
 
 

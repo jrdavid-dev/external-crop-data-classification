@@ -53,13 +53,11 @@ def exclude_overlap(candidates, development):
     return [item for item in candidates if item["properties"]["partition_group"] not in excluded], excluded
 
 
-def prepare(report_folder, archive_root, features, provenance, limit):
-    sources = [s for s in completed_sources(report_folder) if source_role(s["source_name"]) in DEVELOPMENT]
+def prepare(report_folder, archive_root, features, provenance, limit, extra_batches=0):
     candidates = [item for item in features if item["properties"]["source_dataset"] == "jecam"]
-    eligible, excluded = exclude_overlap(candidates, source_footprints(sources))
-    print(f"JECAM candidates: {len(candidates)} | overlapping groups excluded: {len(excluded)}")
-    return [adaptive.prepare_batch(
-        TEST, eligible, archive_root, report_folder,
-        {**provenance, "cohort": "jecam", "excluded_overlap_groups": sorted(excluded)},
-        policy=TEST_POLICY, round_parcels_per_crop=limit,
-    )]
+    print(f"JECAM candidates: {len(candidates)} | Development overlap checked in notebook 05")
+    return adaptive.prepare_round_batches(
+        TEST, candidates, archive_root, report_folder,
+        {**provenance, "cohort": "jecam", "development_overlap": "pending_notebook_05"},
+        policy=TEST_POLICY, parcels_per_crop=limit, extra_batches=extra_batches,
+    )

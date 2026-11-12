@@ -34,6 +34,28 @@ class AnnualBatchTests(unittest.TestCase):
             self.assertEqual([c[0] for c in order.mock_calls], ["collect", "daily", "images"])
             self.assertEqual(submit_daily.call_args.args[5], "projects/test/assets/crop_pipeline_batch/francecrops_abc_2020")
 
+    def test_submit_only_queues_without_downloading_or_cleaning_assets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = {"source": "francecrops", "revision": "abc", "run_folder": folder}
+            inputs = {key: folder for key in ("imagery_folder", "report_folder", "timeline_folder")}
+            plan = {"fragment_id": "tile", "settings": {}, "acquisitions": []}
+            with patch.object(annual_batch, "AcceleratedRetriever") as retriever, \
+                 patch.object(annual_batch.annual, "read_regions", return_value=[{"properties": {"fragment_id": "tile"}}]), \
+                 patch.object(annual_batch.annual, "collect_year") as direct, \
+                 patch.object(annual_batch.batch, "collect") as collect, \
+                 patch.object(annual_batch.batch, "missing_daily_checkpoints", return_value=[]), \
+                 patch.object(annual_batch.batch, "submit_composites") as submit, \
+                 patch.object(annual_batch.batch, "pending_composites", return_value=[]), \
+                 patch.object(annual_batch.batch, "remove_temp_folder") as cleanup:
+                retriever.return_value.inventory_region.return_value = plan
+                result = annual_batch.collect_batch_year(Mock(), source, 2020, inputs,
+                                                         project="test", submit_only=True)
+            submit.assert_called_once()
+            collect.assert_not_called()
+            cleanup.assert_not_called()
+            direct.assert_not_called()
+            self.assertEqual(result["retry_queue"][0]["status"], "collection_deferred")
+
     def test_complete_batch_uses_existing_handoff_verifier(self):
         with tempfile.TemporaryDirectory() as folder:
             source = {"source": "francecrops", "revision": "abc", "run_folder": folder}

@@ -23,7 +23,7 @@ The reference target and patch cap are separate from the shared 100-per-crop ima
 1. **Setup:** install missing dependencies, preserve or create local settings, and resolve the Earth Engine project.
 2. **Discover:** pin the upstream release and list its patches. Full NetCDF sizes are context, not planned transfer sizes.
 3. **Prepare references:** reuse checkpoints or selectively read label/parcel masks. Validate crop codes, grids, coordinates, identities and geometry; exclude known mixed/conflicting groups and upstream held-out references.
-4. **Select candidates:** spread up to 100 physical parcels per crop across geographic/year strata. Existing selections, pending batches and locked partitions are preserved.
+4. **Select candidates:** spread up to 50 physical parcels per crop across geographic/year strata. Existing selections, pending batches and locked partitions are preserved.
 5. **Collect:** submit or collect Earth Engine jobs using original saved plans.
 6. **Summarize:** inspect verified tiles, job states and the next action. Rerun pending work, then assess usable windows in notebook 04.
 

@@ -432,7 +432,7 @@ def collect_source(
     plan, report_folder, project, enabled=False, authenticate=False,
     download_workers=2, intervals_per_request=6,
     collection_backend="direct", tile_start=0, tile_count=None,
-    archive_format="rasters",
+    archive_format="rasters", submit_only=False,
 ):
     """Use EE for masks/medians and checkpoint local rasters; disabled means zero network calls."""
     if type(tile_start) is not int or tile_start < 0 or (
@@ -441,6 +441,8 @@ def collect_source(
         raise ValueError("Use a nonnegative tile_start and a positive tile_count or None.")
     if collection_backend != "batch" and (tile_start or tile_count is not None):
         raise ValueError("Tile ranges require collection_backend='batch'.")
+    if submit_only and collection_backend != "batch":
+        raise ValueError("Submit-only mode requires the batch backend.")
     if archive_format not in {"rasters", "pixel_tables"}:
         raise ValueError("archive_format must be rasters or pixel_tables")
     if archive_format == "pixel_tables" and collection_backend != "batch":
@@ -512,7 +514,7 @@ def collect_source(
             ee, plan, year, inputs, attempt_folder,
             download_workers, intervals_per_request,
             **({"project": project, "tile_start": tile_start, "tile_count": tile_count,
-                "archive_format": archive_format}
+                "archive_format": archive_format, **({"submit_only": True} if submit_only else {})}
                if collection_backend == "batch" else {}),
         )
         for year, inputs in sorted(plan["years"].items())

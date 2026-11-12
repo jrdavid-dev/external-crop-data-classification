@@ -17,7 +17,7 @@ An annual crop label identifies the reported crop, but does not prove which crop
 
 ## Candidate sampling and imagery
 
-The default adaptive workflow selects up to 100 candidate parcels per available crop per source per round, then retains at most 20 usable pixels per parcel after window assessment. The optional full-catalogue workflow uses every eligible parcel and interior pixel in supplied inventories. Same-parcel fragments share one group. Contested locations are excluded, and bounded tiles preserve the original parcel identity. FranceCrops and CropHarvest retain a 10 m inward buffer; Sen4AgriNet retains its existing declared crop-mask cells with no additional inward buffer. This is an existing source-specific rule, not evidence of equivalent boundary uncertainty; adding erosion would change selected pixels and require a separately versioned methodology change.
+The default adaptive workflow selects up to 50 candidate parcels per available crop per source per round, then retains at most 20 usable pixels per parcel after window assessment. The optional full-catalogue workflow uses every eligible parcel and interior pixel in supplied inventories. Same-parcel fragments share one group. Contested locations are excluded, and bounded tiles preserve the original parcel identity. FranceCrops and CropHarvest retain a 10 m inward buffer; Sen4AgriNet retains its existing declared crop-mask cells with no additional inward buffer. This is an existing source-specific rule, not evidence of equivalent boundary uncertainty; adding erosion would change selected pixels and require a separately versioned methodology change.
 
 All three sources use Sentinel-2 surface reflectance from `COPERNICUS/S2_SR_HARMONIZED`:
 

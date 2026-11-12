@@ -34,6 +34,12 @@ On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 3. [Paoay](notebooks/paoay) runs 01–05 from references through field review. For the January–April 2024 map, set `paoay_model_manifest` in local settings to the `fixed_full` manifest printed by external evaluation 01. See the [Paoay guide](docs/paoay_workflow.md).
 4. [Archived notebooks](notebooks/archive) retain earlier experiment outputs and provenance.
 
+Preprocessing 02–04 default to `submit_only = True`. Run All to queue missing Earth Engine tasks. Set it to `False` before rerunning to download finished results and submit any remaining jobs. Keep `reference_mode = "reuse"` when the required local references are already prepared.
+
+In preprocessing 02–04, set `extra_batches` to the number of additional batches you want in the current round. For example, `extra_batches = 3` plans up to three additional batches of up to 50 unused parcels per available crop each. Run the same notebook again with the same value and `submit_only = False` to collect finished jobs. Increase the value to add more batches. Run 05–07 after collecting the batches you want to assess together. New batches use the latest available sampling feedback and stop when eligible parcels run out.
+
+Notebook 04 can collect CropHarvest JECAM while a teammate runs 02–03. After collecting, set `jecam_export_folder` in Notebook 04's final cell and run that cell. Share the resulting folder with its batch subfolders intact. On the machine with completed 02–03 batches, set `jecam_import_folder` in Notebook 05 to that folder and run the notebook. It verifies and registers the transferred batches, then reports and excludes any JECAM parcels overlapping the completed development footprints. Continue with 06–07 using the new handoff. Existing local Notebook 04 completions also work directly with 05.
+
 ## Annual TIFF folder
 
 Completed imagery is organized under:

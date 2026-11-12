@@ -9,7 +9,7 @@ Use a writable Python 3.12+ notebook kernel, internet access and an Earth Engine
 5. Rerun pending collections to retrieve saved cloud results and create annual TIFFs. Check the final summary for errors and the next action.
 6. Once launched batches finish, run **04**. Repeat relevant sources → 04 for measured deficits; continue to **05–06** when pilot inputs are ready. Strict mode requires all collection targets.
 
-All three notebooks use the same six sections and a shared **100 candidate parcels per available crop per round** limit. Sen4AgriNet supplies carrot/potato, FranceCrops cabbage/table potato, and CropHarvest whichever target crops pass its checks. Candidate limits do not guarantee usable yield or runtime.
+All three notebooks use the same six sections and a shared **50 candidate parcels per available crop per round** limit. Sen4AgriNet supplies carrot/potato, FranceCrops cabbage/table potato, and CropHarvest whichever target crops pass its checks. Candidate limits do not guarantee usable yield or runtime.
 
 ## Inputs and storage
 

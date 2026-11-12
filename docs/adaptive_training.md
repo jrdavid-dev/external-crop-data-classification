@@ -6,9 +6,9 @@ The default `adaptive_training` workflow collects annual histories for selected 
 
 | Notebook | Candidate limit | Reference preparation |
 | --- | --- | --- |
-| 01 Sen4AgriNet | Up to 100 carrot and 100 potato parcels per round | Local references by default; 350-patch cap |
-| 02 FranceCrops | Up to 100 cabbage and 100 potato parcels per round | Reuse pinned reference tables; obtain missing inputs explicitly |
-| 03 CropHarvest | Up to 100 parcels per available crop per round | Reuse labels; obtain missing inputs explicitly, then screen eligibility |
+| 01 Sen4AgriNet | Up to 50 carrot and 50 potato parcels per round | Local references by default; 350-patch cap |
+| 02 FranceCrops | Up to 50 cabbage and 50 potato parcels per round | Reuse pinned reference tables; obtain missing inputs explicitly |
+| 03 CropHarvest | Up to 50 parcels per available crop per round | Reuse labels; obtain missing inputs explicitly, then screen eligibility |
 
 **Shared reference controls:** all three default to `reference_mode = "reuse"`. Choose `"download_missing"` on a fresh clone or `"offline"` for local-only inspection. Sen4AgriNet has a separate `reference_target_parcels_per_crop = 100` and `reference_scan_max_patches = 350`; it stops at either limit and reports available candidates and reference deficits. If the pool is exhausted, deliberately increase the reference target and, if needed, the patch cap. This does not move existing selections or jobs. Unseen patches have not been audited.
 
@@ -18,7 +18,7 @@ The default `adaptive_training` workflow collects annual histories for selected 
 4. Once launched batches finish, run **04 Four-month windows**. It combines completed rounds, applies timing and quality checks, and reports usable pixels, parcels and deficits. Partial source coverage is allowed; outstanding launched batches must finish first.
 5. Rerun relevant source notebooks to fill measured crop/partition deficits, then run 04 again. Continue to **05–06** when notebook 04 exports a prepared pilot handoff. Pilot mode reports unmet budgets; strict mode requires `Targets met: True`.
 
-All source notebooks use the same 100-per-crop round limit. Existing selections count toward it; older saved batches above 100 remain intact and are resumed without adding candidates to that crop. FranceCrops has no carrots. A source with no candidates for the remaining deficits is skipped. Candidate limits do not guarantee usable yield, runtime or completion overnight.
+All source notebooks use the same 50-per-crop round limit. Existing selections count toward it; older saved batches above 50 remain intact and are resumed without adding candidates to that crop. FranceCrops has no carrots. A source with no candidates for the remaining deficits is skipped. Candidate limits do not guarantee usable yield, runtime or completion overnight.
 
 ## Usable-sample targets
 

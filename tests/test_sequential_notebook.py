@@ -202,12 +202,12 @@ class SequentialNotebookTests(unittest.TestCase):
             self.assertTrue(namespace["reference_options"]["cached_only"])
             self.assertFalse(namespace["dataset_folder"].exists())
             plan = namespace["annual_plan"]
-            self.assertEqual(namespace["candidate_parcels_per_crop"], 100)
-            # Select only 100 of the 120 eligible fixture parcels per crop.
-            self.assertEqual(plan["estimate"]["parcels"], 200)
+            self.assertEqual(namespace["candidate_parcels_per_crop"], 50)
+            # Select only 50 of the 120 eligible fixture parcels per crop.
+            self.assertEqual(plan["estimate"]["parcels"], 100)
             self.assertEqual(
                 plan["years"]["2020"]["pixels_per_crop"],
-                {"carrot": 10000, "potato": 10000},
+                {"carrot": 5000, "potato": 5000},
             )
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertFalse(namespace["run_satellite_collection"])

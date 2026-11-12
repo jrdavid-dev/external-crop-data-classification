@@ -12,7 +12,7 @@ from crop_pipeline.sources import annual
 
 def collect_batch_year(ee, source_plan, year, inputs, attempt_folder=None,
                        download_workers=2, intervals_per_request=6, *, project,
-                       tile_start=0, tile_count=None, archive_format="rasters"):
+                       tile_start=0, tile_count=None, archive_format="rasters", submit_only=False):
     retriever = AcceleratedRetriever(
         ee, int(year), inputs["imagery_folder"], inputs["report_folder"], 40
     )
@@ -80,7 +80,8 @@ def collect_batch_year(ee, source_plan, year, inputs, attempt_folder=None,
         return f"{count} selected-pixel records verified"
 
     handlers = {"daily": daily, "pixel_table" if table_mode else "composite": tables if table_mode else composites}
-    batch.collect(ee, project, ledger, handlers, plans_by_id=by_id)
+    if not submit_only:
+        batch.collect(ee, project, ledger, handlers, plans_by_id=by_id)
     missing_daily = [plan for plan in plans if batch.missing_daily_checkpoints(
         [plan], timeline_folder(plan))]
     if table_mode:
@@ -104,7 +105,7 @@ def collect_batch_year(ee, source_plan, year, inputs, attempt_folder=None,
     selection_complete = not missing_daily and not missing_images
     coverage_path = ledger.parent / f"{year}_coverage.json"
     coverage = set(json.loads(coverage_path.read_text())) if coverage_path.exists() else set()
-    if selection_complete:
+    if selection_complete and not submit_only:
         batch.remove_temp_folder(ee, ledger, temp_folder)
         coverage.update(plan["fragment_id"] for plan in plans)
         quality.save_json(coverage_path, sorted(coverage))
@@ -127,6 +128,8 @@ def collect_batch_year(ee, source_plan, year, inputs, attempt_folder=None,
     retry_queue = [{"year": str(year), "region_id": region_id,
                     "status": "batch_pending", "pending_image_count": count}
                    for region_id, count in pending.items()]
+    if submit_only and not retry_queue:
+        retry_queue.append({"year": str(year), "status": "collection_deferred"})
     if unselected:
         retry_queue.append({"year": str(year), "status": "outside_selected_range",
                             "tile_count": unselected})

@@ -323,6 +323,44 @@ class AdaptiveCollectionTests(unittest.TestCase):
             self.assertEqual(sum(context["candidate_parcels"] for _, context in resumed), 120)
             self.assertEqual(selection.read_bytes(), before)
 
+    def test_extra_batches_select_unused_parcels_without_advancing_feedback(self):
+        from crop_pipeline.imagery.batch_export import content_key
+
+        test_policy = {**adaptive.DEFAULT_POLICY, "test_source": "cropharvest"}
+        for source, policy in (("sen4agrinet", None), ("cropharvest", test_policy)):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as folder:
+                report = Path(folder) / "inventory"
+                features = [reference_feature(f"{crop}_{i}", left=500000 + i * 500, crop=crop)
+                            for crop in ("carrot", "potato") for i in range(6)]
+
+                def prepare(source, catalog, archive, provenance, **kwargs):
+                    run = Path(archive) / content_key(kwargs["candidate_groups"])
+                    plan = {"source": source, "run_folder": str(run), "years": {}}
+                    save_json(run / "collection_plan.json", plan)
+                    return plan
+
+                with patch.object(adaptive.annual, "prepare_source", side_effect=prepare) as planner:
+                    args = (source, features, folder, report, {})
+                    kwargs = {"parcels_per_crop": 2, "policy": policy}
+                    initial = adaptive.prepare_round_batches(*args, **kwargs, extra_batches=1)
+                    expanded = adaptive.prepare_round_batches(*args, **kwargs, extra_batches=2)
+                    self.assertEqual(planner.call_count, 3)
+                    self.assertEqual(
+                        {context["folder"]: plan for plan, context in initial},
+                        {context["folder"]: plan for plan, context in expanded
+                         if not context["folder"].endswith("extra_0002")},
+                    )
+                seen = set()
+                for _, context in expanded:
+                    selection = adaptive.read_json(Path(context["folder"]) / "selection.json", {})
+                    self.assertEqual(context["round"], 1)
+                    self.assertEqual(sum(group.rsplit("|", 1)[-1].startswith("carrot_") for group in selection["groups"]), 2)
+                    self.assertEqual(sum(group.rsplit("|", 1)[-1].startswith("potato_") for group in selection["groups"]), 2)
+                    self.assertTrue(seen.isdisjoint(selection["physical_keys"]))
+                    seen.update(selection["physical_keys"])
+                    if policy:
+                        self.assertEqual(set(selection["assignments"].values()), {"test"})
+
     def test_multi_batch_collection_resumes_each_plan_and_authenticates_once(self):
         batches = [({"run_folder":"old"}, {"folder":"/old"}),
                    ({"run_folder":"extra"}, {"folder":"/extra"})]
