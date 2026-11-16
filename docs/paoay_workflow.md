@@ -11,6 +11,7 @@ Notebooks 01–06 remain the external preprocessing/training workflow. The **fiv
 | [03 Model application](../notebooks/paoay/03_model_application.ipynb) | Calculate exact saved-model features and preserve raw crop predictions |
 | [04 Screening and maps](../notebooks/paoay/04_maps.ipynb) | Create boundary-limited maps and separate screening flags |
 | [05 Reference and field review](../notebooks/paoay/05_reference_field_review.ipynb) | Summarize notes, freeze the preliminary map and prepare January records |
+| [06 Land activity](../notebooks/paoay/06_land_activity.ipynb) | Optional: map 2019–2026 active cropland, check it against NAMRIA land use and split the crop map by it |
 
 Use the existing project kernel; **Restart Kernel → Run All** for each notebook in order. Nothing runs just by opening a notebook. The original eight entry points, outputs and metadata remain in the [checksum-verified archive](../notebooks/paoay/archive/eight_notebook_workflow/README.md). Do not run archived entry points in the active sequence.
 
@@ -67,6 +68,16 @@ Review per-boundary predictions, overlapping screening flags, suitability and or
 Notebook 11 freezes a preliminary-map TIFF and snapshots of the reference/calendar/field records in a new immutable review bundle. Editable `observations.csv` and `corrections.csv` live separately and are created once. Record actual dates, GPS, crop/cover, growth stage, evidence and observer. A point does not label a whole polygon. January observations and historical evidence remain distinct.
 
 Follow the [field-check guide](paoay_field_checks.md) for columns and evidence rules. Rerunning after edits creates a new report; old snapshots remain readable. Correction proposals do not alter the model map. A later corrected raster needs compatible dates and explicit spatial scope. Neither corrected-map agreement nor these convenience records produce an accuracy score. Independent evaluation needs a separate evidence/sampling protocol.
+
+## 12: land activity
+
+Notebook 06 ports the land-activity analysis from the archived Atok cropping-pattern notebook ([archive/14](../notebooks/archive/14_atok_unsupervised.ipynb)). It reads the 2019–2026 Cloud Score+ half-month composites from `atok_imagery_root` (`YEAR/Sentinel2_CSPlus_YEAR_MM_Hh.tif`, B3/B4/B5/B8/B11) on the crop map's 10 m grid; a composite on a different CRS, resolution or band order stops the run.
+
+Pixels inside the study boundary with at least 60 clear half-months get eight summaries (NDVI percentiles, cycles per year, mean cycle amplitude, bare share, median NDMI and B11). A stable K-means (K 2–8 by silhouette, seed and subsample ARI ≥ 0.8) groups them, and fixed rules name the clusters active cropland, mixed / low activity, perennial vegetation or bare / built. Pixels with too few clear observations stay separate.
+
+The result is checked against the KML reference areas (crop side) and NAMRIA ELUM 2023 forest, built-up and pasture polygons from `atok_landuse_path` (non-crop side, independent of the imagery). The frozen crop baseline is then cross-tabulated by land activity. **Nothing is masked or relabelled**: crop predictions outside active cropland are review candidates, and Unknown inside active cropland is cropland the three-crop model did not resolve. A hard cropland mask needs evaluation against reliable crop and non-crop labels first. Outputs are in `land_activity/` with a `land_activity_stage.json` pointer.
+
+Section 7 looks at other months for future research. For the same composites it reports each month's clear-observation share and crop-cycle starts and peaks in active cropland (`monthly_activity.csv`), and the share of active-cropland pixels with all eight half-months clear for every four-month window and year (`four_month_windows.csv`).
 
 ## Preservation and outputs
 
