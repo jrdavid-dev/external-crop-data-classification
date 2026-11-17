@@ -55,7 +55,7 @@ def _calendar_rows(path, records):
 def _context(map_handoff):
     bundle = maps.load_map_bundle(map_handoff)
     inputs = maps.context(bundle['manifest']['prediction_handoff'])
-    areas = [r for r in inputs['reference']['records'] if r['reference_id'] != inputs['reference']['manifest']['roi_id']]
+    areas = references.reference_areas(inputs['reference'])
     return bundle, inputs, areas
 
 

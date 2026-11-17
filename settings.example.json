@@ -12,5 +12,6 @@
   "pagasa_baguio_path": "./data/climate/pagasa_baguio_monthly.csv",
   "pagasa_station_elevation_m": 1500,
   "analysis_root": "./analysis",
-  "atok_boundary_path": "./data/atok/paoay_boundary_2023.geojson"
+  "atok_boundary_path": "./data/atok/paoay_boundary_2023.geojson",
+  "paoay_context_names": []
 }

@@ -1,7 +1,7 @@
 """Display-only crop previews; keep raster grids, scores and bundle identities unchanged."""
 import numpy as np
 
-from crop_pipeline.paoay import crop_baseline, maps, review
+from crop_pipeline.paoay import crop_baseline, maps, references, review
 
 COLORS = ['#ed9137', '#4b9a65', '#8b70b1', '#e8c873', '#d9d9d9']
 
@@ -44,7 +44,7 @@ def plot_boundaries(bundle):
     import matplotlib.pyplot as plt
     inputs = maps.context(bundle['manifest']['prediction_handoff'])
     reference = inputs['reference']
-    areas = [r for r in reference['records'] if r['reference_id'] != reference['manifest']['roi_id']]
+    areas = references.reference_areas(reference)
     columns = min(3, max(1, len(areas)))
     rows = max(1, (len(areas) + columns - 1) // columns)
     figure, axes = plt.subplots(rows, columns, figsize=(columns * 4, rows * 4),

@@ -17,7 +17,7 @@ Use the existing project kernel; **Restart Kernel → Run All** for each noteboo
 
 ## 07: references
 
-Put `00 - Region of Interest-2.kmz` and `Crop Area.kmz` in ignored `data/paoay/`, or configure `paoay_kmz_root` in local settings. The default boundary name is `Region of Interest`; override with `paoay_roi_name` if needed. The current inputs have seven reference areas. Geometry, holes, notes and overlaps are preserved; invalid areas remain flagged rather than repaired.
+Put `00 - Region of Interest-2.kmz` and `Crop Area.kmz` in ignored `data/paoay/`, or configure `paoay_kmz_root` in local settings. The default boundary name is `Region of Interest`; override with `paoay_roi_name` if needed. List any context-only polygons, such as a barangay or other administrative boundary, by exact name in `paoay_context_names`. They stay in the snapshot with role `Context boundary` but are not reference areas: they do not widen the map extent and are left out of overlap, screening, land-activity, suitability and field-check tables. An unknown name stops the run. The current inputs have seven reference areas. Geometry, holes, notes and overlaps are preserved; invalid areas remain flagged rather than repaired.
 
 A separate `<bundle id>_suitability.csv` in `references/reviews/` records manual context. Existing edits are never overwritten:
 
@@ -44,6 +44,10 @@ Use the unique selected-model package or set an explicit manifest; nothing is se
 All eight bins must be complete and features finite. The saved coverage threshold (currently 0.80) applies to each composite over the whole study ROI; no imputation or relaxed thresholds. Zero usable rows leave stages pending and retain audits. For cache compatibility, 09 builds/reuses the existing guidance dependency internally; it never filters model inputs. Its illustrative rules remain two dates, top probability ≥0.60 and margin ≥0.10.
 
 Apply the fitted classifier without refitting. Map probabilities by classifier class names, not assumed order. Raw output codes are carrot=1, cabbage=2, potato=3. These are forced choices even on other crops/noncrop surfaces. Their areas are not verified planted area. Preserve raw probabilities before screening.
+
+Notebook 03 then checks **model applicability** (Meyer and Pebesma 2021, doi:10.1111/2041-210X.13650). Each predictor is standardized with the training mean and standard deviation and weighted by the fitted model's feature importance. A pixel's dissimilarity index is the distance to its nearest training pixel divided by the mean distance between training pixels. The threshold is the outlier-removed maximum index among the training pixels, each compared with other training parcels only, because the model was selected on one train/validation split and has no cross-validation folds. Pixels above it are outside the area of applicability: the model extrapolates there and its validation score does not describe them. This is a flag saved in `applicability/` with an `applicability_stage.json` pointer; nothing is masked or relabelled. Similarity to training pixels is not evidence of a correct label, and the reference score is the European validation result, not local accuracy. The check reads the development feature rows that trained the model (matched by checksum beside the model package); without them it reports that it did not run and the pointer stays pending.
+
+Notebook 03 also **compares seasonal curves**. For each index (NDVI, NDRE, NDMI, SAVI) it saves the median and interquartile range per half-month bin for the training pixels of each crop and for study-area groups: all pixels, pixels inside reference areas, and pixels by raw prediction. The comparison table gives each curve's peak bin, amplitude and mean, their correlation, and the bin shift (up to three bins, at least five shared bins) with the lowest RMSE between median curves; a positive shift means the study area runs later than training. Outputs are in `season_shift/` with a `season_shift_stage.json` pointer. This describes the mismatch only: the model, window and predictions are unchanged, a four-month window cannot reveal a shift longer than about six weeks, and the study-area groups are not labelled single-crop fields. Groups with fewer than 20 pixels are omitted.
 
 ## 10: maps and screening
 
@@ -81,7 +85,7 @@ Section 7 looks at other months for future research. For the same composites it 
 
 ## Preservation and outputs
 
-Outputs remain under the parent of `report_root`, normally `sen4agrinet_work/paoay/`: `references`, `sentinel2`, `dynamic_world`, `land_cover`, `features`, `predictions`, `crop_baseline`, `screening`, `maps`, `review` and `field_review`.
+Outputs remain under the parent of `report_root`, normally `sen4agrinet_work/paoay/`: `references`, `sentinel2`, `dynamic_world`, `land_cover`, `features`, `predictions`, `applicability`, `season_shift`, `crop_baseline`, `screening`, `maps`, `review` and `field_review`.
 
 Existing stage-pointer names remain compatible; 10 adds crop-baseline/screening pointers and 11 adds `field_review/field_review_stage.json`. Changed inputs, rules or code select new keyed bundles. Failed stages remain pending, preventing silent fallback to older successes. Existing imagery, archives, model packages, partitions, jobs, mutable reviews and historical outputs stay intact. Local settings, raw/generated files and field records remain outside Git.
 

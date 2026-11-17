@@ -46,7 +46,7 @@ def prepare_records(reference_handoff, output_root):
     observation_file, correction_file = folder/'observations.csv', folder/'corrections.csv'
     if not observation_file.exists():
         _write(observation_file, [{'reference_id':r['reference_id'], 'review_status':'unreviewed'}
-               for r in reference['records'] if r['reference_id'] != reference['manifest']['roi_id']], OBSERVATION_COLUMNS, True)
+               for r in references.reference_areas(reference)], OBSERVATION_COLUMNS, True)
     if not correction_file.exists():
         _write(correction_file, [], CORRECTION_COLUMNS, True)
     return observation_file, correction_file
@@ -63,7 +63,7 @@ def _date(text):
 
 
 def assess_observations(path, reference, baseline):
-    known = {r['reference_id']:r for r in reference['records'] if r['reference_id'] != reference['manifest']['roi_id']}
+    known = {r['reference_id']:r for r in references.reference_areas(reference)}
     period = baseline['manifest']['period']
     start, end = _date(period['start']), _date(period['end'])  # end exclusive
     grid = baseline['manifest']['grid']
@@ -187,7 +187,7 @@ def build(request, iterator=None):
         load_bundle(handoff);return handoff
     observations,assessments=assess_observations(request['observation_file'],inputs['reference'],baseline)
     corrections=assess_corrections(request['correction_file'],observations)
-    areas=[r for r in inputs['reference']['records'] if r['reference_id']!=inputs['reference']['manifest']['roi_id']]
+    areas=references.reference_areas(inputs['reference'])
     suitability=_read(request['suitability_file'],reference_suitability.COLUMNS)
     by_id={r['reference_id']:r for r in suitability}
     plan=[]

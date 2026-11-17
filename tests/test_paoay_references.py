@@ -157,6 +157,51 @@ class PaoayReferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'distinct filenames'):
                 references.read_inputs([root/'Crop Area.kmz', root/'Crop Area.kmz'])
 
+    def test_context_polygons_are_kept_but_never_treated_as_reference_areas(self):
+        import numpy as np
+        from pyproj import Transformer
+        from crop_pipeline.paoay import crop_baseline, reference_suitability
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = write_kmz(root / 'inputs/areas.kmz', [
+                placemark('Region of Interest', geometry=polygon(120.7, 16.6, 120.74, 16.64)),
+                placemark('Barangay', 'ADM4_EN: Paoay', geometry=polygon(120.69, 16.59, 120.75, 16.65)),
+                placemark('Area 1', 'Mixed crops'),
+                placemark('Area 2', 'A rotation calendar', geometry=polygon(120.72, 16.62, 120.73, 16.63)),
+            ])
+            records, sources = references.read_inputs([path])
+            result = references.inspect_records(records, context_names=['barangay'])
+            rows = {row['name']: row for row in result['audit']}
+            self.assertEqual(rows['Barangay']['role'], 'Context boundary')
+            self.assertEqual(rows['Barangay']['evaluation_status'], 'Not applicable')
+            self.assertEqual(rows['Area 1']['role'], 'Reference area')
+            self.assertEqual(result['overlaps'], [])
+            self.assertEqual(len(references.inspect_records(records)['overlaps']), 2)
+            for names in (['Missing'], ['Region of Interest'], 'Barangay'):
+                with self.assertRaises(ValueError):
+                    references.inspect_records(records, context_names=names)
+
+            plain = references.load_reference_bundle(references.export_reference_bundle(records, sources, root / 'outputs'))
+            handoff = references.export_reference_bundle(records, sources, root / 'outputs', context_names=['Barangay'])
+            bundle = references.load_reference_bundle(handoff)
+            self.assertNotEqual(bundle['manifest']['bundle_id'], plain['manifest']['bundle_id'])
+            self.assertEqual((plain['manifest']['area_count'], bundle['manifest']['area_count']), (3, 2))
+            self.assertEqual(len(bundle['records']), 4)
+            self.assertEqual([row['name'] for row in references.reference_areas(bundle)], ['Area 1', 'Area 2'])
+            self.assertEqual(len(references.reference_areas(plain)), 3)
+            roles = {feature['properties']['name']: feature['properties']['role'] for feature in bundle['references']['features']}
+            self.assertEqual(roles['Barangay'], 'Context boundary')
+            with bundle['review_file'].open(encoding='utf-8', newline='') as stream:
+                self.assertEqual([row['name'] for row in csv.DictReader(stream)], ['Area 1', 'Area 2'])
+            self.assertEqual([row['name'] for row in reference_suitability.prepare_review(handoff)[1]], ['Area 1', 'Area 2'])
+
+            west, north = Transformer.from_crs('EPSG:4326', 'EPSG:32651', always_xy=True).transform(120.7, 16.64)
+            grid = {'crs': 'EPSG:32651', 'transform': [50, 0, west, 0, -50, north]}
+            roi = np.ones((90, 90), dtype=bool)
+            limited = crop_baseline.reference_mask(bundle, grid, roi)
+            self.assertTrue(crop_baseline.reference_mask(plain, grid, roi).all())
+            self.assertTrue(0 < limited.sum() < roi.size / 4)
+
     def test_notebook_run_all_is_local_and_does_not_fit_or_contact_earth_engine(self):
         notebook = json.loads((REPOSITORY / 'notebooks/paoay/01_reference_review.ipynb').read_text())
         with tempfile.TemporaryDirectory() as temporary:

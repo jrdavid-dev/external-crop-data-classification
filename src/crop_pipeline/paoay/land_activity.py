@@ -277,9 +277,8 @@ def reference_check(codes, reference, grid, roi, rules):
     from shapely.geometry import shape
     project = Transformer.from_crs('EPSG:4326', grid['crs'], always_xy=True).transform
     masks = []
-    for record in reference['records']:
-        if (record['reference_id'] == reference['manifest']['roi_id'] or record['geometry_status'] != 'valid'
-                or record['geometry'] is None):
+    for record in references.reference_areas(reference):
+        if record['geometry_status'] != 'valid' or record['geometry'] is None:
             continue
         geometry = transform(shape(record['geometry']), project, interleaved=False)
         mask = polygon_mask(geometry, grid, rules['reference_erode_m']) & roi

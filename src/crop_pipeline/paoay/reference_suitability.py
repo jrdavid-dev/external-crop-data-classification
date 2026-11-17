@@ -13,7 +13,7 @@ COLUMNS = ['reference_id', 'name', 'area_type', 'temporal_evidence', 'evidence_s
 def prepare_review(reference_handoff):
     """Create a checklist once, then validate and display preserved manual edits."""
     bundle = references.load_reference_bundle(reference_handoff)
-    records = [r for r in bundle['records'] if r['reference_id'] != bundle['manifest']['roi_id']]
+    records = references.reference_areas(bundle)
     path = bundle['folder'].parent.parent/'reviews'/(bundle['manifest']['bundle_id']+'_suitability.csv')
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():

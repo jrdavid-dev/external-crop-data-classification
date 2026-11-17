@@ -124,8 +124,7 @@ def build(request):
     grid=baseline['manifest']['grid'];transform=Affine(*grid['transform'])
     pixel_ha=abs(transform.a*transform.e-transform.b*transform.d)/10000
     rows=[]
-    for record in inputs['reference']['records']:
-        if record['reference_id']==inputs['reference']['manifest']['roi_id']:continue
+    for record in references.reference_areas(inputs['reference']):
         from crop_pipeline.paoay.review import area_mask
         mask,_=area_mask(record,grid,baseline['roi'])
         for bit,label in FLAGS.items():

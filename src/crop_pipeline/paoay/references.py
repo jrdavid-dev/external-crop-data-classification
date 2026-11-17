@@ -174,12 +174,38 @@ def read_inputs(paths):
     return records, sources
 
 
-def inspect_records(records, roi_name="Region of Interest"):
-    """Inspect geometry without repairing it or inferring crop/year from notes."""
+def _context_ids(records, roi, context_names):
+    """Resolve explicitly named context polygons (for example an administrative boundary)."""
+    if isinstance(context_names, str):
+        raise ValueError("context_names must be a list of exact placemark names")
+    wanted = {name.strip().casefold(): name for name in context_names}
+    if roi["name"].strip().casefold() in wanted:
+        raise ValueError("The study boundary cannot also be a context polygon")
+    found = {record["name"].strip().casefold() for record in records}
+    missing = sorted(original for key, original in wanted.items() if key not in found)
+    if missing:
+        raise ValueError("Context polygon names not found in the reference inputs: " + ", ".join(missing))
+    return {record["reference_id"] for record in records if record["name"].strip().casefold() in wanted}
+
+
+def reference_areas(bundle):
+    """Reference-area records: every saved polygon except the study boundary and context polygons."""
+    manifest = bundle["manifest"]
+    skipped = {manifest["roi_id"], *manifest.get("context_ids", [])}
+    return [record for record in bundle["records"] if record["reference_id"] not in skipped]
+
+
+def inspect_records(records, roi_name="Region of Interest", context_names=()):
+    """Inspect geometry without repairing it or inferring crop/year from notes.
+
+    Polygons named in context_names (for example an administrative boundary) are kept and
+    audited, but they are not reference areas: they join no overlap, map-extent or field check.
+    """
     boundaries = [record for record in records if record["name"].strip().casefold() == roi_name.strip().casefold()]
     if len(boundaries) != 1 or boundaries[0]["geometry_status"] != "valid":
         raise ValueError("Choose exactly one valid study-boundary polygon using roi_name")
     roi = boundaries[0]
+    context = _context_ids(records, roi, context_names)
     roi_shape = shape(roi["geometry"])
     centre = roi_shape.representative_point()
     zone = min(60, max(1, int((centre.x + 180) / 6) + 1))
@@ -193,13 +219,14 @@ def inspect_records(records, roi_name="Region of Interest"):
         if record["geometry_status"] == "valid":
             geometry = transform(project, shape(record["geometry"]))
             area = geometry.area / 10000
-            if not boundary:
+            if not boundary and record["reference_id"] not in context:
                 projected[record["reference_id"]] = geometry
             location = "inside" if roi_projected.covers(geometry) else "partly outside" if roi_projected.intersects(geometry) else "outside"
         audit.append({"reference_id": record["reference_id"], "name": record["name"],
-            "source_file": record["source_file"], "role": "Study boundary" if boundary else "Reference area",
+            "source_file": record["source_file"], "role": "Study boundary" if boundary else "Context boundary" if record["reference_id"] in context else "Reference area",
             "area_ha": area, "geometry_status": record["geometry_status"], "location": location,
-            "notes_present": bool(record["notes"]), "evaluation_status": "Not applicable" if boundary else "Unverified"})
+            "notes_present": bool(record["notes"]),
+            "evaluation_status": "Not applicable" if boundary or record["reference_id"] in context else "Unverified"})
     overlaps = []
     areas = [record for record in records if record["reference_id"] in projected]
     for index, first in enumerate(areas):
@@ -209,21 +236,24 @@ def inspect_records(records, roi_name="Region of Interest"):
                 overlaps.append({"first_id": first["reference_id"], "first_area": first["name"],
                     "second_id": second["reference_id"], "second_area": second["name"],
                     "overlap_ha": intersection.area / 10000})
-    return {"roi": roi, "metric_crs": metric_crs, "audit": audit, "overlaps": overlaps}
+    return {"roi": roi, "metric_crs": metric_crs, "audit": audit, "overlaps": overlaps,
+            "context_ids": sorted(context)}
 
 
 def _review_file(folder, manifest):
     return folder.parent.parent / "reviews" / f"{manifest['bundle_id']}.csv"
 
 
-def export_reference_bundle(records, sources, output_root, roi_name="Region of Interest"):
+def export_reference_bundle(records, sources, output_root, roi_name="Region of Interest", context_names=()):
     """Publish an immutable snapshot; keep editable annotations separately and never overwrite them."""
-    inspection = inspect_records(records, roi_name)
+    inspection = inspect_records(records, roi_name, context_names)
+    context = set(inspection["context_ids"])
     for source in sources:
         if checksum(source["path"]) != source["sha256"]:
             raise ValueError("Reference input changed after review; read it again before saving")
     identity = {"version": FORMAT_VERSION, "sources": [{"name": source["name"], "sha256": source["sha256"]} for source in sources],
-                "roi_name": roi_name, "implementation_sha256": checksum(__file__)}
+                "roi_name": roi_name, "context_names": sorted(name.strip().casefold() for name in context_names),
+                "implementation_sha256": checksum(__file__)}
     bundle_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:20]
     output_root = Path(output_root)
     folder = output_root / "bundles" / bundle_id
@@ -239,7 +269,8 @@ def export_reference_bundle(records, sources, output_root, roi_name="Region of I
             features = [{"type": "Feature", "geometry": record["geometry"], "properties": {
                 "reference_id": record["reference_id"], "name": record["name"], "source_file": record["source_file"],
                 "notes": record["notes"], "geometry_status": record["geometry_status"],
-                "evidence_status": "Unverified", "role": "Study boundary" if record["reference_id"] == roi_id else "Reference area",
+                "evidence_status": "Unverified", "role": ("Study boundary" if record["reference_id"] == roi_id
+                         else "Context boundary" if record["reference_id"] in context else "Reference area"),
             }} for record in records]
             _json(staging / "roi.geojson", {"type": "FeatureCollection", "features": [feature for feature in features if feature["properties"]["reference_id"] == roi_id]})
             _json(staging / "reference_areas.geojson", {"type": "FeatureCollection", "features": [feature for feature in features if feature["properties"]["reference_id"] != roi_id]})
@@ -250,11 +281,13 @@ def export_reference_bundle(records, sources, output_root, roi_name="Region of I
             review_rows = [{"reference_id": record["reference_id"], "name": record["name"], "crop": "",
                 "observation_year": "", "observation_date": "", "planting_date": "", "harvest_date": "",
                 "evidence_source": "", "verification_status": "unreviewed", "review_notes": ""}
-                for record in records if record["reference_id"] != roi_id]
+                for record in records if record["reference_id"] != roi_id and record["reference_id"] not in context]
             _csv(staging / "review_template.csv", review_rows, list(review_rows[0]) if review_rows else ["reference_id", "name", "crop", "observation_year", "observation_date", "planting_date", "harvest_date", "evidence_source", "verification_status", "review_notes"])
             manifest = {"format_version": FORMAT_VERSION, "kind": "paoay_reference_review", "bundle_id": bundle_id,
                 "identity": identity, "status": "prepared", "roi_id": roi_id, "metric_crs": inspection["metric_crs"],
-                "area_count": len(records) - 1, "invalid_areas": sum(row["geometry_status"] != "valid" for row in inspection["audit"]),
+                "context_ids": inspection["context_ids"],
+                "area_count": len(records) - 1 - len(context),
+                "invalid_areas": sum(row["geometry_status"] != "valid" for row in inspection["audit"]),
                 "overlap_pairs": len(inspection["overlaps"]), "evaluation_ready": False,
                 "files": {name: {"sha256": checksum(staging / name)} for name in sorted(FILES)}}
             _json(staging / "reference_handoff.json", manifest)
@@ -291,7 +324,7 @@ def load_reference_bundle(manifest_path):
             "review_file": _review_file(folder, manifest)}
 
 
-def plot_reference_areas(records, roi_id, metric_crs):
+def plot_reference_areas(records, roi_id, metric_crs, context_ids=()):
     """Preview local outlines only; do not request map tiles or infer field labels."""
     import matplotlib.pyplot as plt
 
@@ -302,13 +335,15 @@ def plot_reference_areas(records, roi_id, metric_crs):
             continue
         geometry = transform(project, shape(record["geometry"]))
         boundary = record["reference_id"] == roi_id
+        context = record["reference_id"] in context_ids
         for polygon in [geometry] if geometry.geom_type == "Polygon" else geometry.geoms:
             x, y = polygon.exterior.xy
-            axis.plot(x, y, color="firebrick" if boundary else "steelblue", linewidth=2 if boundary else 1)
+            axis.plot(x, y, color="firebrick" if boundary else "grey" if context else "steelblue",
+                      linewidth=2 if boundary else 1, linestyle="--" if context else "-")
             for hole in polygon.interiors:
                 x, y = hole.xy
                 axis.plot(x, y, color="steelblue", linewidth=1)
-        if not boundary:
+        if not boundary and not context:
             position = geometry.representative_point()
             axis.annotate(record["name"], (position.x, position.y), fontsize=8)
     axis.set(aspect="equal", xlabel=f"Easting (m), {metric_crs}", ylabel="Northing (m)",

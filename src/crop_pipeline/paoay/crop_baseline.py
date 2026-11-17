@@ -31,9 +31,8 @@ def reference_mask(reference, grid, roi):
     """Union reference polygons inside the study ROI, retaining holes and pixel centres."""
     selected = np.zeros(roi.shape, dtype=bool)
     project = Transformer.from_crs('EPSG:4326', grid['crs'], always_xy=True).transform
-    for record in reference['records']:
-        if (record['reference_id'] == reference['manifest']['roi_id']
-                or record['geometry_status'] != 'valid' or record['geometry'] is None):
+    for record in references.reference_areas(reference):
+        if record['geometry_status'] != 'valid' or record['geometry'] is None:
             continue
         geometry = transform(shape(record['geometry']), project, interleaved=False)
         selected |= geometry_mask([mapping(geometry)], out_shape=roi.shape,
