@@ -232,7 +232,7 @@ class DatasetReferenceTests(unittest.TestCase):
     def test_explicit_scan_opt_in_builds_capped_inventory_before_satellite_stage(self):
         notebook_path = (
             Path(__file__).resolve().parents[1]
-            / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
+            / "notebooks/data_collection/02_sen4agrinet_collection.ipynb"
         )
         notebook = json.loads(notebook_path.read_text())
         with tempfile.TemporaryDirectory() as temporary:
@@ -303,7 +303,8 @@ class DatasetReferenceTests(unittest.TestCase):
             self.assertTrue(namespace["reference_options"]["download_if_missing"])
             self.assertFalse(namespace["reference_options"]["cached_only"])
             self.assertEqual(namespace["reference_summary"]["files_scanned"], 2)
-            self.assertEqual(set(namespace["annual_plan"]["years"]), {"2019", "2020"})
+            self.assertIsNone(namespace["annual_plan"])
+            self.assertTrue(all(plan is None for plan, _ in namespace["adaptive_batches"]))
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertEqual(old_inventory.read_bytes(), original_subset)
 

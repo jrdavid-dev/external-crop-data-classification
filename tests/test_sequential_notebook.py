@@ -3,6 +3,7 @@
 import ast
 import io
 import json
+import re
 import tempfile
 import unittest
 from collections import Counter
@@ -20,7 +21,7 @@ from crop_pipeline.windows.seasons import file_sha256
 
 
 NOTEBOOK_PATH = (
-    Path(__file__).resolve().parents[1] / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
+    Path(__file__).resolve().parents[1] / "notebooks/data_collection/02_sen4agrinet_collection.ipynb"
 )
 
 
@@ -126,6 +127,7 @@ def execute_without_remote_services(folder):
         patch("huggingface_hub.hf_hub_download", side_effect=forbidden),
         patch("netCDF4.Dataset", side_effect=forbidden),
         patch("requests.sessions.Session.request", side_effect=forbidden),
+        patch("crop_pipeline.notebook_setup.ensure_editable_package"),
         patch("subprocess.check_call", side_effect=forbidden),
         patch("importlib.reload", side_effect=lambda module: module),
         patch(
@@ -141,6 +143,9 @@ def execute_without_remote_services(folder):
             if cell["cell_type"] == "code":
                 # Exercise explicit offline reuse while collection defaults are enabled.
                 source = "".join(cell["source"])
+                source = source.replace('reference_mode = "download_missing"', 'reference_mode = "reuse"')
+                source = source.replace("reference_scan_max_patches = 10013", "reference_scan_max_patches = 350")
+                source = re.sub(r"(?m)^extra_batches = \d+", "extra_batches = 0", source)
                 for flag in (
                     "retrieve_reference_masks",
                     "rebuild_field_inventory",
@@ -170,7 +175,8 @@ class SequentialNotebookTests(unittest.TestCase):
                           if isinstance(node, ast.Assign)
                           and any(isinstance(target, ast.Name) and target.id == "candidate_parcels_per_crop"
                                   for target in node.targets)]
-                self.assertEqual(limits, ["source_workflow.ROUND_PARCELS_PER_CROP"])
+                expected_limit = "100" if path.name.startswith("03") else "source_workflow.ROUND_PARCELS_PER_CROP"
+                self.assertEqual(limits, [expected_limit])
                 calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
                          and isinstance(node.func, ast.Attribute)
                          and isinstance(node.func.value, ast.Name) and node.func.value.id == "adaptive"]
@@ -203,11 +209,11 @@ class SequentialNotebookTests(unittest.TestCase):
             self.assertFalse(namespace["dataset_folder"].exists())
             plan = namespace["annual_plan"]
             self.assertEqual(namespace["candidate_parcels_per_crop"], 50)
-            # Select only 50 of the 120 eligible fixture parcels per crop.
-            self.assertEqual(plan["estimate"]["parcels"], 100)
+            # Select only 50 of the 120 eligible potato parcels.
+            self.assertEqual(plan["estimate"]["parcels"], 50)
             self.assertEqual(
                 plan["years"]["2020"]["pixels_per_crop"],
-                {"carrot": 5000, "potato": 5000},
+                {"potato": 5000},
             )
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertFalse(namespace["run_satellite_collection"])

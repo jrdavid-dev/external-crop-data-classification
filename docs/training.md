@@ -4,7 +4,9 @@ Run **04 Four-month windows → 05 Feature engineering → 06 Model training**. 
 
 ## Current external evaluation
 
-Run [preprocessing 05–07](../notebooks/preprocessing) after completing the development and dedicated CropHarvest JECAM imagery collections. Use the printed paths for [external evaluation 01–02](../notebooks/external_evaluation). Train and tune on locked Sen4AgriNet and FranceCrops development parcels. Score CropHarvest with the frozen packages. The controlled comparison uses the same locations in both recipes and the full cohorts show each recipe's coverage. A missing test crop suppresses the three-class summary.
+Use [training 01–02 and testing 01–02](external_training_notebooks.md) for the separated workflow (batches 3–4). These write new, isolated training/testing outputs and leave collection running. The older combined evaluation notebooks remain unchanged for compatibility.
+
+Run [preprocessing 01–03](../notebooks/preprocessing) after completing the development and dedicated CropHarvest JECAM imagery collections. Use the printed paths for [external evaluation 01–02](../notebooks/external_evaluation). Train and tune on locked Sen4AgriNet and FranceCrops development parcels, plus any completed EuroCrops carrot batches. Score CropHarvest with the frozen packages. The controlled comparison uses the same locations in both recipes and the full cohorts show each recipe's coverage. A missing test crop suppresses the three-class summary.
 
 Use the `fixed_full` model manifest for January–April Paoay imagery. Below is the documentation for the archived pooled pilot workflow.
 

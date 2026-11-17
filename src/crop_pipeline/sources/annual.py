@@ -283,7 +283,7 @@ def prepare_source(
     candidate_groups=None,
 ):
     """Prepare masks and exact raster estimates locally; never query Earth Engine."""
-    if source_name not in SOURCE_NAMES:
+    if source_name not in (*SOURCE_NAMES, "eurocrops"):
         raise ValueError("Unknown annual source family")
     if not 1 <= tile_pixels <= 256 or inward_buffer_metres < 0:
         raise ValueError("Use tiles of 1–256 pixels and a nonnegative inward buffer.")

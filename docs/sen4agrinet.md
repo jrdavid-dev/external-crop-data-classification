@@ -1,20 +1,24 @@
 # Sen4AgriNet: notebook 01
 
-[Notebook 01](../notebooks/preprocessing/02_sen4agrinet_preparation.ipynb) prepares carrot and potato candidate parcels, then collects full-calendar-year Sentinel-2 histories through Earth Engine. Cabbage is supplied by FranceCrops. The default workflow uses bounded reference subsets and records their coverage.
+Batch 2 update: active preprocessing is now [01–03](../notebooks/preprocessing/README.md). The old 05–07 filenames alias these new entry points. Finish pending collection before a live audit.
+
+Active entry point: [collection 02](../notebooks/data_collection/02_sen4agrinet_collection.ipynb). Saved new-batch settings currently target potato; existing carrot batches are retained. Follow collection 06, then preprocessing 05–07.
+
+[Notebook 01](../notebooks/data_collection/02_sen4agrinet_collection.ipynb) prepares carrot and potato candidate parcels, then collects full-calendar-year Sentinel-2 histories through Earth Engine. Cabbage is supplied by FranceCrops. The default workflow uses bounded reference subsets and records their coverage.
 
 ## Review these settings
 
 ```python
-candidate_parcels_per_crop = 100
+candidate_parcels_per_crop = 50
 reference_target_crops = ("carrot", "potato")
-reference_scan_max_patches = 350
-reference_mode = "reuse"
+reference_scan_max_patches = 1500
+reference_mode = "download_missing"
 reference_target_parcels_per_crop = 100
 ```
 
 `reuse` consolidates valid local checkpoints or uses a complete inventory without new reference transfers. On a fresh clone use `reference_mode = "download_missing"`; `offline` also prevents package installation and satellite calls. Missing local inputs produce an error.
 
-The reference target and patch cap are separate from the shared 100-per-crop imagery round limit. To expand an exhausted pool, increase `reference_target_parcels_per_crop` and, if needed, `reference_scan_max_patches` deliberately. Extraction stops at the target or cap and proceeds with available candidates. The cap limits patches, not time.
+The reference target and patch cap are separate from the 50-per-crop imagery batch limit. To expand an exhausted pool, increase `reference_target_parcels_per_crop` and, if needed, `reference_scan_max_patches` deliberately. Extraction stops at the reference target or patch cap. A new imagery batch waits until it can plan 50 unused carrot parcels and 50 unused potato parcels. The cap limits patches, not time.
 
 `run_satellite_collection = False` prepares references/plans without satellite work. Existing job states are preserved. Sen4AgriNet retains declared mask cells with **0 m additional buffer**; this documented rule is unchanged.
 
@@ -23,7 +27,7 @@ The reference target and patch cap are separate from the shared 100-per-crop ima
 1. **Setup:** install missing dependencies, preserve or create local settings, and resolve the Earth Engine project.
 2. **Discover:** pin the upstream release and list its patches. Full NetCDF sizes are context, not planned transfer sizes.
 3. **Prepare references:** reuse checkpoints or selectively read label/parcel masks. Validate crop codes, grids, coordinates, identities and geometry; exclude known mixed/conflicting groups and upstream held-out references.
-4. **Select candidates:** spread up to 50 physical parcels per crop across geographic/year strata. Existing selections, pending batches and locked partitions are preserved.
+4. **Select candidates:** spread 50 physical parcels per crop across geographic/year strata when both crops have enough eligible parcels. Existing selections, pending batches and locked partitions are preserved.
 5. **Collect:** submit or collect Earth Engine jobs using original saved plans.
 6. **Summarize:** inspect verified tiles, job states and the next action. Rerun pending work, then assess usable windows in notebook 04.
 

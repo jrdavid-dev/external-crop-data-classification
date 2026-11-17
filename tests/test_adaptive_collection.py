@@ -323,6 +323,28 @@ class AdaptiveCollectionTests(unittest.TestCase):
             self.assertEqual(sum(context["candidate_parcels"] for _, context in resumed), 120)
             self.assertEqual(selection.read_bytes(), before)
 
+    def test_balanced_batch_waits_for_both_crops_and_resumes_old_plan(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "inventory"
+            potato = reference_feature("old", width=50, crop="potato")
+            prior, context = adaptive.prepare_round_batches(
+                "sen4agrinet", [potato], folder, report, {}, parcels_per_crop=1,
+            )[0]
+            save_json(Path(context["folder"]) / "state.json", {"status": "pending_retry"})
+            candidates = [potato, reference_feature("new_potato", left=501000, width=50, crop="potato")]
+            options = {"parcels_per_crop": 1, "extra_batches": 1, "require_full_batch": True,
+                       "candidate_crops": ("carrot", "potato")}
+            blocked = adaptive.prepare_round_batches("sen4agrinet", candidates, folder, report, {}, **options)
+            self.assertEqual(blocked[0][0], prior)
+            self.assertTrue(all(plan is None for plan, _ in blocked[1:]))
+            candidates.append(reference_feature("new_carrot", left=502000, width=50))
+            ready = adaptive.prepare_round_batches("sen4agrinet", candidates, folder, report, {}, **options)
+            plans = [plan for plan, _ in ready if plan is not None]
+            self.assertEqual(plans[0], prior)
+            self.assertEqual(len(plans), 2)
+            self.assertEqual({r["properties"]["crop"] for r in adaptive.annual.read_regions(plans[1]["years"]["2020"])},
+                             {"carrot", "potato"})
+
     def test_extra_batches_select_unused_parcels_without_advancing_feedback(self):
         from crop_pipeline.imagery.batch_export import content_key
 

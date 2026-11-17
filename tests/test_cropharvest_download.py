@@ -151,14 +151,14 @@ class CropHarvestLabelDownloadTests(unittest.TestCase):
         from contextlib import chdir, redirect_stdout
 
         repository = Path(__file__).resolve().parents[1]
-        notebook_path = repository / "notebooks/preprocessing/04_cropharvest_test_preparation.ipynb"
+        notebook_path = repository / "notebooks/data_collection/05_cropharvest_test_collection.ipynb"
         notebook = json.loads(notebook_path.read_text())
         payload = label_bytes()
         original_ensure = cropharvest.ensure_labels
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            copied_notebook = root / "notebooks/preprocessing/04_cropharvest_test_preparation.ipynb"
+            copied_notebook = root / "notebooks/data_collection/05_cropharvest_test_collection.ipynb"
             copied_notebook.parent.mkdir(parents=True)
             copied_notebook.write_bytes(notebook_path.read_bytes())
             batch_path = root / "src/crop_pipeline/imagery/batch_export.py"

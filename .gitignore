@@ -5,6 +5,7 @@ venv/
 S4A/
 data/
 sen4agrinet_work/
+/pipeline_outputs/
 /cropharvest/
 crop_inspection/
 decoded_geometry/

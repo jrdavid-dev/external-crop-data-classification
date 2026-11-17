@@ -97,7 +97,7 @@ class SourceWorkflowTests(unittest.TestCase):
         self.assertIn("No unselected reference candidates remain", text)
         self.assertIn("reference_target_parcels_per_crop", text)
         self.assertIn("reference_scan_max_patches", text)
-        self.assertIn("Run notebook 04", text)
+        self.assertIn("Run Notebook 05", text)
 
 
 if __name__ == "__main__":

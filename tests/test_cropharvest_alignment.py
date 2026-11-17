@@ -323,7 +323,7 @@ class CropHarvestRunTests(unittest.TestCase):
                 pilot_sources.resolve_collection(root / "inventory", "pilot")
 
     def test_full_source_notebook_runs_offline_with_local_references(self):
-        notebook_path = ROOT / "notebooks/preprocessing/04_cropharvest_test_preparation.ipynb"
+        notebook_path = ROOT / "notebooks/data_collection/05_cropharvest_test_collection.ipynb"
         notebook = json.loads(notebook_path.read_text())
         projector = Transformer.from_crs("EPSG:32631", "EPSG:4326", always_xy=True)
         features = []
@@ -356,8 +356,8 @@ class CropHarvestRunTests(unittest.TestCase):
             )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "notebooks/preprocessing").mkdir(parents=True)
-            (root / "notebooks/preprocessing/04_cropharvest_test_preparation.ipynb").write_bytes(
+            (root / "notebooks/data_collection").mkdir(parents=True)
+            (root / "notebooks/data_collection/05_cropharvest_test_collection.ipynb").write_bytes(
                 notebook_path.read_bytes()
             )
             batch_path = root / "src/crop_pipeline/imagery/batch_export.py"
@@ -388,6 +388,8 @@ class CropHarvestRunTests(unittest.TestCase):
                     if cell["cell_type"] == "code":
                         source = "".join(cell["source"])
                         source = source.replace('reference_mode = "reuse"', 'reference_mode = "offline"')
+                        source = source.replace('collection_cohort = "cabbage_supplement"',
+                                                'collection_cohort = "jecam"')
                         exec(source, namespace)
             self.assertEqual(namespace["labels_download"]["status"], "reused")
             self.assertEqual(labels.read_bytes(), labels_payload)

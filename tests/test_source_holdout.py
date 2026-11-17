@@ -11,7 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from crop_pipeline.features import experiments
 from crop_pipeline.imagery import pixel_tables
 from crop_pipeline.sources import test_cohort
-from crop_pipeline.training import source_holdout
+from crop_pipeline.training import notebook_workflow, source_holdout
 from crop_pipeline.windows import external
 
 
@@ -62,6 +62,19 @@ class SourceHoldoutTests(unittest.TestCase):
             self.assertEqual(scores["fixed_matched"]["coverage"]["carrot"]["parcels"], 1)
             with self.assertRaisesRegex(ValueError, "Unexpected source"):
                 source_holdout.score(development, index)
+            with patch.object(source_holdout, "RandomForestClassifier",
+                              side_effect=lambda **options: RandomForestClassifier(
+                                  **{**options, "n_estimators": 3, "n_jobs": 1})) as fit:
+                trained = notebook_workflow.train(path.parent, development)
+                calls = fit.call_count
+                frozen = notebook_workflow.freeze(path.parent)
+                self.assertEqual(fit.call_count, calls)
+            scored = notebook_workflow.evaluate(path.parent, test)
+            report = notebook_workflow.report(path.parent)
+            self.assertEqual(notebook_workflow.freeze(path.parent, trained), frozen)
+            self.assertEqual(notebook_workflow.report(path.parent, scored), report)
+            self.assertIn("Meets F1 criteria", report.with_name("results.md").read_text())
+            self.assertTrue(report.with_name("per_crop.csv").is_file())
 
     def test_observation_losses_are_reported_without_changing_pixel_validity(self):
         plan = {

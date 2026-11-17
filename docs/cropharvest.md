@@ -1,6 +1,10 @@
 # CropHarvest: notebook 04
 
-[Preprocessing notebook 04](../notebooks/preprocessing/04_cropharvest_test_preparation.ipynb) audits carrot, cabbage and potato labels, selects up to **50 eligible parcels per available crop per round**, and collects annual Sentinel-2 histories through Earth Engine.
+Batch 2 update: active preprocessing is now [01–03](../notebooks/preprocessing/README.md). The old 05–07 filenames alias these new entry points. Finish pending collection before a live audit.
+
+Active entry point: [collection 05](../notebooks/data_collection/05_cropharvest_test_collection.ipynb). The cohort is JECAM external testing for all three crops; the current new-batch request is a cabbage top-up. Follow collection 06, then preprocessing 05–07.
+
+[Preprocessing notebook 04](../notebooks/data_collection/05_cropharvest_test_collection.ipynb) audits carrot, cabbage and potato labels, selects up to **50 eligible parcels per available crop per round**, and collects annual Sentinel-2 histories through Earth Engine.
 
 The active notebook uses a separate JECAM campaign for testing. It assigns selected parcels to the test role and can run before Sen4AgriNet or FranceCrops collection finishes. The notebook defaults to submitting jobs. Set `submit_only = False` on a later run to collect finished results. Notebook 05 checks overlap against the completed development footprints and excludes entire overlapping JECAM parcels from its downstream handoff.
 

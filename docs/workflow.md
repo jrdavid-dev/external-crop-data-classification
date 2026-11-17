@@ -1,5 +1,9 @@
 # Notebook workflow
 
+Batch 2 update: active preprocessing is now [01–03](../notebooks/preprocessing/README.md). The old 05–07 filenames alias these new entry points. Finish pending collection before a live audit.
+
+Current entry points: [data_collection](../notebooks/data_collection/README.md) 01–06, then preprocessing 05–07. The source notebooks keep references and imagery together. Older numbered sequences below describe the archived workflows; follow the collection guide for current routing.
+
 Notebooks **01–03** share six sections. Review setup, then **Restart Kernel → Run All**. Opening a notebook starts no work.
 
 | Section | What happens |
@@ -25,9 +29,9 @@ Setup can install missing dependencies in the first two modes. Existing settings
 
 | Notebook | Crops selected | Reference preparation | Edge handling |
 | --- | --- | --- | --- |
-| [01 Sen4AgriNet](../notebooks/preprocessing/02_sen4agrinet_preparation.ipynb) | Carrot, potato | Pinned catalogue and bounded label/parcel-mask extraction | Declared crop-mask cells; **0 m additional buffer** |
-| [02 FranceCrops](../notebooks/preprocessing/03_francecrops_preparation.ipynb) | Cabbage, table potato | Pinned class-map, label and footprint tables | **10 m inward buffer** on parcel polygons |
-| [03 CropHarvest](../notebooks/preprocessing/04_cropharvest_test_preparation.ipynb) | Available carrot, cabbage, potato | Pinned labels; source, date, duplicate and geometry audit | **10 m inward buffer** on parcel polygons |
+| [01 Sen4AgriNet](../notebooks/data_collection/02_sen4agrinet_collection.ipynb) | Carrot, potato | Pinned catalogue and bounded label/parcel-mask extraction | Declared crop-mask cells; **0 m additional buffer** |
+| [02 FranceCrops](../notebooks/data_collection/03_francecrops_collection.ipynb) | Cabbage for new batches | Pinned class-map, label and footprint tables | **10 m inward buffer** on parcel polygons |
+| [03 CropHarvest](../notebooks/data_collection/05_cropharvest_test_collection.ipynb) | Available carrot, cabbage, potato | Pinned labels; source, date, duplicate and geometry audit | **10 m inward buffer** on parcel polygons |
 
 These existing scientific rules remain different deliberately; shared headings do not imply equivalent boundary uncertainty. No source's checks are relaxed to meet targets. See [methodology](methodology.md).
 

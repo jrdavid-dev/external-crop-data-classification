@@ -18,7 +18,9 @@ from crop_pipeline.windows.workflow import WindowAnalysis
 def snapshot(report_folder):
     development = [s for s in test_cohort.completed_sources(report_folder)
                    if test_cohort.source_role(s["source_name"]) in test_cohort.DEVELOPMENT]
-    if {test_cohort.source_role(s["source_name"]) for s in development} != test_cohort.DEVELOPMENT:
+    if not test_cohort.REQUIRED_DEVELOPMENT.issubset(
+        test_cohort.source_role(s["source_name"]) for s in development
+    ):
         raise ValueError("Complete Sen4AgriNet and FranceCrops imagery batches first")
     try:
         test = test_cohort.completed_sources(report_folder, test_cohort.TEST_POLICY)
@@ -26,6 +28,14 @@ def snapshot(report_folder):
         raise FileNotFoundError("Import a completed Notebook 04 JECAM bundle or finish Notebook 04 locally") from error
     if {test_cohort.source_role(s["source_name"]) for s in test} != {test_cohort.TEST}:
         raise ValueError("Complete the dedicated CropHarvest JECAM collection first")
+    eurocrops = [s for s in development if test_cohort.source_role(s["source_name"]) == "eurocrops"]
+    if eurocrops:
+        other = [s for s in development if s not in eurocrops]
+        _, collision = test_cohort.exclude_overlap(
+            test_cohort.source_footprints(eurocrops), test_cohort.source_footprints(other)
+        )
+        if collision:
+            raise ValueError(f"{len(collision)} EuroCrops parcels overlap existing development parcels")
     _, overlaps = test_cohort.exclude_overlap(
         test_cohort.source_footprints(test), test_cohort.source_footprints(development)
     )
@@ -166,16 +176,40 @@ def capped(rows):
     return result
 
 
+def exclude_shared_development_locations(rows):
+    """Drop ambiguous ground coordinates without moving any parcel assignment."""
+    groups_by_location = {}
+    for row in rows.values():
+        if row["partition"] in {"train", "validation"}:
+            groups_by_location.setdefault(sampling.pixel_location(row), set()).add(row["partition_group"])
+    shared = {location for location, groups in groups_by_location.items() if len(groups) > 1}
+    retained, exclusions = {}, Counter()
+    for key, row in rows.items():
+        if row["partition"] in {"train", "validation"} and sampling.pixel_location(row) in shared:
+            exclusions[row["partition"], row["source_dataset"], row["crop"], row["partition_group"]] += 1
+        else:
+            retained[key] = row
+    return retained, {
+        "shared_locations": len(shared),
+        "excluded": [
+            {"partition": partition, "source": source, "crop": crop, "parcel_group": group, "pixel_rows": count}
+            for (partition, source, crop, group), count in sorted(exclusions.items())
+        ],
+    }
+
+
 def export_features(window_handoff):
     from crop_pipeline.features import experiments
 
     path = Path(window_handoff)
     data = json.loads(path.read_text())
     indexed = {}
+    exclusions = {}
     for name in ("fixed", "aligned"):
         indexed[name] = {}
         for row in data[name]:
             indexed[name].setdefault(pixel_key(row), row)
+        indexed[name], exclusions[name] = exclude_shared_development_locations(indexed[name])
     common = indexed["fixed"].keys() & indexed["aligned"].keys()
     report = {"window_sha256": seasons.file_sha256(path), "quality": data["quality"]}
     for cohort in ("full", "matched"):
@@ -186,6 +220,7 @@ def export_features(window_handoff):
                 for row in capped(selected)
             ]
     handoff = path.parent / "features.json"
+    save_json(path.parent / "development_overlap_exclusions.json", exclusions)
     coverage = {}
     for name in ("fixed", "aligned"):
         groups = {}

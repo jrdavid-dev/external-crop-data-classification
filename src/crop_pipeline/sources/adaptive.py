@@ -56,7 +56,7 @@ def physical_key(source, properties):
 
 def prepare_batch(source, features, archive_root, report_folder, provenance,
                   inward_buffer_metres=10, policy=None, batch_label=None, round_parcels_per_crop=None, candidate_crops=None,
-                  count_existing_round=True):
+                  count_existing_round=True, require_full_batch=False):
     """Select references before rasterization. Re-running a round selects the same parcels."""
     policy = policy or DEFAULT_POLICY
     candidate_crops = set(annual.TARGET_CROPS if candidate_crops is None else candidate_crops)
@@ -79,7 +79,8 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
         p = feature["properties"]
         if p.get("crop") in candidate_crops and p.get("source_split", "train") == "train":
             groups[p["partition_group"]].append(feature)
-    if selected is None:
+    new_selection = selected is None
+    if new_selection:
         previous = [read_json(path, {}) for path in campaign.glob("rounds/*/*/selection.json")
                     if read_json(path, {}).get("source") == source]
         seen = {key for selection in previous for key in selection.get("physical_keys", [])}
@@ -116,12 +117,19 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
                 chosen.append((group, key, partition, crop))
                 if queue:
                     queues.append(queue)
+        counts = Counter(item[3] for item in chosen)
+        short = require_full_batch and any(counts[crop] != round_parcels_per_crop for crop in candidate_crops)
+        if short:
+            print(f"{source}: batch held for balance. "
+                  + ", ".join(f"{crop} {counts[crop]}/{round_parcels_per_crop}" for crop in sorted(candidate_crops)))
+            chosen = []
         selected = {"round": round_number, "source": source, "policy": policy,
                     "groups": [item[0] for item in chosen],
                     "physical_keys": [item[1] for item in chosen],
                     "assignments": {item[0]: item[2] for item in chosen},
                     "status": "selected" if chosen else "targets_met" if feedback.get("targets_met") else "no_candidates_for_deficits"}
-        save_json(selection_path, selected)
+        if not require_full_batch or not chosen:
+            save_json(selection_path, selected)
     if set(selected["groups"]) - groups.keys():
         raise ValueError("Selected reference parcels changed; use a new campaign")
     selected_features = [f for group in selected["groups"] for f in groups[group]]
@@ -130,7 +138,8 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
                "report_folder": str(folder / "inventory"),
                "annual_tif_root": str(Path(archive_root).parent / "annual_tifs"),
                "candidate_parcels": len(selected["groups"]), "selection_status": selected["status"]}
-    save_json(folder / "context.json", context)
+    if not (require_full_batch and new_selection and selected_features):
+        save_json(folder / "context.json", context)
     if not selected_features:
         print(f"{source}: no new eligible candidates for this batch.")
         return None, context
@@ -140,6 +149,18 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
     plan = annual.prepare_source(source, features, archive_batch_root, provenance,
                                  inward_buffer_metres=inward_buffer_metres,
                                  candidate_groups=selected["groups"])
+    if require_full_batch and new_selection:
+        planned = {region["properties"]["partition_group"]
+                   for inputs in plan["years"].values() for region in annual.read_regions(inputs)}
+        if planned != set(selected["groups"]):
+            print(f"{source}: batch held because some selected parcels have no eligible imagery tiles.")
+            status = "no_candidates_for_deficits"
+            selected.update(groups=[], physical_keys=[], assignments={}, status=status)
+            context.update(candidate_parcels=0, selection_status=status)
+            save_json(selection_path, selected)
+            save_json(folder / "context.json", context)
+            return None, context
+        save_json(selection_path, selected)
     context["plan_path"] = str(Path(plan["run_folder"]) / "collection_plan.json")
     save_json(folder / "context.json", context)
     print(f"Adaptive round {round_number}: {len(selected['groups'])} {source} candidate parcels; "
@@ -293,7 +314,7 @@ def require_targets(report_folder, policy=None):
 
 def prepare_round_batches(source, features, archive_root, report_folder, provenance,
                           parcels_per_crop=ROUND_PARCELS_PER_CROP, inward_buffer_metres=10, candidate_crops=None,
-                          extra_batches=0, policy=None):
+                          extra_batches=0, policy=None, require_full_batch=False):
     """Resume saved plans and optionally add numbered batches in the current round."""
     if type(extra_batches) is not int or extra_batches < 0:
         raise ValueError("extra_batches must be a nonnegative integer")
@@ -384,7 +405,8 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
     else:
         batches.append(prepare_batch(source, features, archive_root, report_folder, provenance,
             inward_buffer_metres=inward_buffer_metres, batch_label=label, policy=policy,
-            round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops))
+            round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops,
+            require_full_batch=require_full_batch))
     for index in range(1, extra_batches + 1):
         batch_label = expand_empty_selection(f"extra_{index:04d}")
         folder = selection_folder(batch_label)
@@ -393,7 +415,7 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
         plan, context = prepare_batch(source, features, archive_root, report_folder, provenance,
             inward_buffer_metres=inward_buffer_metres, batch_label=batch_label, policy=policy,
             round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops,
-            count_existing_round=False)
+            count_existing_round=False, require_full_batch=require_full_batch)
         batches.append((plan, context))
         if plan is None:
             break

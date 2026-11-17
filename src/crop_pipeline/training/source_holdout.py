@@ -74,13 +74,13 @@ def parcel_metrics(model, rows, columns):
     return metrics, predictions
 
 
-def freeze(development_path):
+def freeze(development_path, *, destination=None):
     path = Path(development_path)
     data = json.loads(path.read_text())
     require_matching(data["rows"])
     columns = experiments.feature_sets()[DESIGN]
     fingerprint = seasons.file_sha256(path)
-    destination = path.parent / ("models_" + fingerprint[:12])
+    destination = Path(destination) if destination is not None else path.parent / ("models_" + fingerprint[:12])
     destination.mkdir(exist_ok=False)
     save_json(destination / "development.json", {
         "feature_sha256": fingerprint, "quality": data["quality"],
@@ -88,6 +88,7 @@ def freeze(development_path):
         "implementation_sha256": seasons.file_sha256(inspect.getfile(experiments)),
     })
     manifests = {}
+    validation_results = {}
     for cohort in ("full", "matched"):
         pair = {name: checked_rows(data["rows"][f"{name}_{cohort}"], False)
                 for name in ("fixed", "aligned")}
@@ -103,14 +104,20 @@ def freeze(development_path):
                 raise ValueError("Development parcels cross the training/validation split")
             weights = exploratory.normalized_training_weights(train, {"confirmed": 1., "reported": .5})
             choices = []
+            candidate_metrics = []
             for leaf in ((2,) if cohort == "matched" else (2, 4)):
                 model = RandomForestClassifier(n_estimators=1000, random_state=42, max_features="sqrt",
                                                min_samples_leaf=leaf, max_samples=.5, n_jobs=-1)
                 model.fit(exploratory.feature_matrix(train, columns), [row["crop"] for row in train],
                           sample_weight=weights)
                 metrics, _ = parcel_metrics(model, validation, columns)
+                candidate_metrics.append({"min_samples_leaf": leaf, "metrics": metrics})
                 choices.append((metrics["macro_f1"], model, metrics))
             _, model, metrics = max(choices, key=lambda choice: choice[0])
+            validation_results[f"{name}_{cohort}"] = {
+                "candidates": candidate_metrics, "selected_min_samples_leaf": model.min_samples_leaf,
+                "selection_metric": "validation_parcel_macro_f1",
+            }
             folder = destination / f"{name}_{cohort}"
             folder.mkdir()
             configuration = {"feature_policy": experiments.FEATURE_POLICY, "study_classes": CROPS}
@@ -138,23 +145,26 @@ def freeze(development_path):
                 "development_split": {r["partition_group"]: r["partition"] for r in rows},
                 "model_id": files["model.joblib"]["sha256"],
                 "experiment_cohort": cohort,
+                "training_majority_class": Counter({r["partition_group"]: r["crop"] for r in train}.values()).most_common(1)[0][0],
             })
             manifests[f"{name}_{cohort}"] = str(manifest)
     if not manifests:
         raise ValueError("No window cohort has all three development crops in both splits")
+    save_json(destination / "validation_candidates.json", validation_results)
     index = destination / "models.json"
     save_json(index, {name: {"path": value, "sha256": seasons.file_sha256(value)}
                       for name, value in manifests.items()})
     return index
 
 
-def score(test_path, model_index):
+def score(test_path, model_index, *, destination=None, predictions_directory=None):
     from crop_pipeline.paoay.predictions import load_classifier
 
     data = json.loads(Path(test_path).read_text())
     require_matching(data["rows"])
     index = json.loads(Path(model_index).read_text())
-    destination = Path(model_index).parent
+    destination = Path(destination) if destination is not None else Path(model_index).parent
+    predictions_directory = Path(predictions_directory) if predictions_directory is not None else destination
     scores = {}
     for name, entry in index.items():
         path = Path(entry["path"])
@@ -172,6 +182,6 @@ def score(test_path, model_index):
             continue
         model, recipe = load_classifier(path)
         scores[name], predictions = parcel_metrics(model, rows, recipe["feature_columns"])
-        seasons.write_records(destination / f"{name}_test_parcels.csv", predictions)
+        seasons.write_records(predictions_directory / f"{name}_test_parcels.csv", predictions)
     save_json(destination / "test_scores.json", scores)
     return scores

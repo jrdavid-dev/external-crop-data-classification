@@ -14,7 +14,7 @@ Retain at most 20 pixels per parcel. These are collection budgets, not a guarant
 
 ## Setup
 
-Open the repository and select a Python 3.12+ kernel (3.13 recommended). Source notebooks 01–03 install missing dependencies and configure local settings. All three share six workflow sections and default to `reference_mode = "reuse"`. On a fresh clone, choose `"download_missing"`; Sen4AgriNet retains an explicit reference patch cap. Use `"offline"` for local inspection without package installation or satellite calls. Enter an Earth Engine-enabled project ID and sign in when prompted. Nothing starts simply by opening a notebook.
+Open the repository and select a Python 3.12+ kernel (3.13 recommended). Collection notebooks 02, 03 and 05 install missing dependencies and configure local settings. Choose `reference_mode = "download_missing"` when references are missing or when deliberately expanding Sen4AgriNet’s bounded reference scan. Collection 04 uses local EuroCrops references. Use `"offline"` for local inspection without package installation or satellite calls. Enter an Earth Engine-enabled project ID and sign in when prompted. Nothing starts simply by opening a notebook.
 
 Manual installation remains available:
 
@@ -29,18 +29,29 @@ On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 
 ## Notebook workflow
 
-1. [Preprocessing](notebooks/preprocessing) audits references, collects Sen4AgriNet and FranceCrops in incremental batches, and prepares a separate CropHarvest JECAM test campaign. Run 05–07 on the completed local annual handoffs to assess imagery, select windows, and export development and test features. Each notebook prints the handoff path for the next one.
-2. [External evaluation](notebooks/external_evaluation) fits and freezes Random Forests using development data, then scores CropHarvest. The matched comparison holds pixel locations constant. January–April and green-up-aligned windows also have separate usable coverage counts.
+1. [Data collection](notebooks/data_collection) audits references and collects incremental development batches from Sen4AgriNet, FranceCrops and EuroCrops, plus a separate CropHarvest JECAM test cohort. Run collection 06 for a local dataset/progress report. Then run [preprocessing 01–03](notebooks/preprocessing) to audit imagery, select windows and export development/test features. Each notebook prints its handoff paths.
+2. [Training 01–02](notebooks/training) fits and validates Random Forests, then freezes the selected models. [Testing 01–02](notebooks/testing) evaluates the matching CropHarvest snapshot and reports crop metrics, confusion matrices, coverage and a training-majority baseline. See [the notebook guide](docs/external_training_notebooks.md). Original `external_evaluation/` notebooks remain available for legacy runs.
 3. [Paoay](notebooks/paoay) runs 01–05 from references through field review. For the January–April 2024 map, set `paoay_model_manifest` in local settings to the `fixed_full` manifest printed by external evaluation 01. See the [Paoay guide](docs/paoay_workflow.md).
 4. [Archived notebooks](notebooks/archive) retain earlier experiment outputs and provenance.
 
-Preprocessing 02–04 default to `submit_only = True`. Run All to queue missing Earth Engine tasks. Set it to `False` before rerunning to download finished results and submit any remaining jobs. Keep `reference_mode = "reuse"` when the required local references are already prepared.
+Collection notebooks 02–05 use `submit_only = False` for the current top-ups. Run All to submit missing jobs and download results. If a run reports pending jobs, rerun with the same settings to resume. `reference_mode = "reuse"` reuses references but does not disable satellite collection.
 
-In preprocessing 02–04, set `extra_batches` to the number of additional batches you want in the current round. For example, `extra_batches = 3` plans up to three additional batches of up to 50 unused parcels per available crop each. Run the same notebook again with the same value and `submit_only = False` to collect finished jobs. Increase the value to add more batches. Run 05–07 after collecting the batches you want to assess together. New batches use the latest available sampling feedback and stop when eligible parcels run out.
+Current new-batch requests target potato in Sen4AgriNet, cabbage in FranceCrops, carrot in EuroCrops, and carrot and potato in CropHarvest. These are shortage top-ups, not the full dataset scope. Existing batches retain their original crop selections, counts, identities and partitions. Review `extra_batches` before running; changing notebook locations does not reset campaign progress.
 
-Notebook 04 can collect CropHarvest JECAM while a teammate runs 02–03. After collecting, set `jecam_export_folder` in Notebook 04's final cell and run that cell. Share the resulting folder with its batch subfolders intact. On the machine with completed 02–03 batches, set `jecam_import_folder` in Notebook 05 to that folder and run the notebook. It verifies and registers the transferred batches, then reports and excludes any JECAM parcels overlapping the completed development footprints. Continue with 06–07 using the new handoff. Existing local Notebook 04 completions also work directly with 05.
+Collection 05 can run separately while development sources are collected. Its optional final export cell writes completed JECAM bundles. On the receiving machine, import the JECAM bundle using the existing collection transfer helper before starting preprocessing 01. Preprocessing then checks overlaps and continues to 02–03. Existing local completions remain usable.
+
+[Collection 04](notebooks/data_collection/04_eurocrops_collection.ipynb) uses the local `data/external/eurocrops_v2/NL_2021.parquet` file for carrot top-ups. Preprocessing 01 automatically includes completed EuroCrops handoffs. CropHarvest remains the external test source.
+
+The collection notebooks refresh organized output links after completion. Collection 06 saves `pipeline_outputs/collection/reports/summary_<id>/` containing a readable report, reference register, batch states and metadata manifest. This is a local metadata snapshot, not imagery-quality certification. Preprocessing 03 reports the final usable field/pixel counts by crop and partition. See the [collection guide](notebooks/data_collection/README.md).
+
+Original collection notebook bytes and outputs are preserved in `notebooks/archive/collection_before_reorganization/`. Use the active `data_collection/` notebooks for new work.
 
 ## Annual TIFF folder
+
+For organized access to existing downloads and results, use `pipeline_outputs/`
+with collection, preprocessing, training, and testing folders. Refresh it with
+`.venv/bin/python -m crop_pipeline.output_layout`. This linked layout preserves the
+original files and saved paths. See [output organization](docs/output_layout.md).
 
 Completed imagery is organized under:
 
@@ -48,7 +59,7 @@ Completed imagery is organized under:
 sen4agrinet_work/annual_tifs/<source>/<year>/<campaign>/round_<number>/
 ```
 
-Each tile has one annual TIFF with **168 labelled bands**: all 24 half-month periods × seven measurements. This preserves flexibility to revise four-month windows. Only selected parcel pixels are populated. Sampling masks are stored separately; Parquet files are retained as the compact transport/cache. Preprocessing 05 reads the annual TIFFs directly. New external pixel-table exports also store three observation diagnostics per interval, for 240 bands. Older 168-band archives remain readable. Set `annual_archive_root` in local settings to use another local drive; annual TIFFs are stored in a sibling folder.
+Each tile has one annual TIFF with **168 labelled bands**: all 24 half-month periods × seven measurements. This preserves flexibility to revise four-month windows. Only selected parcel pixels are populated. Sampling masks are stored separately; Parquet files are retained as the compact transport/cache. Preprocessing 01 reads the annual TIFFs directly. New external pixel-table exports also store three observation diagnostics per interval, for 240 bands. Older 168-band archives remain readable. Set `annual_archive_root` in local settings to use another local drive; annual TIFFs are stored in a sibling folder.
 
 Earth Engine jobs use temporary project asset storage; Google Drive is not required. Local files are verified before temporary assets are removed. The original full-year catalogue/archive helpers and earlier explicit collection selectors remain available for deliberate use, but are not the source notebooks' default.
 

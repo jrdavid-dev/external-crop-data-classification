@@ -130,13 +130,13 @@ def print_summary(source, batches, result, reference_mode, buffer_metres, refere
     if result.get("status") == "failed" or "failed" in states or jobs["failed"] or jobs["cancelled"]:
         action = "Inspect the reported errors and detail log, then rerun to resume saved work."
     elif result.get("status") in {"pending_retry", "pending"} or states - {"completed", "skipped", "disabled"}:
-        action = "Rerun this notebook to collect or retry existing jobs; finish launched batches before the combined audit in Notebook 05."
+        action = "Rerun this notebook to collect or retry existing jobs; finish launched batches before the combined audit in preprocessing/05. Collection 06 can summarize saved progress now."
     elif result.get("status") == "disabled":
         action = "Preparation only. Enable satellite collection when ready, then rerun."
         if reference_mode == "offline":
             action += " Leave offline mode to collect; existing cloud jobs are unchanged."
     else:
-        action = "Run Notebook 05 once the completed development and JECAM batches are available locally."
+        action = "Run Notebook 05 in preprocessing once the completed development and JECAM batches are available locally. Use data_collection/06 first for a saved dataset summary."
     print(f"Next: {action}")
     if any(context.get("selection_status") == "no_candidates_for_deficits" for _, context in batches):
         print("No unselected reference candidates remain for these deficits. Review the available reference inventory before expanding it.")

@@ -178,7 +178,7 @@ class NotebookSetupTests(unittest.TestCase):
         from shapely.ops import transform
 
         repository = Path(__file__).resolve().parents[1]
-        notebook_path = repository / "notebooks/preprocessing/03_francecrops_preparation.ipynb"
+        notebook_path = repository / "notebooks/data_collection/03_francecrops_collection.ipynb"
         notebook = json.loads(notebook_path.read_text())
         labels = [
             {"parcel_id": "cabbage", "y": 4, "split": "train"},
@@ -241,13 +241,14 @@ class NotebookSetupTests(unittest.TestCase):
                 )
             self.assertEqual(download.call_count, 3)
             self.assertTrue((root / "settings.local.json").is_file())
-            self.assertEqual(namespace["annual_plan"]["estimate"]["parcels"], 2)
+            self.assertEqual(namespace["annual_plan"]["estimate"]["parcels"], 1)
+            self.assertEqual(set(namespace["annual_plan"]["years"]["2022"]["pixels_per_crop"]), {"cabbage"})
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertEqual(namespace["reference_mode"], "download_missing")
             self.assertTrue(namespace["reference_options"]["download_if_missing"])
 
 
-def execute_source_cells(notebook, namespace, notebook_path, reference_mode=None):
+def execute_source_cells(notebook, namespace, notebook_path, reference_mode="reuse"):
     """Exercise reference setup with collection disabled and all real network blocked."""
     for cell in [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]:
         source = (
@@ -258,9 +259,10 @@ def execute_source_cells(notebook, namespace, notebook_path, reference_mode=None
             .replace("authenticate_now = True", "authenticate_now = False")
         )
         if reference_mode is not None:
-            source = source.replace(
-                'reference_mode = "reuse"', f"reference_mode = {reference_mode!r}"
-            )
+            for default_mode in ("reuse", "download_missing"):
+                source = source.replace(
+                    f'reference_mode = "{default_mode}"', f"reference_mode = {reference_mode!r}"
+                )
         exec(compile(source, str(notebook_path), "exec"), namespace)
 
 
@@ -269,7 +271,7 @@ class FreshSen4AgriNetNotebookTests(unittest.TestCase):
         from contextlib import chdir
 
         repository = Path(__file__).resolve().parents[1]
-        notebook_path = repository / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
+        notebook_path = repository / "notebooks/data_collection/02_sen4agrinet_collection.ipynb"
         notebook = json.loads(notebook_path.read_text())
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -294,7 +296,7 @@ class FreshSen4AgriNetNotebookTests(unittest.TestCase):
         from crop_pipeline.sources import remote_masks, sen4agrinet
 
         repository = Path(__file__).resolve().parents[1]
-        notebook_path = repository / "notebooks/preprocessing/02_sen4agrinet_preparation.ipynb"
+        notebook_path = repository / "notebooks/data_collection/02_sen4agrinet_collection.ipynb"
         notebook = json.loads(notebook_path.read_text())
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
