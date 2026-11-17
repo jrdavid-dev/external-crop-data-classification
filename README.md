@@ -32,7 +32,7 @@ On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 Start with the [project design and deliverables](docs/project_design.md) for the current experiment, data roles, quotas, and remaining work.
 
 1. [Data collection](notebooks/data_collection) audits references and collects incremental development batches from Sen4AgriNet, FranceCrops and EuroCrops, plus a separate CropHarvest JECAM test cohort. Run collection 06 for a local dataset/progress report. Then run [preprocessing 01–03](notebooks/preprocessing) to audit imagery, select windows and export development/test features. Each notebook prints its handoff paths.
-2. [Training 01–02](notebooks/training) fits and validates Random Forests, then freezes the selected models. [Testing 01–02](notebooks/testing) evaluates the matching CropHarvest snapshot and reports crop metrics, confusion matrices, coverage and a training-majority baseline. See [the notebook guide](docs/external_training_notebooks.md). Original `external_evaluation/` notebooks remain available for legacy runs.
+2. [Training 01–02](notebooks/training) fits and validates Random Forests, then freezes the selected models. [Testing 01–02](notebooks/testing) evaluates the matching CropHarvest snapshot and reports crop metrics, confusion matrices, coverage and a training-majority baseline. See [the notebook guide](docs/external_training_notebooks.md).
 3. [Paoay](notebooks/paoay) runs 01–05 from references through field review. For the January–April 2024 map, set `paoay_model_manifest` in local settings to the `fixed_full` manifest printed by Training 02. See the [Paoay guide](docs/paoay_workflow.md).
 4. [Archived notebooks](notebooks/archive) retain earlier experiment outputs and provenance.
 

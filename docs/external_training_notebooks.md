@@ -23,4 +23,4 @@ The baseline predicts the most common training parcel crop (ties follow first oc
 
 ## Safe alongside collection
 
-These notebooks read exported feature JSON, not live downloads, batch queues or collection state. Completed preprocessing snapshots remain usable while further collection runs. No files are moved or deleted. Legacy `notebooks/external_evaluation/` notebooks and existing model/result folders remain untouched. Collection layout refreshes preserve these new native output folders. Preprocessing itself still requires its existing collection-completion checks; training does not bypass those checks to create a feature snapshot.
+These notebooks read exported feature JSON, not live downloads, batch queues or collection state. Completed preprocessing snapshots remain usable while further collection runs. No files are moved or deleted. Collection layout refreshes preserve these new native output folders. Preprocessing itself still requires its existing collection-completion checks; training does not bypass those checks to create a feature snapshot.

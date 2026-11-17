@@ -8,7 +8,8 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from crop_pipeline.training import overfitting, transfer_demo
+from crop_pipeline.archive import transfer_demo
+from crop_pipeline.training import overfitting
 from transfer_fixtures import cached_v1_folder
 
 

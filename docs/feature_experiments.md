@@ -36,3 +36,7 @@ Outputs are immutable, content-keyed artifacts. Changed windows, samples or feat
 `analysis_mode = "pilot"` reports unmet collection budgets without falsely declaring production reviews or settings frozen. `"strict"` requires the adaptive collection targets. Both preserve complete-data and parcel-separation requirements. Formal reviewed/frozen feature bundles remain a separate advanced production path.
 
 Notebook 06 reads these saved predictors directly. It selects the feature design using validation macro-F1 before test scoring; all designs share the same rows and partitions. See [training](training.md) and [workflow](workflow.md).
+
+The historical pooled-source and transfer-demo helpers live in
+`crop_pipeline.archive.external_combined` and `crop_pipeline.archive.transfer_demo`.
+They remain importable for earlier experiments and their tests.

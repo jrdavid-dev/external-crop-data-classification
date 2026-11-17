@@ -1,7 +1,7 @@
 """Synthetic cached external inputs shared by transfer-analysis tests."""
 from pathlib import Path
 
-from crop_pipeline.training import external_combined as external
+from crop_pipeline.archive import external_combined as external
 from test_external_combined import source_tables
 
 

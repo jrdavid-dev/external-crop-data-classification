@@ -10,7 +10,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
-from crop_pipeline.training import external_combined as ext
+from crop_pipeline.archive import external_combined as ext
 
 from .config import CLASSES, INTERVAL, LR_SHAPE, N_TREES_SEARCH, PROTOTYPE, SEED, SHAPE, TARGET_SELECTIVE_ACCURACY
 

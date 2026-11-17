@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from crop_pipeline.features import experiments as feature_experiments
-from crop_pipeline.training import external_combined
+from crop_pipeline.archive import external_combined
 
 
 def source_tables(parcels_per_crop=6, pixels=4):

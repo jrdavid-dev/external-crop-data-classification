@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import BallTree
 
-from crop_pipeline.training import external_combined as ext
+from crop_pipeline.archive import external_combined as ext
 
 from .atok import OTHER_CROP_FIELDS
 from .config import CLASSES, COLORS, SOURCE_NAMES

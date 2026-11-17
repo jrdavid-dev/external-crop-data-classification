@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from crop_pipeline.features import experiments as feature_experiments
-from crop_pipeline.training import external_combined as ext
+from crop_pipeline.archive import external_combined as ext
 
 CLASSES = list(ext.CLASSES)
 SOURCE_NAMES = {"cropharvest": "CropHarvest", "sen4agrinet": "Sen4AgriNet", "francecrops": "FranceCrops"}

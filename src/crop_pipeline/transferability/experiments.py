@@ -8,7 +8,7 @@ from scipy.stats import spearmanr, wasserstein_distance
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
-from crop_pipeline.training import external_combined as ext
+from crop_pipeline.archive import external_combined as ext
 
 from .config import (CLASSES, INTERVAL, LR_SHAPE, MIN_PARCELS_PER_CROP, N_TREES_SEARCH, PROTOTYPE, SEED,
                      SHAPE, TARGET_SELECTIVE_ACCURACY, VARS)

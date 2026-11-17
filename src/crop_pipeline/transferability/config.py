@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crop_pipeline.features import experiments as feature_experiments
-from crop_pipeline.training import external_combined as ext
+from crop_pipeline.archive import external_combined as ext
 
 SEED = 42
 CLASSES = list(ext.CLASSES)

@@ -15,7 +15,7 @@ from rasterio.windows import Window, from_bounds
 from shapely import transform as shapely_transform, union_all
 from shapely.geometry import Polygon, mapping
 
-from crop_pipeline.training import external_combined as ext
+from crop_pipeline.archive import external_combined as ext
 
 from .config import ATOK_FLOOR, CLASSES, INTERVAL, LABEL_YEARS, MIN_CLEAR, VARS, YEARS
 
