@@ -19,7 +19,7 @@ Three classes: carrot, cabbage, potato. Development sources are Sen4AgriNet, Fra
 
 The forests retain 1,000 trees, seed 42, square-root feature sampling and 50% bootstrap sampling. Full cohorts choose minimum leaf size 2 or 4 using validation only; matched cohorts retain leaf size 2. Features, confidence/parcel weighting and window/quality rules are unchanged. Selected draft packages and candidate validation metrics are saved in `validation/`; `models/` contains their published copies. Freeze performs no additional fitting. Test predictions average probabilities per parcel, as before.
 
-The baseline predicts the most common training parcel crop (ties follow first occurrence in saved training rows). It is evaluated on the same test parcels as each corresponding model. Full cohorts can differ in coverage; matched cohorts hold locations constant. Test results are descriptive external evaluation, never a rule for choosing a model or evidence of Paoay accuracy. Unmet collection budgets remain visible in coverage metrics.
+The baseline predicts the most common training parcel crop (ties follow first occurrence in saved training rows). It is evaluated on the same test parcels as each corresponding model. Full cohorts can differ in coverage; matched cohorts hold locations constant. Diagnostics report whether macro-F1 is at least 0.50, exceeds the baseline, and each crop has F1 of at least 0.50. Model selection uses validation only. Unmet collection budgets remain visible in coverage metrics.
 
 ## Safe alongside collection
 

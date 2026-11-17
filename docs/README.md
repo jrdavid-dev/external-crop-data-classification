@@ -1,26 +1,17 @@
 # Workflow guides
 
-Start with [fresh-clone setup](fresh_clone.md), then follow the [notebook workflow](workflow.md). The default collection is `adaptive_training`: collect bounded parcel batches, assess usable four-month windows, and fill measured deficits.
+Start with the [project design and deliverables](project_design.md). It records the active experiment, data roles, acceptance criteria, and open work.
 
-| Guide | Purpose |
+| Guide | Use it for |
 | --- | --- |
-| [Fresh clone](fresh_clone.md) | Prepare a kernel, settings and Earth Engine access |
-| [Workflow](workflow.md) | Run notebooks 01–06 and resume interrupted work |
-| [Sen4AgriNet](sen4agrinet.md) | Understand notebook 01's cached references and capped scans |
-| [CropHarvest](cropharvest.md) | Understand notebook 03's label checks and collection |
-| [Adaptive training](adaptive_training.md) | Sampling targets, locked partitions and annual TIFFs |
-| [Progress](progress.md) | Read local completion counts and cloud task states |
-| [Methodology](methodology.md) | Imagery, timing and quality rules |
-| [Feature designs](feature_experiments.md) | Compare the three model inputs |
-| [Training](training.md) | Evaluation outputs and evidence requirements |
-| [Paoay application](paoay_workflow.md) | Run the five-notebook application and preserve preliminary predictions |
-| [Pixel tables](pixel_tables.md) | Understand the compact imagery transport/cache |
-| [Full-year catalogue](full_year_collection.md) | Use optional earlier collection modes |
+| [Fresh clone](fresh_clone.md) | Environment and reference setup |
+| [Notebook workflow](workflow.md) | Run order and handoffs |
+| [Adaptive collection](adaptive_training.md) | Batch selection, quotas and resuming collection |
+| [Sen4AgriNet](sen4agrinet.md) and [CropHarvest](cropharvest.md) | Source-specific reference and collection controls |
+| [Progress](progress.md) and [output layout](output_layout.md) | Read saved progress, reports and artifacts |
+| [Methodology](methodology.md) | Imagery, sampling and timing rules |
+| [Training and external testing](external_training_notebooks.md) | Model selection, freezing and external evaluation |
+| [Paoay workflow](paoay_workflow.md) and [field checks](paoay_field_checks.md) | Local application and field evidence |
+| [Pixel tables](pixel_tables.md) and [full-year catalogue](full_year_collection.md) | Transport, storage and optional collection tools |
 
-A **candidate** still needs timing and quality checks. A **usable pixel** passes those checks in its selected window. A **parcel group** stays in one locked partition. A **handoff** records saved inputs for the next notebook.
-
-Collection completion confirms saved files; it does not establish crop-label accuracy or local model performance.
-
-See [Paoay field checks](paoay_field_checks.md) for January observations and separate correction proposals.
-
-For a concise restart summary and planned experiments, see [Project handoff and future TODOs](future_todos.md).
+[Earlier feature experiments](feature_experiments.md), [legacy training notes](training.md), and the [live transport validation](live_batch_validation.md) document historical experiments.

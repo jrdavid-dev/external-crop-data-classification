@@ -18,7 +18,7 @@
 ## Project context and conventions
 
 - This is a Python 3.12+ crop classification pipeline using labelled parcels and Sentinel-2 imagery. Package code lives in `src/crop_pipeline`, tests in `tests`, workflow notebooks in `notebooks`, and guides in `docs`.
-- Start with `README.md` and the guides relevant to the task. Some older guides describe legacy collection modes; reconcile disagreements against current code, tests, and the user's requested behavior before changing defaults.
+- Start with `docs/project_design.md` for the current project design and deliverables, then read `README.md` and the guides relevant to the task. Some older guides describe legacy collection modes; reconcile disagreements against current code, tests, and the user's requested behavior before changing defaults.
 - Prefer reusable, testable package functions over substantial logic embedded in notebook cells. Keep notebook entry points and their supporting documentation consistent with code changes.
 - Preserve notebook outputs and metadata unless changing them is necessary. Avoid executing entire collection or training notebooks just to validate a small edit.
 - Preserve incremental collection, resumability, stable parcel identities, locked partitions, and existing archives. Do not introduce data leakage between training, validation, and reserved test partitions.

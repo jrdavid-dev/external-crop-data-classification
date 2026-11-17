@@ -1,6 +1,6 @@
 # Paoay application
 
-Notebooks 01–06 remain the external preprocessing/training workflow. The **five Paoay notebooks 07–11 are implemented**. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
+The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
 
 ## Run order
 
@@ -65,7 +65,7 @@ The separate conservative seven-class Dynamic World context maps remain availabl
 
 Review per-boundary predictions, overlapping screening flags, suitability and original KMZ notes. Optional calendar entries retain explicit source excerpts and month lists; blank entries stay unreviewed. Calendar overlap is not correctness. Mixed/seedling areas and unmodelled crops are not promoted to verified crop-field labels.
 
-Notebook 11 freezes a preliminary-map TIFF and snapshots of the reference/calendar/field records in a new immutable review bundle. Editable `observations.csv` and `corrections.csv` live separately and are created once. Record actual dates, GPS, crop/cover, growth stage, evidence and observer. A point does not label a whole polygon. January observations and historical evidence remain distinct.
+Notebook 05 freezes a preliminary-map TIFF and snapshots of the reference/calendar/field records in a new immutable review bundle. Editable `observations.csv` and `corrections.csv` live separately and are created once. Record actual dates, GPS, crop/cover, growth stage, evidence and observer. A point does not label a whole polygon. January observations and historical evidence remain distinct.
 
 Follow the [field-check guide](paoay_field_checks.md) for columns and evidence rules. Rerunning after edits creates a new report; old snapshots remain readable. Correction proposals do not alter the model map. A later corrected raster needs compatible dates and explicit spatial scope. Neither corrected-map agreement nor these convenience records produce an accuracy score. Independent evaluation needs a separate evidence/sampling protocol.
 

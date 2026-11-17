@@ -1,10 +1,10 @@
-# Sen4AgriNet: notebook 01
+# Sen4AgriNet collection
 
-Batch 2 update: active preprocessing is now [01–03](../notebooks/preprocessing/README.md). The old 05–07 filenames alias these new entry points. Finish pending collection before a live audit.
+Use [Collection 02](../notebooks/data_collection/02_sen4agrinet_collection.ipynb), then [preprocessing 01–03](../notebooks/preprocessing/README.md) once collection is complete.
 
 Active entry point: [collection 02](../notebooks/data_collection/02_sen4agrinet_collection.ipynb). Saved new-batch settings currently target potato; existing carrot batches are retained. Follow collection 06, then preprocessing 05–07.
 
-[Notebook 01](../notebooks/data_collection/02_sen4agrinet_collection.ipynb) prepares carrot and potato candidate parcels, then collects full-calendar-year Sentinel-2 histories through Earth Engine. Cabbage is supplied by FranceCrops. The default workflow uses bounded reference subsets and records their coverage.
+[Collection 02](../notebooks/data_collection/02_sen4agrinet_collection.ipynb) prepares carrot and potato candidate parcels, then collects full-calendar-year Sentinel-2 histories through Earth Engine. Cabbage is supplied by FranceCrops. The default workflow uses bounded reference subsets and records their coverage.
 
 ## Review these settings
 
@@ -29,7 +29,7 @@ The reference target and patch cap are separate from the 50-per-crop imagery bat
 3. **Prepare references:** reuse checkpoints or selectively read label/parcel masks. Validate crop codes, grids, coordinates, identities and geometry; exclude known mixed/conflicting groups and upstream held-out references.
 4. **Select candidates:** spread 50 physical parcels per crop across geographic/year strata when both crops have enough eligible parcels. Existing selections, pending batches and locked partitions are preserved.
 5. **Collect:** submit or collect Earth Engine jobs using original saved plans.
-6. **Summarize:** inspect verified tiles, job states and the next action. Rerun pending work, then assess usable windows in notebook 04.
+6. **Summarize:** inspect verified tiles, job states and the next action. Rerun pending work, then assess usable windows in preprocessing 01–03.
 
 Unseen patches have not been audited for label conflicts or neighboring geometry. The inventory records scanned files, counts, deficits and the stop reason; subset coverage is not full-release coverage. No usable cached checkpoints produces an error rather than an empty imagery batch.
 

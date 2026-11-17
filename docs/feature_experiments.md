@@ -1,4 +1,6 @@
-# Feature preparation
+# Historical feature experiments
+
+The active external workflow uses the 72 interval predictors for both window recipes. See the [current design](project_design.md).
 
 Notebook **04** saves complete four-month windows with **64 base features per pixel**: five spectral bands and NDVI, NDRE and NDMI across eight half-month intervals. Notebook **05** adds SAVI and temporal-shape measurements, then exports the exact feature bundle consumed by **06**.
 

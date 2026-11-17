@@ -29,14 +29,16 @@ On Windows, use the corresponding Python launcher and `.venv\Scripts\activate`.
 
 ## Notebook workflow
 
+Start with the [project design and deliverables](docs/project_design.md) for the current experiment, data roles, quotas, and remaining work.
+
 1. [Data collection](notebooks/data_collection) audits references and collects incremental development batches from Sen4AgriNet, FranceCrops and EuroCrops, plus a separate CropHarvest JECAM test cohort. Run collection 06 for a local dataset/progress report. Then run [preprocessing 01–03](notebooks/preprocessing) to audit imagery, select windows and export development/test features. Each notebook prints its handoff paths.
 2. [Training 01–02](notebooks/training) fits and validates Random Forests, then freezes the selected models. [Testing 01–02](notebooks/testing) evaluates the matching CropHarvest snapshot and reports crop metrics, confusion matrices, coverage and a training-majority baseline. See [the notebook guide](docs/external_training_notebooks.md). Original `external_evaluation/` notebooks remain available for legacy runs.
-3. [Paoay](notebooks/paoay) runs 01–05 from references through field review. For the January–April 2024 map, set `paoay_model_manifest` in local settings to the `fixed_full` manifest printed by external evaluation 01. See the [Paoay guide](docs/paoay_workflow.md).
+3. [Paoay](notebooks/paoay) runs 01–05 from references through field review. For the January–April 2024 map, set `paoay_model_manifest` in local settings to the `fixed_full` manifest printed by Training 02. See the [Paoay guide](docs/paoay_workflow.md).
 4. [Archived notebooks](notebooks/archive) retain earlier experiment outputs and provenance.
 
 Collection notebooks 02–05 use `submit_only = False` for the current top-ups. Run All to submit missing jobs and download results. If a run reports pending jobs, rerun with the same settings to resume. `reference_mode = "reuse"` reuses references but does not disable satellite collection.
 
-Current new-batch requests target potato in Sen4AgriNet, cabbage in FranceCrops, carrot in EuroCrops, and carrot and potato in CropHarvest. These are shortage top-ups, not the full dataset scope. Existing batches retain their original crop selections, counts, identities and partitions. Review `extra_batches` before running; changing notebook locations does not reset campaign progress.
+Current new-batch requests target potato in Sen4AgriNet, cabbage in FranceCrops, carrot in EuroCrops, and non-JECAM cabbage in CropHarvest. Set Collection 05 to JECAM mode for the saved carrot and potato test top-ups. These are shortage top-ups, not the full dataset scope. Existing batches retain their original crop selections, counts, identities and partitions. Review `extra_batches` before running; changing notebook locations does not reset campaign progress.
 
 Collection 05 can run separately while development sources are collected. Its optional final export cell writes completed JECAM bundles. On the receiving machine, import the JECAM bundle using the existing collection transfer helper before starting preprocessing 01. Preprocessing then checks overlaps and continues to 02–03. Existing local completions remain usable.
 
