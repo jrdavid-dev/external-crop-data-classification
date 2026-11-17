@@ -19,6 +19,16 @@ RULES = {"minimum_top_probability": .6, "minimum_margin": .1}
 CROPS = {1: "Carrot", 2: "Cabbage", 3: "Potato"}
 STATUSES = {0: "Outside mapped boundaries", 1: "Crop-model prediction", 2: "Unknown crop type", 3: "Missing input"}
 DEFERRED_METHODS = ["pooled_four_class_model", "individual_crop_model_grouped_for_reporting"]
+# Map extent: the reference-polygon union (default) or every pixel inside the study boundary.
+SCOPES = {"reference_polygon_union": "reference areas only", "study_boundary": "whole study boundary"}
+SCOPE_SETTINGS = {"reference_areas": "reference_polygon_union", "study_boundary": "study_boundary"}
+
+
+def scope_from_setting(value):
+    """Translate the paoay_map_extent setting into a saved spatial scope."""
+    if value not in SCOPE_SETTINGS:
+        raise ValueError("paoay_map_extent must be one of: " + ", ".join(SCOPE_SETTINGS))
+    return SCOPE_SETTINGS[value]
 
 
 def validate_rules(rules):
@@ -38,6 +48,15 @@ def reference_mask(reference, grid, roi):
         selected |= geometry_mask([mapping(geometry)], out_shape=roi.shape,
                                   transform=Affine(*grid['transform']), invert=True)
     return selected & roi
+
+
+def extent_mask(inputs, grid, spatial_scope):
+    """Pixels the crop map covers: the reference-polygon union or the whole study boundary."""
+    if spatial_scope not in SCOPES:
+        raise ValueError("Unsupported crop map extent: " + str(spatial_scope))
+    if spatial_scope == "study_boundary":
+        return np.asarray(inputs['roi'], dtype=bool).copy()
+    return reference_mask(inputs['reference'], grid, inputs['roi'])
 
 
 def arrays(crop, feature, rules=None, spatial_mask=None):
@@ -72,9 +91,11 @@ def area_rows(data, mask, pixel_ha):
     return rows
 
 
-def prepare_request(prediction_handoff, output_root, rules=None):
+def prepare_request(prediction_handoff, output_root, rules=None, spatial_scope="reference_polygon_union"):
     predictions.load_prediction_bundle(prediction_handoff)
-    identity = {'version': 2, 'spatial_scope': 'reference_polygon_union', 'prediction_sha256': references.checksum(prediction_handoff),
+    if spatial_scope not in SCOPES:
+        raise ValueError("Unsupported crop map extent: " + str(spatial_scope))
+    identity = {'version': 2, 'spatial_scope': spatial_scope, 'prediction_sha256': references.checksum(prediction_handoff),
                 'rules': validate_rules(RULES if rules is None else rules), 'implementation_sha256': references.checksum(__file__)}
     key = imagery._digest(identity)[:20]
     return {'bundle_id': key, 'identity': identity, 'prediction_handoff': str(Path(prediction_handoff).resolve()),
@@ -96,9 +117,11 @@ def build(request):
         load_bundle(handoff)
         return handoff
     inputs = maps.context(request['prediction_handoff'])
-    mask = reference_mask(inputs['reference'], crop['manifest']['grid'], inputs['roi'])
+    scope = request['identity']['spatial_scope']
+    mask = extent_mask(inputs, crop['manifest']['grid'], scope)
     if not mask.any():
-        raise ValueError('No reference-polygon pixel centres inside the study ROI')
+        raise ValueError('No reference-polygon pixel centres inside the study ROI' if scope == 'reference_polygon_union'
+                         else 'No pixel centres inside the study ROI')
     data, roi = arrays(crop, feature, request['identity']['rules'], mask)
     grid = crop['manifest']['grid']; affine = Affine(*grid['transform'])
     hectare = abs(affine.a*affine.e-affine.b*affine.d)/10000
@@ -114,7 +137,7 @@ def build(request):
         _source(request)
         manifest={'format_version':2,'kind':'three_crop_with_unknown','status':'prepared','identity':request['identity'],'bundle_id':request['bundle_id'],
             'prediction_handoff':request['prediction_handoff'],'grid':grid,'period':crop['manifest']['period'],'class_codes':CROPS,'status_codes':STATUSES,
-            'spatial_scope':'reference_polygon_union','land_cover_filter_applied':False,'model_refitted':False,'deferred_methods':DEFERRED_METHODS,
+            'spatial_scope':scope,'land_cover_filter_applied':False,'model_refitted':False,'deferred_methods':DEFERRED_METHODS,
             'interpretation':'Conditional three-crop model scores; no crop/noncrop discrimination or independent local accuracy',
             'files':{name:{'sha256':references.checksum(staging/name)} for name in ('crop_baseline.tif','crop_baseline_areas.csv')}}
         (staging/'crop_baseline_handoff.json').write_text(json.dumps(manifest,indent=2)+'\n');staging.rename(folder)
@@ -135,10 +158,10 @@ def load_bundle(path):
         if references.checksum(path.parent/name)!=record['sha256']:raise ValueError('Saved crop baseline changed; files preserved')
     mask = None
     if m['format_version'] == 2:
-        if m.get('spatial_scope') != 'reference_polygon_union' or m['identity'].get('spatial_scope') != 'reference_polygon_union':
+        if m.get('spatial_scope') not in SCOPES or m['identity'].get('spatial_scope') != m.get('spatial_scope'):
             raise ValueError('Crop baseline boundary scope changed')
         inputs = maps.context(m['prediction_handoff'])
-        mask = reference_mask(inputs['reference'], m['grid'], inputs['roi'])
+        mask = extent_mask(inputs, m['grid'], m['spatial_scope'])
     expected,roi=arrays(crop,feature,m['identity']['rules'],mask);g=m['grid']
     with rasterio.open(path.parent/'crop_baseline.tif') as raster:
         if (raster.count!=2 or raster.crs!=rasterio.crs.CRS.from_user_input(g['crs']) or not raster.transform.almost_equals(Affine(*g['transform']))
@@ -159,6 +182,7 @@ def plot(bundle):
     colors=['#ed9137','#4b9a65','#8b70b1','#e8c873','#d9d9d9']
     figure,axis=plt.subplots(figsize=(9,7),layout='constrained')
     axis.imshow(np.ma.array(values,mask=~bundle['roi']),cmap=ListedColormap(colors).with_extremes(bad='white'),norm=BoundaryNorm(np.arange(.5,6),5),interpolation='nearest')
-    axis.set_axis_off();axis.set_title('Three-crop baseline + Unknown: reference boundaries only\nConditional crop-model predictions; notes are unverified',fontsize=11)
+    axis.set_axis_off();extent=SCOPES.get(bundle['manifest'].get('spatial_scope','reference_polygon_union'),'reference areas only')
+    axis.set_title(f'Three-crop baseline + Unknown: {extent}\nConditional crop-model predictions; notes are unverified',fontsize=11)
     figure.legend(handles=[Patch(color=color,label=label) for color,label in zip(colors,[*CROPS.values(),STATUSES[2],STATUSES[3]])],loc='outside lower center',ncol=3,fontsize=9)
     return figure

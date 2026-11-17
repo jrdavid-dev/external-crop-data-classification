@@ -208,7 +208,7 @@ def build(request, iterator=None):
             'Crop labels use the entire four-month window; half-month maps use different broad-cover contexts, not new dated crop observations.',
             'Primary crop result: the current three-crop model with Unknown crop type and separate missing input. No other-crop training is implemented.',
             f"Crop score cutoffs: {request['identity']['crop_score_rules']['minimum_top_probability']:.2f} top probability and {request['identity']['crop_score_rules']['minimum_margin']:.2f} margin; ties are Unknown. Scores are not calibrated local correctness probabilities.",
-            'The primary crop map is restricted to the union of reference polygons inside the ROI; outside is masked, not Unknown.',
+            'These per-boundary crop tables cover each reference polygon inside the ROI; outside is masked, not Unknown. The saved crop map records its own extent.',
             'The primary crop view is conditional on the three trained crops and does not screen non-crop land. Treat it separately from the conservative Dynamic World context map.',
             'The secondary context map retains seven thesis classes with separate unknown, missing and excluded statuses.',
             'Other cultivated vegetation is not assessed by these inputs. Its unassigned area must not be interpreted as absence.',

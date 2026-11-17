@@ -51,7 +51,7 @@ Notebook 03 also **compares seasonal curves**. For each index (NDVI, NDRE, NDMI,
 
 ## 10: maps and screening
 
-The primary map covers only the **union of valid reference polygons within the study boundary**. Holes remain outside; overlaps count once overall. Outside pixels are masked, not Unknown or missing. Keep carrot/cabbage/potato predictions with top probability ≥0.60 and positive margin ≥0.10; weaker/tied scores become Unknown crop type. Missing inputs stay separate. Unknown is not other crops; unmodelled species may still receive confident target labels.
+The primary map covers only the **union of valid reference polygons within the study boundary**. Holes remain outside; overlaps count once overall. Set `paoay_map_extent` to `"study_boundary"` in local settings to map every pixel inside the study boundary instead (default `"reference_areas"`). A whole-boundary map still forces carrot, cabbage or potato on forest, built-up land and other crops; use the screening flags and notebook 06 land activity to review those pixels. Per-boundary tables and the season comparison always use the reference areas. Outside pixels are masked, not Unknown or missing. Keep carrot/cabbage/potato predictions with top probability ≥0.60 and positive margin ≥0.10; weaker/tied scores become Unknown crop type. Missing inputs stay separate. Unknown is not other crops; unmodelled species may still receive confident target labels.
 
 Screening is **flags only**, without hard exclusions or score changes. The 18-band diagnostic TIFF has minimum/maximum/mean/amplitude for NDVI, NDRE, NDMI and SAVI, plus valid-bin count and bitwise flags:
 

@@ -14,7 +14,7 @@ import rasterio
 
 from crop_pipeline import progress
 from crop_pipeline.analysis_workflow import write_stage_pointer, resolve_stage_pointer
-from crop_pipeline.paoay import maps, review, features, predictions, references, crop_baseline
+from crop_pipeline.paoay import maps, review, features, predictions, references, crop_baseline, screening
 import test_paoay_predictions as prediction_fixtures
 import test_paoay_features as feature_fixtures
 import test_paoay_land_cover as cover_fixtures
@@ -157,6 +157,30 @@ class FinalWorkflowTests(unittest.TestCase):
         handoff.parent.joinpath('crop_baseline_areas.csv').write_text('changed')
         with self.assertRaisesRegex(ValueError, 'changed'):
             crop_baseline.build(request)
+
+    def test_whole_boundary_extent_maps_every_study_pixel_with_the_same_scores(self):
+        limited = crop_baseline.load_bundle(crop_baseline.build(crop_baseline.prepare_request(self.prediction, self.root/'crop_baseline')))
+        scope = crop_baseline.scope_from_setting('study_boundary')
+        whole_request = crop_baseline.prepare_request(self.prediction, self.root/'crop_baseline', spatial_scope=scope)
+        self.assertNotEqual(whole_request['bundle_id'], limited['manifest']['bundle_id'])
+        whole = crop_baseline.load_bundle(crop_baseline.build(whole_request))
+        inputs = maps.context(self.prediction)
+        np.testing.assert_array_equal(whole['roi'], inputs['roi'])
+        self.assertGreater(int(whole['roi'].sum()), int(limited['roi'].sum()))
+        self.assertEqual(whole['manifest']['spatial_scope'], 'study_boundary')
+        # Inside the reference areas both extents carry identical classes and statuses.
+        np.testing.assert_array_equal(whole['data'][:, limited['roi']], limited['data'][:, limited['roi']])
+        self.assertEqual(sum(int(r['pixels']) for r in whole['summary']), int(inputs['roi'].sum()))
+        self.assertEqual(crop_baseline.scope_from_setting('reference_areas'), 'reference_polygon_union')
+        for value in ('whole', None, 'reference_polygon_union'):
+            with self.assertRaises(ValueError):
+                crop_baseline.scope_from_setting(value)
+        with self.assertRaises(ValueError):
+            crop_baseline.prepare_request(self.prediction, self.root/'crop_baseline', spatial_scope='everywhere')
+        screening_bundle = screening.load_bundle(screening.build(screening.prepare_request(
+            crop_baseline.build(whole_request), maps.build(self.map_request), self.root/'screening', dict(screening.RULES))))
+        # Screening follows the map extent: flags exist for every study pixel, nodata nowhere inside it.
+        self.assertTrue((screening_bundle['data'][:, whole['roi']] != screening.NODATA).all())
 
     def make_review(self):
         self.map_handoff = maps.build(self.map_request)

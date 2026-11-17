@@ -232,7 +232,7 @@ def build(request, iterator=None):
                 'Keep corrections as separate proposals with evidence. Neither a reviewed proposal nor agreement with a corrected product measures original-model accuracy. A later corrected raster needs explicit spatial scope and a separate output.',
                 'No accuracy, confusion matrix or F1 is computed from these records.','',
                 '## Files','',
-                '- preliminary_crop_map.tif: frozen boundary-limited model map.',
+                '- preliminary_crop_map.tif: frozen model map; extent: '+crop_baseline.SCOPES.get(baseline['manifest'].get('spatial_scope','reference_polygon_union'),'reference areas only')+'.',
                 '- preliminary_crop_areas.csv, screening_flags.csv: crop summaries and overlapping review flags.',
                 '- calendar_context.csv and calendar_snapshot.csv: unverified calendar context.',
                 '- field_check_plan.csv: visit checklist without predicted labels.',

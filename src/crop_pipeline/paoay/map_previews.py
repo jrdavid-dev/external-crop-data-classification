@@ -35,7 +35,8 @@ def _legend(figure):
 def plot_overview(bundle):
     import matplotlib.pyplot as plt
     figure, axis = plt.subplots(figsize=(9, 8), layout='constrained')
-    _draw(axis, bundle, bundle['roi'], 'Three-crop predictions + Unknown: reference boundaries\nZoomed display; original raster resolution unchanged')
+    extent = crop_baseline.SCOPES.get(bundle['manifest'].get('spatial_scope', 'reference_polygon_union'), 'reference areas only')
+    _draw(axis, bundle, bundle['roi'], f'Three-crop predictions + Unknown: {extent}\nZoomed display; original raster resolution unchanged')
     _legend(figure)
     return figure
 

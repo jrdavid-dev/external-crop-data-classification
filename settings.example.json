@@ -13,5 +13,6 @@
   "pagasa_station_elevation_m": 1500,
   "analysis_root": "./analysis",
   "atok_boundary_path": "./data/atok/paoay_boundary_2023.geojson",
-  "paoay_context_names": []
+  "paoay_context_names": [],
+  "paoay_map_extent": "reference_areas"
 }
