@@ -139,6 +139,19 @@ class BatchResumeTests(unittest.TestCase):
             self.assertEqual(calls, [0, 1])
             self.assertEqual(len(batch_export.load_ledger(ledger)), 2)
 
+    def test_tasks_are_labelled_with_their_source(self):
+        from unittest.mock import Mock, patch
+        with tempfile.TemporaryDirectory() as folder:
+            ledger = Path(folder) / "ledger.json"
+            with patch.object(batch_export, "ensure_folder"), \
+                 patch.object(batch_export, "daily_collection"), \
+                 patch.object(batch_export, "start_export", return_value="task") as start:
+                batch_export.submit_daily(Mock(), Mock(), [plan()], folder, ledger,
+                                          "projects/test/assets/temp", 2021, source="eurocrops")
+            description = start.call_args.args[3]
+            self.assertTrue(description.startswith("eurocrops_daily_2021_"), description)
+            self.assertNotIn("description", batch_export.load_ledger(ledger)[0])
+
 class FailedAttemptTests(unittest.TestCase):
     def test_terminal_failed_attempts_do_not_requery_or_block_new_requests(self):
         from unittest.mock import Mock, patch

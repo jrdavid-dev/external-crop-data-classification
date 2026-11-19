@@ -1,6 +1,6 @@
 # Paoay application
 
-The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
+The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06 and the exploratory aligned-model notebook 07. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
 
 ## Run order
 
@@ -12,12 +12,13 @@ The [external classification workflow](workflow.md) runs in its own folders. The
 | [04 Screening and maps](../notebooks/paoay/04_maps.ipynb) | Create boundary-limited maps and separate screening flags |
 | [05 Reference and field review](../notebooks/paoay/05_reference_field_review.ipynb) | Summarize notes, freeze the preliminary map and prepare January records |
 | [06 Land activity](../notebooks/paoay/06_land_activity.ipynb) | Optional: map 2019–2026 active cropland, check it against NAMRIA land use and split the crop map by it |
+| [07 Exploratory aligned map](../notebooks/paoay/07_aligned_exploratory_map.ipynb) | Optional, exploratory: apply the aligned matched model to Cloud Score+ composites with per-pixel green-up windows |
 
 Use the existing project kernel; **Restart Kernel → Run All** for each notebook in order. Nothing runs just by opening a notebook. The original eight entry points, outputs and metadata remain in the [checksum-verified archive](../notebooks/paoay/archive/eight_notebook_workflow/README.md). Do not run archived entry points in the active sequence.
 
 ## 07: references
 
-Put `00 - Region of Interest-2.kmz` and `Crop Area.kmz` in ignored `data/paoay/`, or configure `paoay_kmz_root` in local settings. The default boundary name is `Region of Interest`; override with `paoay_roi_name` if needed. List any context-only polygons, such as a barangay or other administrative boundary, by exact name in `paoay_context_names`. They stay in the snapshot with role `Context boundary` but are not reference areas: they do not widen the map extent and are left out of overlap, screening, land-activity, suitability and field-check tables. An unknown name stops the run. The current inputs have seven reference areas. Geometry, holes, notes and overlaps are preserved; invalid areas remain flagged rather than repaired.
+Put `00 - Region of Interest.kmz`, `00 - Atok Boundary.kmz` and `Crop Area.kmz` in ignored `data/paoay/`, or configure `paoay_kmz_root` in local settings. The default boundary name is `Region of Interest`; override with `paoay_roi_name` if needed. List any context-only polygons, such as a barangay or other administrative boundary, by exact name in `paoay_context_names`. They stay in the snapshot with role `Context boundary` but are not reference areas: they do not widen the map extent and are left out of overlap, screening, land-activity, suitability and field-check tables. An unknown name stops the run. The current inputs have seven reference areas. Geometry, holes, notes and overlaps are preserved; invalid areas remain flagged rather than repaired.
 
 A separate `<bundle id>_suitability.csv` in `references/reviews/` records manual context. Existing edits are never overwritten:
 
@@ -82,6 +83,12 @@ Pixels inside the study boundary with at least 60 clear half-months get eight su
 The result is checked against the KML reference areas (crop side) and NAMRIA ELUM 2023 forest, built-up and pasture polygons from `atok_landuse_path` (non-crop side, independent of the imagery). The frozen crop baseline is then cross-tabulated by land activity. **Nothing is masked or relabelled**: crop predictions outside active cropland are review candidates, and Unknown inside active cropland is cropland the three-crop model did not resolve. A hard cropland mask needs evaluation against reliable crop and non-crop labels first. Outputs are in `land_activity/` with a `land_activity_stage.json` pointer.
 
 Section 7 looks at other months for future research. For the same composites it reports each month's clear-observation share and crop-cycle starts and peaks in active cropland (`monthly_activity.csv`), and the share of active-cropland pixels with all eight half-months clear for every four-month window and year (`four_month_windows.csv`).
+
+## Exploratory aligned map (paoay/07)
+
+Notebook 07 is separate from the fixed-model sequence and writes only to `paoay/aligned_exploratory/<bundle>/`. It applies the `aligned_matched` package from the current Training 02 run (or `paoay_aligned_model_manifest`) to the local Cloud Score+ half-month composites in `atok_imagery_root`. The year is the most complete one: all 24 half-months present, then the highest mean clear share of study pixels. Each study pixel runs the training green-up detector (relative threshold 0.2), the one-month onset rule, the unchanged automatic timing checks and the `earliest_complete` cycle policy. A pixel gets a four-month window from its onset month inside that year, the 72 training-formula features and the 0.60/0.10 confidence rule. Pixels without a qualified window, or with a missing half-month in their window, keep their own status and are never filled.
+
+Recorded deviations from training: Cloud Score+ instead of the SCL/cloud-probability mask; each half-month median is treated as one observation at its bin midpoint (training required per-date observations); per-pixel clear bins instead of a parcel coverage fraction and clear-date count. The aligned recipe was chosen after the external test scores were known, so this map is exploratory and is not a test of that choice.
 
 ## Preservation and outputs
 

@@ -32,10 +32,13 @@ def transient(error):
     message = str(error).lower()
     return status in {429, 500, 502, 503, 504} or any(
         marker in message for marker in ("timed out", "timeout", "connection reset", "temporarily unavailable",
-                                         "too many requests", "http 429", "http 500", "http 502", "http 503", "http 504"))
+                                         "too many requests", "http 429", "http 500", "http 502", "http 503", "http 504",
+                                         # Earth Engine reports server-side memory pressure while paging large
+                                         # tables; the same page normally succeeds on a later request.
+                                         "memory capacity exceeded"))
 
 
-def download(ee, asset_id, cache_dir=None, page_size=5000, timeout_seconds=120, retries=1):
+def download(ee, asset_id, cache_dir=None, page_size=5000, timeout_seconds=120, retries=3):
     if type(page_size) is not int or page_size <= 0 or timeout_seconds <= 0 or type(retries) is not int or retries < 0:
         raise ValueError("Use a positive page size/timeout and nonnegative retries")
     cache = Path(cache_dir) if cache_dir is not None else None
@@ -95,8 +98,9 @@ def download(ee, asset_id, cache_dir=None, page_size=5000, timeout_seconds=120, 
                             "the Earth Engine asset is preserved. Rerun collection to resume. "
                             f"Cause: {type(error).__name__}: {error}"
                         ) from error
-                    print(f"  Page {number} request failed ({type(error).__name__}); retry {attempt+1}/{retries} in 2 seconds.", flush=True)
-                    time.sleep(2)
+                    wait = 2 * 2 ** attempt
+                    print(f"  Page {number} request failed ({type(error).__name__}); retry {attempt+1}/{retries} in {wait} seconds.", flush=True)
+                    time.sleep(wait)
             features = response.get("features", [])
             if not isinstance(features, list):
                 raise ValueError("Earth Engine table response has invalid features")

@@ -62,7 +62,7 @@ NDMI change is diagnostic, not a required increase. Passing timing checks establ
 
 For each parcel, evaluate qualified windows chronologically. Keep the **earliest window with at least one complete usable pixel**; try the next if the earlier window has none. All fragments share that date range. Do not combine cycles to fill gaps or select the window with the most pixels.
 
-A complete pixel needs five bands—B3, B4, B5, B8, B11—and NDVI, NDRE and NDMI in every interval: **64 finite base features**. Missing bins, low coverage, invalid observation counts and zero index denominators cause exclusion. No imputation is used.
+A complete pixel needs five bands—B3, B4, B5, B8, B11—and NDVI, NDRE and NDMI in every interval: **64 finite base features**. SAVI (L = 0.5) is then added from B8 and B4 in each interval, giving the **72 interval predictors** used by every current model ([feature experiments](feature_experiments.md)). Missing bins, low coverage, invalid observation counts and zero index denominators cause exclusion. No imputation is used.
 
 For adaptive collection, deduplicate usable locations and apply the per-parcel sampling budget and locked partitions. The optional full-catalogue workflow retains every unique usable external pixel across both policies. Reference-supported rows take precedence for duplicate locations. Preserve registered local evaluation rows and upstream reserved roles. The old 500-pixel pilot cap applies only when deliberately reopening a pilot collection.
 

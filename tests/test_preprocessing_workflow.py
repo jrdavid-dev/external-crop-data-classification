@@ -74,6 +74,31 @@ class PreprocessingWorkflowTests(unittest.TestCase):
         save_json(state, {"status": "completed", "task_id": "preserve"})
         return state
 
+    def test_observation_loss_counts_cloud_shadow_and_keeps_legacy_rows_unavailable(self):
+        data = {
+            "regions": [{"properties": {"fragment_id": "a", "partition": "train"}},
+                        {"properties": {"fragment_id": "b", "partition": "test"}}],
+            "quality_rows": [
+                {"region_id": "a", "crop": "carrot", "start": "2021-01-01", "status": "quality_pass",
+                 "pre_mask_count": 10, "cloud_shadow_count": 6, "other_rejection_count": 1, "clear_pixel_dates": 3},
+                {"region_id": "a", "crop": "carrot", "start": "2021-01-16", "status": "low_coverage",
+                 "pre_mask_count": 10, "cloud_shadow_count": 9, "other_rejection_count": 0, "clear_pixel_dates": 1},
+                {"region_id": "b", "crop": "potato", "start": "2021-01-01", "status": "quality_pass",
+                 "pre_mask_count": None, "cloud_shadow_count": None, "other_rejection_count": None,
+                 "clear_pixel_dates": 4},
+            ],
+        }
+        by_crop, by_half_month, total = workflow.observation_loss(data)
+        carrot = next(r for r in by_crop if r["crop"] == "carrot")
+        self.assertEqual((carrot["partition"], carrot["pixel_dates_with_acquisition"],
+                          carrot["cloud_or_shadow_pixel_dates"], carrot["cloud_or_shadow_share"]), ("train", 20, 15, .75))
+        legacy = next(r for r in by_crop if r["crop"] == "potato")
+        self.assertEqual(legacy["intervals_without_pre_mask_counts"], 1)
+        self.assertIsNone(legacy["cloud_or_shadow_share"])
+        self.assertEqual([r["half_month_start"] for r in by_half_month], ["01-01", "01-16"])
+        self.assertEqual(by_half_month[1]["cloud_or_shadow_share"], .9)
+        self.assertEqual((total["audited_tile_intervals"], total["quality_pass_tile_intervals"]), (3, 2))
+
     def test_end_to_end_counts_reuse_and_unchanged_collection(self):
         with TemporaryDirectory() as folder:
             root = Path(folder)
@@ -90,6 +115,8 @@ class PreprocessingWorkflowTests(unittest.TestCase):
                 self.assertEqual(workflow.export_features(root), handoff)
             self.assertEqual(state.read_bytes(), original)
             self.assertTrue(all(p.read_bytes() == b for p, b in before.items()))
+            self.assertTrue((quality.parent / "observation_loss.csv").is_file())
+            self.assertTrue((quality.parent / "observation_loss_by_half_month.csv").is_file())
             rows = seasons.read_table(handoff.parent / "usable_samples.csv")
             self.assertEqual(len(rows), 36)
             fixed_test = next(r for r in rows if r["cohort"] == "fixed_full" and r["partition"] == "test" and r["crop"] == "potato")

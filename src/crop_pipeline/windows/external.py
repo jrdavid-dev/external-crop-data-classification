@@ -100,7 +100,11 @@ def audit(report_folder, output_root):
         "composite_rows": [row for row in analysis.composite_rows if row["region_id"] in eligible_ids],
         "pixel_paths": {key: str(path) for key, path in analysis.pixel_rows.paths.items() if key in eligible_ids},
         "sources": sources, "overlap_exclusions": sorted(overlaps),
-        "mask_loss": "unavailable for legacy archives without pre-mask counts",
+        "mask_loss": {
+            "intervals_with_pre_mask_counts": sum(row.get("pre_mask_count") is not None for row in quality_rows),
+            "intervals_without_pre_mask_counts": sum(row.get("pre_mask_count") is None for row in quality_rows),
+            "note": "legacy archives without pre-mask counts report loss as unavailable, not zero",
+        },
     })
     return handoff
 
