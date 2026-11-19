@@ -22,7 +22,7 @@ class NotebookSetupTests(unittest.TestCase):
             path = Path(temporary) / "settings.local.json"
             settings = notebook_setup.ensure_local_settings(path)
             self.assertEqual(
-                settings["annual_archive_root"], "./sen4agrinet_work/annual_archive"
+                settings["annual_archive_root"], "./data/pipeline_work/annual_archive"
             )
             custom = {
                 **settings,

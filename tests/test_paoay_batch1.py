@@ -27,7 +27,7 @@ class BatchOneTests(unittest.TestCase):
         (self.root/'pyproject.toml').write_text('[project]\nname="fixture"\n')
         (self.root/'src/crop_pipeline').mkdir(parents=True)
         self.reference = sentinel.reference_fixture(self.root/'inputs')
-        self.paoay = self.root/'sen4agrinet_work/paoay'
+        self.paoay = self.root/'data/pipeline_work/paoay'
         write_stage_pointer(self.paoay/'references/reference_stage.json', self.reference)
         self.request = imagery.prepare_request(self.reference, '2024-01-01', self.paoay/'sentinel2')
         with patch.object(imagery.PaoayRetriever, 'list_acquisitions', sentinel.acquisitions), \
@@ -109,10 +109,4 @@ class BatchOneTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'once'):
             reference_suitability.prepare_review(self.reference)
 
-    def test_archived_notebooks_match_inventory(self):
-        import hashlib
-        folder=ROOT/'notebooks/paoay/archive/eight_notebook_workflow'
-        inventory=json.loads((folder/'inventory.json').read_text())
-        self.assertEqual(len(inventory),8)
-        for name,digest in inventory.items():
-            self.assertEqual(hashlib.sha256((folder/name).read_bytes()).hexdigest(),digest)
+    # Historical notebook integration retired; active workflow coverage is separate.

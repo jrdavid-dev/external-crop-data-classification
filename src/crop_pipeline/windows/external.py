@@ -14,6 +14,8 @@ from crop_pipeline.sources import adaptive, sampling, test_cohort
 from crop_pipeline.windows import annual_archive, seasons
 from crop_pipeline.windows.workflow import WindowAnalysis
 
+FIXED_START_MONTH = 5
+
 
 def snapshot(report_folder):
     development = [s for s in test_cohort.completed_sources(report_folder)
@@ -71,8 +73,39 @@ def reference_profile(regions, quality_rows):
     ]
 
 
+def supplemental_inputs(report_folder, primary_sources):
+    from crop_pipeline.cabbage_test_check import discover
+
+    sources = []
+    occupied = list(test_cohort.source_footprints(primary_sources))
+    occupied_groups = {item["properties"]["partition_group"] for item in occupied}
+    exclusions = {}
+    supplemental_batches = {}
+    for cohort in discover(report_folder):
+        name = cohort["cohort"]
+        if name == "jecam":
+            continue
+        supplemental_batches[name] = cohort["batches"]
+        eligible, exclusions[name] = test_cohort.exclude_overlap(
+            test_cohort.source_footprints(cohort["sources"]), occupied)
+        exclusions[name].update(item["properties"]["partition_group"] for item in eligible
+                                if item["properties"]["partition_group"] in occupied_groups)
+        eligible = [item for item in eligible
+                    if item["properties"]["partition_group"] not in exclusions[name]]
+        occupied.extend(eligible)
+        occupied_groups.update(item["properties"]["partition_group"] for item in eligible)
+        print(f"{name}: {len(eligible)} test footprints, {len(exclusions[name])} overlap exclusions")
+        sources.extend({**source, "test_cohort": name,
+                        "excluded_test_groups": sorted(exclusions[name])}
+                       for source in cohort["sources"])
+    return sources, exclusions, supplemental_batches
+
+
 def audit(report_folder, output_root):
     sources, overlaps = snapshot(report_folder)
+    supplements, exclusions, supplemental_batches = supplemental_inputs(report_folder, sources)
+    sources = sources + supplements
+    exclusions["jecam"] = overlaps
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
     run = Path(mkdtemp(prefix="external_", dir=root))
@@ -84,15 +117,20 @@ def audit(report_folder, output_root):
         p = region["properties"]
         group = p["partition_group"]
         source = test_cohort.source_role(p["source_dataset"])
-        is_test = source == test_cohort.TEST
+        cohort = p.get("test_cohort") or ("jecam" if source == test_cohort.TEST else None)
+        is_test = cohort is not None
         partition = "test" if is_test else assignment[group]
-        if group not in overlaps and (is_test or partition in {"train", "validation"}):
-            regions.append({**region, "properties": {**p, "partition": partition, "source_dataset": source}})
+        if group not in exclusions.get(cohort, ()) and (is_test or partition in {"train", "validation"}):
+            metadata = {"test_cohort": cohort} if is_test else {}
+            regions.append({**region, "properties": {**p, **metadata,
+                            "partition": partition, "source_dataset": source}})
     eligible_ids = {region["properties"]["fragment_id"] for region in regions}
     quality_rows = [row for row in analysis.quality_rows if row["region_id"] in eligible_ids]
     seasons.write_records(run / "reference_profile.csv", reference_profile(regions, quality_rows))
     overlap_report = run / "jecam_overlap.json"
     save_json(overlap_report, {"excluded_parcels": sorted(overlaps)})
+    save_json(run / "test_overlap_exclusions.json",
+              {name: sorted(groups) for name, groups in exclusions.items()})
     print(f"Excluded {len(overlaps)} overlapping JECAM parcels. Report: {overlap_report}")
     handoff = run / "quality.json"
     save_json(handoff, {
@@ -100,6 +138,7 @@ def audit(report_folder, output_root):
         "composite_rows": [row for row in analysis.composite_rows if row["region_id"] in eligible_ids],
         "pixel_paths": {key: str(path) for key, path in analysis.pixel_rows.paths.items() if key in eligible_ids},
         "sources": sources, "overlap_exclusions": sorted(overlaps),
+        "supplemental_batches": supplemental_batches,
         "mask_loss": "unavailable for legacy archives without pre-mask counts",
     })
     return handoff
@@ -109,7 +148,7 @@ def fixed_windows(regions):
     for region in regions:
         p = region["properties"]
         year = int(p["source_year"])
-        start = date(year, 1, 1)
+        start = date(year, FIXED_START_MONTH, 1)
         yield {
             **p, "field_id": p["partition_group"], "region_id": p["fragment_id"], "season_key": p["fragment_id"] + "|fixed",
             "window_start": start.isoformat(),
@@ -146,6 +185,8 @@ def select(quality_handoff, report_folder):
     )
     aligned = analysis.feature_rows + analysis.estimated_feature_rows
     partitions = {r["properties"]["partition_group"]: r["properties"]["partition"] for r in analysis.regions}
+    test_cohorts = {r["properties"]["fragment_id"]: r["properties"]
+                    for r in analysis.regions if r["properties"]["partition"] == "test"}
     sites = {}
     for region in analysis.regions:
         point = shape(region["geometry"]).representative_point()
@@ -153,11 +194,17 @@ def select(quality_handoff, report_folder):
     for row in fixed + aligned:
         row["site_cell"] = sites[row["region_id"]]
         row["partition"] = partitions[row["partition_group"]]
+        if row["partition"] == "test":
+            reference = test_cohorts[row["region_id"]]
+            row["test_cohort"] = reference.get("test_cohort", "jecam")
+            row["source_dataset"] = reference["source_dataset"]
         if not row.get("field_id"):
             row["field_id"] = row["partition_group"]
     seasons.write_records(run / "fixed_losses.csv", losses)
     handoff = run / "windows.json"
-    save_json(handoff, {"fixed": fixed, "aligned": aligned, "quality": str(quality_handoff)})
+    save_json(handoff, {"fixed": fixed, "aligned": aligned, "quality": str(quality_handoff),
+                        "test_cohorts": ["jecam", *saved.get("supplemental_batches", {})],
+                        "fixed_start_month": FIXED_START_MONTH})
     return handoff
 
 
@@ -211,7 +258,8 @@ def export_features(window_handoff):
             indexed[name].setdefault(pixel_key(row), row)
         indexed[name], exclusions[name] = exclude_shared_development_locations(indexed[name])
     common = indexed["fixed"].keys() & indexed["aligned"].keys()
-    report = {"window_sha256": seasons.file_sha256(path), "quality": data["quality"]}
+    report = {"window_sha256": seasons.file_sha256(path), "quality": data["quality"],
+              "fixed_start_month": data.get("fixed_start_month", 1)}
     for cohort in ("full", "matched"):
         for name, rows in indexed.items():
             selected = rows if cohort == "full" else {key: rows[key] for key in common}
@@ -229,10 +277,11 @@ def export_features(window_handoff):
         coverage[name] = {f"{partition}/{crop}": len(ids)
                           for (partition, crop), ids in sorted(groups.items())}
     save_json(path.parent / "window_coverage.json", coverage)
-    metadata = {key: report[key] for key in ("quality", "window_sha256")}
+    metadata = {key: report[key] for key in ("quality", "window_sha256", "fixed_start_month")}
     for split in ("development", "test"):
         save_json(path.parent / f"features_{split}.json", {
             **metadata,
+            **({"test_cohorts": data.get("test_cohorts", ["jecam"])} if split == "test" else {}),
             "rows": {
                 name: [row for row in rows if (row["partition"] == "test") == (split == "test")]
                 for name, rows in report.items() if name not in metadata

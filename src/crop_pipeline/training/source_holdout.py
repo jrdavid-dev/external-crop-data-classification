@@ -1,4 +1,4 @@
-"""Freeze external Random Forests and score the independent JECAM cohort."""
+"""Freeze external Random Forests and score reserved external test parcels."""
 
 from collections import Counter, defaultdict
 import inspect
@@ -23,7 +23,11 @@ STATUS = "unvalidated_external_parcel_prototype"
 def checked_rows(rows, test):
     sources = {test_cohort.TEST} if test else test_cohort.DEVELOPMENT
     splits = {"test"} if test else {"train", "validation"}
-    if any(row["source_dataset"] not in sources or row["partition"] not in splits for row in rows):
+    if any(row["partition"] not in splits
+           or (row["source_dataset"] not in sources
+               and not (test and row.get("test_cohort") not in (None, "", "jecam")))
+           or (not test and row.get("test_cohort"))
+           for row in rows):
         raise ValueError("Unexpected source or partition in external experiment inputs")
     return rows
 
@@ -78,6 +82,9 @@ def freeze(development_path, *, destination=None):
     path = Path(development_path)
     data = json.loads(path.read_text())
     require_matching(data["rows"])
+    fixed_start_month = data.get("fixed_start_month", 1)
+    if type(fixed_start_month) is not int or not 1 <= fixed_start_month <= 9:
+        raise ValueError("Fixed four-month window must start in January through September")
     columns = experiments.feature_sets()[DESIGN]
     fingerprint = seasons.file_sha256(path)
     destination = Path(destination) if destination is not None else path.parent / ("models_" + fingerprint[:12])
@@ -85,6 +92,7 @@ def freeze(development_path, *, destination=None):
     save_json(destination / "development.json", {
         "feature_sha256": fingerprint, "quality": data["quality"],
         "window_sha256": data["window_sha256"],
+        "fixed_start_month": fixed_start_month,
         "implementation_sha256": seasons.file_sha256(inspect.getfile(experiments)),
     })
     manifests = {}
@@ -127,7 +135,7 @@ def freeze(development_path, *, destination=None):
                 "feature_columns": columns, "class_codes": {crop: i + 1 for i, crop in enumerate(CROPS)},
                 "nodata_code": 0, "imagery": exploratory.inference_imagery_recipe(),
                 "window_convention": "four_calendar_months_eight_half_month_bins_end_exclusive",
-                "window_recipe": {"type": name, "start_month": 1 if name == "fixed" else None},
+                "window_recipe": {"type": name, "start_month": fixed_start_month if name == "fixed" else None},
                 "quality": {"minimum_valid_fraction": .8, "finite_features_required": True,
                             "missing_values": "exclude_no_imputation"},
                 "source_feature_manifest_sha256": seasons.file_sha256(destination / "development.json"),
@@ -157,7 +165,7 @@ def freeze(development_path, *, destination=None):
     return index
 
 
-def score(test_path, model_index, *, destination=None, predictions_directory=None):
+def score(test_path, model_index, *, destination=None, predictions_directory=None, scope="jecam"):
     from crop_pipeline.paoay.predictions import load_classifier
 
     data = json.loads(Path(test_path).read_text())
@@ -172,16 +180,22 @@ def score(test_path, model_index, *, destination=None, predictions_directory=Non
             raise ValueError("Frozen model manifest changed")
         manifest = json.loads(path.read_text())
         provenance = json.loads(Path(manifest["feature_handoff"]).read_text())
-        if any(provenance[key] != data[key] for key in ("quality", "window_sha256")):
+        if (any(provenance[key] != data[key] for key in ("quality", "window_sha256"))
+                or provenance.get("fixed_start_month", 1) != data.get("fixed_start_month", 1)):
             raise ValueError("Test features come from a different experiment snapshot")
-        rows = checked_rows(data["rows"][name], True)
-        if set(manifest["development_groups"]) & {row["partition_group"] for row in rows}:
+        all_rows = checked_rows(data["rows"][name], True)
+        if set(manifest["development_groups"]) & {row["partition_group"] for row in all_rows}:
             raise ValueError("Test parcel overlaps a development group")
+        rows = [row for row in all_rows if scope == "combined"
+                or row.get("test_cohort", "jecam") == scope]
         if not rows:
             scores[name] = {"status": "no_usable_test_rows"}
             continue
         model, recipe = load_classifier(path)
         scores[name], predictions = parcel_metrics(model, rows, recipe["feature_columns"])
+        cohorts = {row["partition_group"]: row.get("test_cohort", "jecam") for row in rows}
+        for row in predictions:
+            row["test_cohort"] = cohorts[row["partition_group"]]
         seasons.write_records(predictions_directory / f"{name}_test_parcels.csv", predictions)
     save_json(destination / "test_scores.json", scores)
     return scores

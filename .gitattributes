@@ -3,3 +3,6 @@
 *.json text eol=lf
 *.ipynb text eol=lf
 *.txt text eol=lf
+
+# Preserve the original CSV audit snapshot, including its CRLF record endings.
+docs/history/repository_python_inventory.csv -text whitespace=cr-at-eol

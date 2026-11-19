@@ -388,7 +388,7 @@ class CropHarvestRunTests(unittest.TestCase):
                     if cell["cell_type"] == "code":
                         source = "".join(cell["source"])
                         source = source.replace('reference_mode = "reuse"', 'reference_mode = "offline"')
-                        source = source.replace('collection_cohort = "cabbage_supplement"',
+                        source = source.replace('collection_cohort = "carrot_potato_supplement"',
                                                 'collection_cohort = "jecam"')
                         exec(source, namespace)
             self.assertEqual(namespace["labels_download"]["status"], "reused")

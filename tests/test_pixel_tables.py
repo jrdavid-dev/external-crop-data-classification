@@ -53,6 +53,33 @@ class PixelTableTests(unittest.TestCase):
                 stream.write(b"corrupt")
             self.assertFalse(pixel_tables.reusable(root, plan))
 
+    def test_relocated_cache_reuses_original_filename_with_exact_contract(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as temporary:
+            original = Path(temporary) / "original"
+            original.mkdir()
+            retriever, plan, frame = self.fixture(original)
+            plan["settings"]["sampling_mask"] = plan["fragment"]["properties"]["sampling_mask"]
+            pixel_tables.write_tables(retriever, {plan["fragment_id"]: plan}, frame, [plan["fragment_id"]])
+            old_root = retriever.imagery_folder / "pixel_tables"
+            image, receipt = pixel_tables.paths(old_root, plan)
+            relocated = original.with_name("relocated")
+            shutil.move(original, relocated)
+            # Apply the same path-only relocation to saved metadata and the plan.
+            source = str(original); target = str(relocated)
+            plan = json.loads(json.dumps(plan).replace(source, target))
+            receipt = relocated / receipt.relative_to(original)
+            receipt.write_text(receipt.read_text().replace(source, target))
+            root = relocated / "imagery/pixel_tables"
+            self.assertEqual(pixel_tables.paths(root, plan)[0].name, image.name)
+            self.assertTrue(pixel_tables.reusable(root, plan, deep=True))
+            self.assertEqual(pixel_tables.pending(SimpleNamespace(imagery_folder=relocated/"imagery"), [plan]), [])
+            changed = copy.deepcopy(plan)
+            changed["settings"]["cloud_probability_threshold"] = 41
+            self.assertFalse(pixel_tables.reusable(root, changed))
+            pixel_tables.paths(root, plan)[0].write_bytes(b"corrupt")
+            self.assertFalse(pixel_tables.reusable(root, plan))
+
     def test_missing_duplicate_and_unselected_rows_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             retriever, plan, frame = self.fixture(Path(temporary))

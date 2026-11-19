@@ -20,7 +20,7 @@ from crop_pipeline.sources import annual, annual_batch
 from crop_pipeline.windows import annual_archive
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / "sen4agrinet_work/pixel_table_benchmark_100"
+DEST = ROOT / "data/pipeline_work/pixel_table_benchmark_100"
 
 
 def compare_first(ee, inputs, require_batch_daily=True):
@@ -128,7 +128,7 @@ def main():
     if not plan_path.exists() and (options.status or options.watch):
         raise ValueError("Start the benchmark first; no existing 100-tile run was found")
     if not plan_path.exists():
-        sources = sorted((ROOT / "sen4agrinet_work/annual_archive/francecrops").glob(
+        sources = sorted((ROOT / "data/pipeline_work/annual_archive/francecrops").glob(
             "runs/full_year_all_parcels/*/collection_plan.json"))
         if not sources:
             raise FileNotFoundError("Prepare FranceCrops references before this benchmark")

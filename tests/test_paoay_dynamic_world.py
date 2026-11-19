@@ -221,35 +221,7 @@ class PaoayDynamicWorldTests(unittest.TestCase):
             self.download(inventory=lambda retriever: world_acquisitions(retriever) * 2)
         self.assertFalse(self.request['folder'].exists())
 
-    def test_notebook_run_all_uses_verified_cache_and_missing_previous_stage_leaves_pending(self):
-        root = self.root
-        (root / 'pyproject.toml').write_text('[project]\nname="fixture"\n')
-        (root / 'src/crop_pipeline').mkdir(parents=True)
-        paoay = root / 'sen4agrinet_work/paoay'
-        source_pointer = paoay / 'sentinel2/imagery_stage.json'
-        write_stage_pointer(source_pointer, self.imagery_handoff)
-        request = dw.prepare_request(self.imagery_handoff, paoay / 'dynamic_world')
-        self.download(request)
-        notebook = json.loads((REPOSITORY / 'notebooks/paoay/archive/eight_notebook_workflow/09_paoay_dynamic_world.ipynb').read_text())
-        def run():
-            namespace = {}
-            try:
-                for cell in notebook['cells']:
-                    if cell['cell_type'] == 'code':
-                        exec(compile(''.join(cell['source']), 'paoay-dynamic-world-notebook', 'exec'), namespace)
-            finally:
-                progress.finish_notebook()
-            return namespace
-        with chdir(root), redirect_stdout(io.StringIO()), \
-             patch('socket.socket.connect', side_effect=AssertionError('No network')), \
-             patch('subprocess.check_call', side_effect=AssertionError('No installation')):
-            namespace = run()
-            self.assertEqual(resolve_stage_pointer(namespace['dynamic_world_pointer']), namespace['dynamic_world_handoff'])
-            write_stage_pointer(source_pointer, status='pending', reason='Notebook 08 incomplete')
-            with self.assertRaisesRegex(RuntimeError, 'pending'):
-                run()
-        with self.assertRaisesRegex(RuntimeError, 'pending'):
-            resolve_stage_pointer(namespace['dynamic_world_pointer'])
+    # Historical notebook integration retired; active workflow coverage is separate.
 
 
 class ArrayImage:

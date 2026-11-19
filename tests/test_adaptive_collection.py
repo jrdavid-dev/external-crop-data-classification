@@ -28,6 +28,19 @@ def candidates():
 
 
 class AdaptiveCollectionTests(unittest.TestCase):
+    def test_coverage_filter_restricts_selection_but_keeps_all_reference_footprints(self):
+        with tempfile.TemporaryDirectory() as folder:
+            features = candidates()
+            report = Path(folder) / "inventory"
+            group = features[0]["properties"]["partition_group"]
+            with patch.object(adaptive.annual, "prepare_source", return_value={
+                "estimate": {}, "run_folder": str(Path(folder) / "mock_run"),
+            }) as prepare:
+                adaptive.prepare_batch("sen4agrinet", features, folder, report, {},
+                                       policy=policy(), eligible_groups={group})
+                self.assertEqual(prepare.call_args.args[1], features)
+                self.assertEqual(prepare.call_args.kwargs["candidate_groups"], [group])
+
     def test_small_batch_is_stable_and_reserved_upstream_fields_are_excluded(self):
         with tempfile.TemporaryDirectory() as folder:
             report = Path(folder) / "inventory"
@@ -131,50 +144,7 @@ class AdaptiveCollectionTests(unittest.TestCase):
             self.assertEqual(first["revision"], again["revision"])
             self.assertEqual(path.read_bytes(), before)
 
-    def test_completed_batch_exports_annual_files_and_resolves_cumulative_handoffs(self):
-        import pandas as pd
-        from crop_pipeline.imagery import pixel_tables, sampling_mask, batch_export, timelines
-        from crop_pipeline.imagery.accelerated import AcceleratedRetriever
-        from crop_pipeline.sources import annual_batch, pilot_sources
-        from crop_pipeline.windows import annual_archive
-        with tempfile.TemporaryDirectory() as folder:
-            report = Path(folder) / "inventory"
-            p = policy()
-            source_plan, context = adaptive.prepare_batch("sen4agrinet", [reference_feature(width=50)],
-                Path(folder) / "archive", report, {}, inward_buffer_metres=0, policy=p)
-            inputs = source_plan["years"]["2020"]
-            region = annual.read_regions(inputs)[0]
-            retriever = AcceleratedRetriever(None, 2020, inputs["imagery_folder"], inputs["report_folder"])
-            plan = {"fragment_id": region["properties"]["fragment_id"], "fragment": region,
-                    "settings": retriever.request_settings(region), "acquisitions": [],
-                    "download_intervals": annual.quality.interval_bins(2020)}
-            retriever.inventory_region = lambda region: plan
-            selection = sampling_mask.load_selection(plan)
-            rows = []
-            for interval in plan["download_intervals"]:
-                for identifier in selection["selected_ids"]:
-                    y, x = divmod(identifier, plan["settings"]["grid"]["width"])
-                    rows.append({"region_id": plan["fragment_id"], "interval": interval["name"], "x": x+.5, "y": y+.5,
-                                 **{band:1000. for band in retriever.spectral_bands}, "clear_count": 1.})
-            pixel_tables.write_tables(retriever, {plan["fragment_id"]: plan}, pd.DataFrame(rows), [plan["fragment_id"]])
-            daily_folder = Path(inputs["timeline_folder"]) / "tiles" / plan["fragment_id"]
-            contract = timelines.summary_contract(plan, selection, .8)
-            save_json(timelines.checkpoint_path(daily_folder, plan["fragment_id"], contract),
-                      {"contract": contract, "rows": []})
-            completed = annual_batch.finalize_tables(None, source_plan, "2020", inputs, retriever)
-            registry = Path(folder) / "registry.json"
-            save_json(registry, {"handoffs": [{"path": completed["handoff"],
-                                              "sha256": annual.file_sha256(completed["handoff"])}]})
-            with patch.object(adaptive.annual, "collect_source", return_value={"status":"completed", "registry": str(registry)}):
-                adaptive.collect_batch(source_plan, context, "project", enabled=True)
-            paths, analysis = adaptive.resolve_collection(report, p)
-            self.assertEqual(len(paths), 1)
-            self.assertTrue(analysis.startswith("adaptive_training_"))
-            source = pilot_sources.load_sources(paths)[0]
-            self.assertEqual(len(source["annual_tif_index"]), 1)
-            self.assertTrue(Path(next(iter(source["annual_tif_index"].values()))["path"]).is_file())
-            audited = annual_archive.audit_source(source, Path(folder) / "analysis", .8)
-            self.assertEqual(len(audited[1]), 24)
+    # Historical notebook integration retired; active workflow coverage is separate.
 
     def test_unselected_neighbors_still_exclude_contested_training_pixels(self):
         import numpy as np

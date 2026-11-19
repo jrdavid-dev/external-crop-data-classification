@@ -56,7 +56,7 @@ def physical_key(source, properties):
 
 def prepare_batch(source, features, archive_root, report_folder, provenance,
                   inward_buffer_metres=10, policy=None, batch_label=None, round_parcels_per_crop=None, candidate_crops=None,
-                  count_existing_round=True, require_full_batch=False):
+                  count_existing_round=True, require_full_batch=False, eligible_groups=None):
     """Select references before rasterization. Re-running a round selects the same parcels."""
     policy = policy or DEFAULT_POLICY
     candidate_crops = set(annual.TARGET_CROPS if candidate_crops is None else candidate_crops)
@@ -90,6 +90,8 @@ def prepare_batch(source, features, archive_root, report_folder, provenance,
         candidates = defaultdict(lambda: defaultdict(list))
         unique_physical = set()
         for group in sorted(groups, key=lambda key: sampling.stable_rank(key, policy["seed"])):
+            if eligible_groups is not None and group not in eligible_groups:
+                continue
             p = groups[group][0]["properties"]
             if len({f["properties"]["crop"] for f in groups[group]}) != 1:
                 continue

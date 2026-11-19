@@ -31,14 +31,18 @@ from crop_pipeline.sources import annual_identity, collection_pass, preparation_
 from crop_pipeline.windows.seasons import file_sha256
 
 COLLECTION_NAME = "full_year_all_parcels"
-SOURCE_NAMES = ("sen4agrinet", "francecrops", "cropharvest")
+LEGACY_SOURCE_NAMES = ("sen4agrinet", "francecrops", "cropharvest")
+SOURCE_NAMES = (*LEGACY_SOURCE_NAMES, "california_dwr")
 TARGET_CROPS = ("carrot", "cabbage", "potato")
 
 
-def archive_root(settings, report_folder):
+def archive_root(settings, report_folder, *, repository_root=None):
     """An external SSD can be selected without moving reference data or old runs."""
     default = Path(report_folder).parent / "annual_archive"
-    return Path(settings.get("annual_archive_root", default)).expanduser().resolve()
+    path = Path(settings.get("annual_archive_root", default)).expanduser()
+    if repository_root is not None and not path.is_absolute():
+        path = Path(repository_root) / path
+    return path.resolve()
 
 
 def load_sen4agrinet_references(field_root):
@@ -283,7 +287,7 @@ def prepare_source(
     candidate_groups=None,
 ):
     """Prepare masks and exact raster estimates locally; never query Earth Engine."""
-    if source_name not in (*SOURCE_NAMES, "eurocrops"):
+    if source_name not in (*SOURCE_NAMES, "eurocrops", "denmark_marker"):
         raise ValueError("Unknown annual source family")
     if not 1 <= tile_pixels <= 256 or inward_buffer_metres < 0:
         raise ValueError("Use tiles of 1–256 pixels and a nonnegative inward buffer.")
@@ -708,7 +712,7 @@ def register_source(report_folder, plan, handoffs):
 def resolve_collection(report_folder):
     """Require all three completed sources and derive a separate, content-specific analysis."""
     states = [
-        collection_pass.state_path(report_folder, source) for source in SOURCE_NAMES
+        collection_pass.state_path(report_folder, source) for source in LEGACY_SOURCE_NAMES
     ]
     pending = [
         str(path)
@@ -720,7 +724,7 @@ def resolve_collection(report_folder):
             "Full-year source collections are still pending; finish or retry them before window selection: "
             + ", ".join(pending)
         )
-    registry_paths = [registry_path(report_folder, source) for source in SOURCE_NAMES]
+    registry_paths = [registry_path(report_folder, source) for source in LEGACY_SOURCE_NAMES]
     missing = [str(path) for path in registry_paths if not path.is_file()]
     if missing:
         raise FileNotFoundError(
@@ -728,7 +732,7 @@ def resolve_collection(report_folder):
         )
     paths = [
         path
-        for source, registry in zip(SOURCE_NAMES, registry_paths)
+        for source, registry in zip(LEGACY_SOURCE_NAMES, registry_paths)
         for path in validate_bundle(source, registry)
     ]
     digest = hashlib.sha256(

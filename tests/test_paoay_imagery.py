@@ -268,41 +268,7 @@ class PaoayImageryTests(unittest.TestCase):
             imagery.collect(self.request, 'download_missing', object())
         self.assertEqual(json.loads(inventory.read_text()), saved)
 
-    def test_notebook_run_all_from_verified_local_cache_and_pending_on_missing(self):
-        root = self.root
-        (root / 'pyproject.toml').write_text('[project]\nname="fixture"\n')
-        (root / 'src/crop_pipeline').mkdir(parents=True)
-        paoay = root / 'sen4agrinet_work/paoay'
-        write_stage_pointer(paoay / 'references/reference_stage.json', self.reference)
-        request = imagery.prepare_request(self.reference, '2024-01-01', paoay / 'sentinel2')
-        self.download(request)
-        notebook = json.loads((REPOSITORY / 'notebooks/paoay/archive/eight_notebook_workflow/08_paoay_sentinel2.ipynb').read_text())
-        namespace = {}
-        with chdir(root), redirect_stdout(io.StringIO()), \
-             patch('socket.socket.connect', side_effect=AssertionError('No network')), \
-             patch('subprocess.check_call', side_effect=AssertionError('No installation')):
-            try:
-                for cell in notebook['cells']:
-                    if cell['cell_type'] == 'code':
-                        exec(compile(''.join(cell['source']), 'paoay-imagery-notebook', 'exec'), namespace)
-            finally:
-                progress.finish_notebook()
-        self.assertEqual(resolve_stage_pointer(namespace['imagery_pointer']), namespace['imagery_handoff'])
-        # A new missing period must not leave the previous successful stage selected.
-        namespace = {}
-        with chdir(root), redirect_stdout(io.StringIO()):
-            try:
-                with self.assertRaisesRegex(FileNotFoundError, 'missing'):
-                    for cell in notebook['cells']:
-                        if cell['cell_type'] == 'code':
-                            exec(compile(''.join(cell['source']), 'paoay-imagery-notebook', 'exec'), namespace)
-                            if 'period_start' in namespace and 'request' not in namespace:
-                                namespace['period_start'] = '2025-08-01'
-                                namespace['imagery_mode'] = 'reuse'  # Exercise the explicit local-only option.
-            finally:
-                progress.finish_notebook()
-        with self.assertRaisesRegex(RuntimeError, 'pending'):
-            resolve_stage_pointer(namespace['imagery_pointer'])
+    # Historical notebook integration retired; active workflow coverage is separate.
 
 
 if __name__ == '__main__':

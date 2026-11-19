@@ -209,11 +209,11 @@ class SequentialNotebookTests(unittest.TestCase):
             self.assertFalse(namespace["dataset_folder"].exists())
             plan = namespace["annual_plan"]
             self.assertEqual(namespace["candidate_parcels_per_crop"], 50)
-            # Select only 50 of the 120 eligible potato parcels.
+            # Select only 50 of the 120 eligible carrot parcels.
             self.assertEqual(plan["estimate"]["parcels"], 50)
             self.assertEqual(
                 plan["years"]["2020"]["pixels_per_crop"],
-                {"potato": 5000},
+                {"carrot": 5000},
             )
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertFalse(namespace["run_satellite_collection"])

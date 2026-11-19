@@ -57,3 +57,7 @@ __pycache__/
 *.h5
 *.hdf5
 *.keras
+
+# Retired local storage names (data now lives under data/pipeline_work)
+/sen4agrinet_work
+/notebooks/data_collection/sen4agrinet_work

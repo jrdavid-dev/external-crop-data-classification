@@ -12,9 +12,18 @@ from shapely.ops import transform
 SOURCE = "eurocrops"
 YEAR = 2021
 CARROT_PRODUCTION_CODES = {"2717", "2783", "2785"}
+CABBAGE_PRODUCTION_CODES = {"2759", "2761", "2789"}
 
 
 def load_carrots(path):
+    return _load_crop(path, "carrot", CARROT_PRODUCTION_CODES)
+
+
+def load_cabbage(path):
+    return _load_crop(path, "cabbage", CABBAGE_PRODUCTION_CODES)
+
+
+def _load_crop(path, crop, production_codes):
     path = Path(path)
     if path.name != "NL_2021.parquet":
         raise ValueError("Provide the Dutch EuroCrops NL_2021.parquet file")
@@ -35,7 +44,7 @@ def load_carrots(path):
             if parcel in seen:
                 rejected.add(parcel)
             seen.add(parcel)
-            if code not in CARROT_PRODUCTION_CODES:
+            if code not in production_codes:
                 continue
             geometry = from_wkb(row["geometry"], on_invalid="ignore")
             if geometry is None or geometry.is_empty or not geometry.is_valid or geometry.geom_type not in {"Polygon", "MultiPolygon"}:
@@ -51,7 +60,7 @@ def load_carrots(path):
                 "type": "Feature", "geometry": mapping(geometry),
                 "properties": {
                     "fragment_id": group, "partition_group": group, "parcel_id": parcel,
-                    "crop": "carrot", "country": "NL", "year": YEAR,
+                    "crop": crop, "country": "NL", "year": YEAR,
                     "source_crs": "EPSG:32631", "source_split": "train",
                     "source_class_code": code, "label_status": "reported",
                     "label_evidence": f"EuroCrops Netherlands {YEAR} declared production code {code}",

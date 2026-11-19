@@ -221,34 +221,7 @@ class FeatureHandoffTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "bilinear"):
                 features.export_feature_handoff(source, Path(temporary) / "rejected")
 
-    def test_pending_formal_bundle_still_stops_production_training(self):
-        from contextlib import chdir
-        root = Path(__file__).resolve().parents[1]
-        with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)
-            report = folder / "reports/inventory"
-            season_folder = report.parent / "analysis/fixture/seasons"
-            handoff = export_fixture(folder / "formal", frozen=False)
-            destination = season_folder / "feature_input"
-            shutil.copytree(handoff.parent, destination)
-            (folder / "settings.local.json").write_text(json.dumps({"report_root": str(report)}))
-            notebook = json.loads((root / "notebooks/archive/06_model_training.ipynb").read_text())
-            cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
-            namespace = {}
-            with (
-                chdir(folder),
-                patch("crop_pipeline.sources.pilot_sources.resolve_collection", return_value=([], "fixture")),
-                patch("crop_pipeline.training.exploratory.run_experiments", side_effect=AssertionError("No pilot fit")),
-                patch("crop_pipeline.training.earth_engine.train_feature_experiments", side_effect=AssertionError("No production fit")),
-            ):
-                exec("".join(cells[0]["source"]), namespace)
-                namespace["training_mode"] = "production"
-                namespace["show_figures"] = False
-                for cell in cells[1:]:
-                    exec("".join(cell["source"]), namespace)
-            self.assertEqual(namespace["training_coverage"]["training_status"], "pending_inputs")
-            self.assertFalse(namespace["comparison_metrics"])
-            self.assertFalse(namespace["selected_model_manifest"])
+    # Historical notebook integration retired; active workflow coverage is separate.
 
 
 class ExperimentTrainingTests(unittest.TestCase):

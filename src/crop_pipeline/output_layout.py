@@ -22,7 +22,7 @@ def layout_plan(repository):
     def local(value):
         return (repository / Path(value).expanduser()).resolve()
 
-    work = local(settings.get("report_root", "sen4agrinet_work/inventory")).parent
+    work = local(settings.get("report_root", "data/pipeline_work/inventory")).parent
     archive = local(settings.get("annual_archive_root", str(work / "annual_archive")))
     root = repository / "pipeline_outputs"
     links = {}
@@ -36,7 +36,7 @@ def layout_plan(repository):
                 raise ValueError(f"Ambiguous output destination: {destination}")
             links[destination] = target
 
-    link("README.md", repository / "docs/output_layout.md")
+    link("README.md", repository / "docs/storage_layout.md")
     for source in SOURCES:
         for name in ("references", "imagery", "state"):
             directories.add(root / "collection" / source / name)
@@ -77,7 +77,8 @@ def layout_plan(repository):
         for item in sorted(run.iterdir()):
             if not item.is_file():
                 continue
-            section = ("features" if item.name.startswith("features") or item.name in {"usable_samples.csv", "preprocessing_report.md"} else
+            section = ("features" if item.name.startswith("features") or item.name in {
+                           "usable_samples.csv", "preprocessing_report.md", "test_population_coverage.csv"} else
                        "windows" if item.name.startswith(("windows", "window_")) or item.name == "fixed_losses.csv"
                        else "quality")
             link(f"{prefix}/{section}/{item.name}", item)
@@ -117,10 +118,20 @@ def refresh(repository, verify=False):
     root, links, directories = layout_plan(repository)
     manifest = root / "layout_manifest.json"
     # Preflight the entire plan before creating anything. Never adopt/replace user files.
-    if manifest.exists():
-        if json.loads(manifest.read_text()).get("kind") != "linked_pipeline_output_layout":
-            raise FileExistsError(f"Unrecognized layout manifest: {manifest}")
+    previous = json.loads(manifest.read_text()) if manifest.exists() else {}
+    if manifest.exists() and previous.get("kind") != "linked_pipeline_output_layout":
+        raise FileExistsError(f"Unrecognized layout manifest: {manifest}")
+    # The storage guide absorbed the old output guide. Migrate only our recorded
+    # README link; unrelated links and regular user files remain protected.
+    readme = root / "README.md"
+    retired_guide = Path(repository).resolve() / "docs/output_layout.md"
+    recorded = previous.get("links", {}).get("README.md")
+    redirect_readme = (recorded is not None and readme in links and readme.is_symlink()
+                       and (root / recorded).resolve() == retired_guide
+                       and readme.resolve() == retired_guide)
     for destination, target in links.items():
+        if destination == readme and redirect_readme:
+            continue
         if destination.is_symlink() and destination.resolve() == target.resolve():
             continue
         if os.path.lexists(destination):
@@ -136,6 +147,10 @@ def refresh(repository, verify=False):
         directory.mkdir(parents=True, exist_ok=True)
     for destination, target in links.items():
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination == readme and redirect_readme:
+            if not destination.is_symlink() or destination.resolve() != retired_guide:
+                raise FileExistsError(f"Output changed during refresh: {destination}")
+            destination.unlink()
         if not destination.is_symlink():
             try:
                 destination.symlink_to(os.path.relpath(target, destination.parent), target_is_directory=target.is_dir())

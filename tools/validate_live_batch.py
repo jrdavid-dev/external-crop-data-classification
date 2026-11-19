@@ -16,7 +16,7 @@ from crop_pipeline.imagery import batch_export as batch, timelines
 from crop_pipeline.imagery.retrieval import SatelliteRetriever
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / "sen4agrinet_work/live_batch_validation"
+DEST = ROOT / "data/pipeline_work/live_batch_validation"
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
     if plan_path.exists():
         plan = json.loads(plan_path.read_text())
     else:
-        references = sorted((ROOT / "sen4agrinet_work/annual_archive/francecrops").glob(
+        references = sorted((ROOT / "data/pipeline_work/annual_archive/francecrops").glob(
             "runs/full_year_all_parcels/*/fields/2022/sampled_download_regions.geojson"))
         if not references:
             raise FileNotFoundError("Prepare FranceCrops 2022 references first")

@@ -1,6 +1,6 @@
 # Paoay application
 
-The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
+Paoay is deferred for the current external experiment. The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
 
 ## Run order
 
@@ -13,9 +13,9 @@ The [external classification workflow](workflow.md) runs in its own folders. The
 | [05 Reference and field review](../notebooks/paoay/05_reference_field_review.ipynb) | Summarize notes, freeze the preliminary map and prepare January records |
 | [06 Land activity](../notebooks/paoay/06_land_activity.ipynb) | Optional: map 2019–2026 active cropland, check it against NAMRIA land use and split the crop map by it |
 
-Use the existing project kernel; **Restart Kernel → Run All** for each notebook in order. Nothing runs just by opening a notebook. The original eight entry points, outputs and metadata remain in the [checksum-verified archive](../notebooks/paoay/archive/eight_notebook_workflow/README.md). Do not run archived entry points in the active sequence.
+Use the existing project kernel; **Restart Kernel → Run All** for each notebook in order. Nothing runs just by opening a notebook. The original eight entry points, outputs and metadata remain in the [checksum-verified archive](https://github.com/jrdavid-dev/external-crop-data-classification/tree/c1fe80c/notebooks/paoay/archive/eight_notebook_workflow/README.md). Do not run archived entry points in the active sequence.
 
-## 07: references
+## 01: references
 
 Put `00 - Region of Interest-2.kmz` and `Crop Area.kmz` in ignored `data/paoay/`, or configure `paoay_kmz_root` in local settings. The default boundary name is `Region of Interest`; override with `paoay_roi_name` if needed. List any context-only polygons, such as a barangay or other administrative boundary, by exact name in `paoay_context_names`. They stay in the snapshot with role `Context boundary` but are not reference areas: they do not widen the map extent and are left out of overlap, screening, land-activity, suitability and field-check tables. An unknown name stops the run. The current inputs have seven reference areas. Geometry, holes, notes and overlaps are preserved; invalid areas remain flagged rather than repaired.
 
@@ -27,7 +27,7 @@ A separate `<bundle id>_suitability.csv` in `references/reviews/` records manual
 
 Everything starts unreviewed. These entries do not assign crop labels, establish ground truth or exclude pixels.
 
-## 08: satellite inputs
+## 02: satellite inputs
 
 The default **January–April 2024** window ends May 1 exclusive and remains a historical baseline. Clear imagery does not establish compatible growth stages. A later January visit cannot directly verify 2024 occupancy without historical evidence. `period_purpose` records intent in the run log; changing dates selects a separate request. Future/incomplete windows are rejected.
 
@@ -37,11 +37,11 @@ Sentinel-2 uses the training recipe: SR Harmonized, exact cloud-probability matc
 
 [Dynamic World](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_DYNAMICWORLD_V1) supplies broad-cover predictions, not crop species or ground truth. Preserve its masks, nine probabilities, daily observation counts, attribution and receipts. It inherits the exact Sentinel-2 dates/grid; coverage can differ. Empty bins stay explicit.
 
-## 09: fixed model
+## 03: fixed model
 
-Use the unique selected-model package or set an explicit manifest; nothing is selected by age or local prediction scores. Retain notebook 05’s feature handoff for formula provenance. Keep exact feature order: 72 interval, 48 temporal-shape or 120 combined predictors. Existing NDVI/NDRE/NDMI/SAVI formulas and temporal definitions are shared with training.
+Use the unique selected-model package or set an explicit manifest; nothing is selected by age or local prediction scores. Retain the model’s feature provenance handoff for formula provenance. Keep exact feature order: 72 interval, 48 temporal-shape or 120 combined predictors. Existing NDVI/NDRE/NDMI/SAVI formulas and temporal definitions are shared with training.
 
-All eight bins must be complete and features finite. The saved coverage threshold (currently 0.80) applies to each composite over the whole study ROI; no imputation or relaxed thresholds. Zero usable rows leave stages pending and retain audits. For cache compatibility, 09 builds/reuses the existing guidance dependency internally; it never filters model inputs. Its illustrative rules remain two dates, top probability ≥0.60 and margin ≥0.10.
+All eight bins must be complete and features finite. The saved coverage threshold (currently 0.80) applies to each composite over the whole study ROI; no imputation or relaxed thresholds. Zero usable rows leave stages pending and retain audits. For cache compatibility, notebook 03 builds/reuses the existing guidance dependency internally; it never filters model inputs. Its illustrative rules remain two dates, top probability ≥0.60 and margin ≥0.10.
 
 Apply the fitted classifier without refitting. Map probabilities by classifier class names, not assumed order. Raw output codes are carrot=1, cabbage=2, potato=3. These are forced choices even on other crops/noncrop surfaces. Their areas are not verified planted area. Preserve raw probabilities before screening.
 
@@ -49,7 +49,7 @@ Notebook 03 then checks **model applicability** (Meyer and Pebesma 2021, doi:10.
 
 Notebook 03 also **compares seasonal curves**. For each index (NDVI, NDRE, NDMI, SAVI) it saves the median and interquartile range per half-month bin for the training pixels of each crop and for study-area groups: all pixels, pixels inside reference areas, and pixels by raw prediction. The comparison table gives each curve's peak bin, amplitude and mean, their correlation, and the bin shift (up to three bins, at least five shared bins) with the lowest RMSE between median curves; a positive shift means the study area runs later than training. Outputs are in `season_shift/` with a `season_shift_stage.json` pointer. This describes the mismatch only: the model, window and predictions are unchanged, a four-month window cannot reveal a shift longer than about six weeks, and the study-area groups are not labelled single-crop fields. Groups with fewer than 20 pixels are omitted.
 
-## 10: maps and screening
+## 04: maps and screening
 
 The primary map covers only the **union of valid reference polygons within the study boundary**. Holes remain outside; overlaps count once overall. Set `paoay_map_extent` to `"study_boundary"` in local settings to map every pixel inside the study boundary instead (default `"reference_areas"`). A whole-boundary map still forces carrot, cabbage or potato on forest, built-up land and other crops; use the screening flags and notebook 06 land activity to review those pixels. Per-boundary tables and the season comparison always use the reference areas. Outside pixels are masked, not Unknown or missing. Keep carrot/cabbage/potato predictions with top probability ≥0.60 and positive margin ≥0.10; weaker/tied scores become Unknown crop type. Missing inputs stay separate. Unknown is not other crops; unmodelled species may still receive confident target labels.
 
@@ -65,17 +65,17 @@ Flags can overlap; do not sum them as exclusive areas. Bare early and green late
 
 The separate conservative seven-class Dynamic World context maps remain available. Other cultivated vegetation is unassessed; water/grass/flooded vegetation/snow remain out-of-scheme cover. Period context needs at least four supported bins and group agreement. Crop identity still uses the whole four-month window; context maps are not dated crop observations.
 
-## 11: reference and field review
+## 05: reference and field review
 
 Review per-boundary predictions, overlapping screening flags, suitability and original KMZ notes. Optional calendar entries retain explicit source excerpts and month lists; blank entries stay unreviewed. Calendar overlap is not correctness. Mixed/seedling areas and unmodelled crops are not promoted to verified crop-field labels.
 
 Notebook 05 freezes a preliminary-map TIFF and snapshots of the reference/calendar/field records in a new immutable review bundle. Editable `observations.csv` and `corrections.csv` live separately and are created once. Record actual dates, GPS, crop/cover, growth stage, evidence and observer. A point does not label a whole polygon. January observations and historical evidence remain distinct.
 
-Follow the [field-check guide](paoay_field_checks.md) for columns and evidence rules. Rerunning after edits creates a new report; old snapshots remain readable. Correction proposals do not alter the model map. A later corrected raster needs compatible dates and explicit spatial scope. Neither corrected-map agreement nor these convenience records produce an accuracy score. Independent evaluation needs a separate evidence/sampling protocol.
+Follow [field observations](#field-observations) for columns and evidence rules. Rerunning after edits creates a new report; old snapshots remain readable. Correction proposals do not alter the model map. A later corrected raster needs compatible dates and explicit spatial scope. Neither corrected-map agreement nor these convenience records produce an accuracy score. Independent evaluation needs a separate evidence/sampling protocol.
 
-## 12: land activity
+## 06: land activity
 
-Notebook 06 ports the land-activity analysis from the archived Atok cropping-pattern notebook ([archive/14](../notebooks/archive/14_atok_unsupervised.ipynb)). It reads the 2019–2026 Cloud Score+ half-month composites from `atok_imagery_root` (`YEAR/Sentinel2_CSPlus_YEAR_MM_Hh.tif`, B3/B4/B5/B8/B11) on the crop map's 10 m grid; a composite on a different CRS, resolution or band order stops the run.
+Notebook 06 ports the land-activity analysis from the archived Atok cropping-pattern notebook ([archive/14](https://github.com/jrdavid-dev/external-crop-data-classification/tree/c1fe80c/notebooks/archive/14_atok_unsupervised.ipynb)). It reads the 2019–2026 Cloud Score+ half-month composites from `atok_imagery_root` (`YEAR/Sentinel2_CSPlus_YEAR_MM_Hh.tif`, B3/B4/B5/B8/B11) on the crop map's 10 m grid; a composite on a different CRS, resolution or band order stops the run.
 
 Pixels inside the study boundary with at least 60 clear half-months get eight summaries (NDVI percentiles, cycles per year, mean cycle amplitude, bare share, median NDMI and B11). A stable K-means (K 2–8 by silhouette, seed and subsample ARI ≥ 0.8) groups them, and fixed rules name the clusters active cropland, mixed / low activity, perennial vegetation or bare / built. Pixels with too few clear observations stay separate.
 
@@ -85,8 +85,58 @@ Section 7 looks at other months for future research. For the same composites it 
 
 ## Preservation and outputs
 
-Outputs remain under the parent of `report_root`, normally `sen4agrinet_work/paoay/`: `references`, `sentinel2`, `dynamic_world`, `land_cover`, `features`, `predictions`, `applicability`, `season_shift`, `crop_baseline`, `screening`, `maps`, `review` and `field_review`.
+Outputs remain under the parent of `report_root`, normally `data/pipeline_work/paoay/`: `references`, `sentinel2`, `dynamic_world`, `land_cover`, `features`, `predictions`, `applicability`, `season_shift`, `crop_baseline`, `screening`, `maps`, `review` and `field_review`.
 
-Existing stage-pointer names remain compatible; 10 adds crop-baseline/screening pointers and 11 adds `field_review/field_review_stage.json`. Changed inputs, rules or code select new keyed bundles. Failed stages remain pending, preventing silent fallback to older successes. Existing imagery, archives, model packages, partitions, jobs, mutable reviews and historical outputs stay intact. Local settings, raw/generated files and field records remain outside Git.
+Existing stage-pointer names remain compatible; 04 adds crop-baseline/screening pointers and 05 adds `field_review/field_review_stage.json`. Changed inputs, rules or code select new keyed bundles. Failed stages remain pending, preventing silent fallback to older successes. Existing imagery, archives, model packages, partitions, jobs, mutable reviews and historical outputs stay intact. Local settings, raw/generated files and field records remain outside Git.
 
-TODOs only: pooled other-crop training, and individual-crop training with grouped reporting. Neither method is trained or launched. Old experiments remain notebooks 12–15.
+TODOs only: pooled other-crop training, and individual-crop training with grouped reporting. Neither method is trained or launched. Old experiments are retained through the pinned historical Git reference, not as active notebook continuations.
+
+## Field observations
+
+Notebook 05 freezes the preliminary map and creates editable records under `paoay/field_review/records/<reference bundle id>/`. Reruns preserve edits and save new immutable reports. No observations, corrected maps or accuracy scores are invented.
+
+### Before January
+
+Run 01 → 02 → 03 → 04 → 05. Keep the map dates visible. The current baseline is January–April 2024; a later January visit does not directly verify those crops. For historical comparisons, obtain farmer recall or dated records covering the relevant period.
+
+Use `field_check_plan.csv` for boundary names, notes and suitability. It omits predictions to help avoid observation bias. Visit a practical mix of accepted and uncertain areas, not only apparent errors. This checklist is not a statistical accuracy-sampling design.
+
+### During the visit
+
+Add rows to `observations.csv`; keep a unique `observation_id` for each observation. Multiple observations per boundary are allowed. Record the actual observation before checking the prediction where practical.
+
+| Fields | What to enter |
+| --- | --- |
+| `observation_id`, `reference_id` | Your unique observation ID and the existing boundary ID |
+| `observation_date` | Actual YYYY-MM-DD; no visit year is assumed |
+| `latitude`, `longitude` | Both WGS84 decimal-degree coordinates, or both blank; located points must be inside the named polygon |
+| `observed_crop` | Actual crop name, including lettuce/radish/other species; required when surface is crop |
+| `surface_state` | `crop`, `bare`, `built`, `water`, `woody`, `mixed` or `unknown` |
+| `crop_stage` | Useful description such as seedlings, growing, recently harvested |
+| `evidence_type` | `field_visit`, `farmer_recall` or `historical_record` |
+| `evidence_reference`, `observer` | Photo/document/interview reference and observer; both required |
+| `evidence_start`, `evidence_end` | Optional inclusive dates describing the evidence period; enter both or neither |
+| `review_status` | `unreviewed`, `context_only` or `supports_map_window` |
+| `notes` | Rotations, mixtures, GPS limitations, source reliability and other caveats |
+
+Blank template rows are ignored. A field visit documents its visit date; record historical accounts separately. `supports_map_window` requires explicit evidence dates covering the entire imagery window. It remains a manual evidence claim, not proof of correctness. One GPS point never establishes a whole-polygon crop label. Invalid/outside/tiny geometries remain unsuitable for automatic pixel comparisons.
+
+### After the visit
+
+Rerun 05. It snapshots your records and reports whether their evidence periods overlap the map. Located observations show the original prediction for the corresponding raster cell in `observation_review.csv`. This is point/context review, not an automatic correctness score or a confusion matrix.
+
+Keep correction proposals in `corrections.csv`:
+
+| Field | Meaning |
+| --- | --- |
+| `correction_id` | Unique proposal ID |
+| `observation_id` | Existing observation supporting the proposal |
+| `proposed_label` | Actual proposed crop or cover, including unmodelled classes |
+| `decision` | `proposed`, `reviewed` or `rejected` |
+| `reason` | Evidence and explanation; note any temporal mismatch |
+
+These proposals never rewrite the model raster, relabel training data or imply whole-polygon corrections. To create a corrected raster later, specify the affected geometry/pixels and compatible dates explicitly, and save a separate product. Agreement between corrections and their source observations is not model accuracy. Quantitative local evaluation needs a separate sampling and evidence protocol applied to frozen original predictions.
+
+### Saved review
+
+Each report bundle contains the frozen preliminary TIFF, per-boundary crop and screening tables, original calendar context, field checklist and immutable copies of all editable records. Old reports remain readable after source CSV edits. Keep photographs/documents separately and retain stable references to them. All local records and generated artifacts remain outside Git.

@@ -1,4 +1,4 @@
-"""Transfer completed Notebook 04 batches for local auditing without Earth Engine."""
+"""Transfer completed collection batches for local auditing without Earth Engine."""
 
 import json
 import shutil
@@ -15,8 +15,8 @@ def read(path):
     return json.loads(path.read_text())
 
 
-def campaign_rounds(report_root, source=test_cohort.TEST):
-    policy = test_cohort.TEST_POLICY if source == test_cohort.TEST else None
+def campaign_rounds(report_root, source=test_cohort.TEST, policy=None):
+    policy = policy or (test_cohort.TEST_POLICY if source == test_cohort.TEST else None)
     return adaptive.root(report_root, policy) / "rounds"
 
 
@@ -91,13 +91,13 @@ def export_year(source, staging, number):
     return path.as_posix()
 
 
-def export_completed(report_root, destination, source=test_cohort.TEST):
+def export_completed(report_root, destination, source=test_cohort.TEST, *, policy=None):
     """Write one portable subfolder per completed local batch."""
-    if source not in test_cohort.DEVELOPMENT | {test_cohort.TEST}:
+    if source not in test_cohort.DEVELOPMENT | {test_cohort.TEST} and (not policy or policy.get("test_source") != source):
         raise ValueError(f"Unknown collection source: {source}")
     destination = Path(destination).expanduser().resolve()
     exports = []
-    for receipt in sorted(campaign_rounds(report_root, source).glob("*/*/completed.json")):
+    for receipt in sorted(campaign_rounds(report_root, source, policy).glob("*/*/completed.json")):
         record = read(receipt)
         if record["source"] != source or "original_handoff_hashes" in record:
             continue
@@ -126,6 +126,7 @@ def export_completed(report_root, destination, source=test_cohort.TEST):
                     "version": 1, "round": record["round"], "source": source,
                     "original_handoff_hashes": list(hashes), "manifests": manifests,
                     "selection": selection, "files": files,
+                    "policy_key": adaptive.policy_key(policy or (test_cohort.TEST_POLICY if source == test_cohort.TEST else adaptive.DEFAULT_POLICY)),
                 })
                 staging.rename(target)
         exports.append(target)
@@ -146,9 +147,9 @@ def verify_bundle(folder, source=test_cohort.TEST):
     return bundle
 
 
-def import_completed(report_root, source_folder, source=test_cohort.TEST):
+def import_completed(report_root, source_folder, source=test_cohort.TEST, *, policy=None):
     """Verify bundles, then register them alongside existing local and pending work."""
-    if source not in test_cohort.DEVELOPMENT | {test_cohort.TEST}:
+    if source not in test_cohort.DEVELOPMENT | {test_cohort.TEST} and (not policy or policy.get("test_source") != source):
         raise ValueError(f"Unknown collection source: {source}")
     source_folder = Path(source_folder).expanduser().resolve()
     folders = [source_folder] if (source_folder / "bundle.json").is_file() else sorted(
@@ -156,7 +157,7 @@ def import_completed(report_root, source_folder, source=test_cohort.TEST):
     )
     if not folders:
         raise FileNotFoundError(f"No completed JECAM bundles in {source_folder}")
-    rounds = campaign_rounds(report_root, source).resolve()
+    rounds = campaign_rounds(report_root, source, policy).resolve()
     known, used, used_groups = {}, set(), set()
     for path in rounds.glob("*/*/selection.json"):
         selection = read(path)
@@ -168,10 +169,13 @@ def import_completed(report_root, source_folder, source=test_cohort.TEST):
         if receipt.is_file():
             known[manifest_hashes(read(receipt))] = path.parent
 
-    allowed_partitions = {"test"} if source == test_cohort.TEST else {"train", "validation", "test"}
+    allowed_partitions = {"test"} if source == test_cohort.TEST or (policy and policy.get("test_source")) else {"train", "validation", "test"}
     imports, pending = [], []
     for folder in folders:
         bundle = verify_bundle(folder, source)
+        expected_policy = adaptive.policy_key(policy or (test_cohort.TEST_POLICY if source == test_cohort.TEST else adaptive.DEFAULT_POLICY))
+        if bundle.get("policy_key", expected_policy) != expected_policy:
+            raise ValueError("Collection bundle belongs to a different cohort policy")
         hashes = tuple(bundle["original_handoff_hashes"])
         if hashes in known:
             imports.append(known[hashes])

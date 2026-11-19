@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from shapely.geometry import box, mapping
 
 from crop_pipeline import preprocessing_workflow as workflow
 from crop_pipeline.analysis_workflow import resolve_stage_pointer
@@ -47,6 +48,36 @@ def fake_select(quality, report):
 
 
 class PreprocessingWorkflowTests(unittest.TestCase):
+    def test_supplemental_overlap_keeps_primary_and_earlier_cohorts(self):
+        def footprint(group, x):
+            return {"properties": {"partition_group": group},
+                    "geometry": mapping(box(x, 0, x + 1, 1))}
+
+        primary = [{"footprints": [footprint("jecam", 0)]}]
+        first = [{"footprints": [footprint("hits-primary", 0), footprint("first", 2)]}]
+        second = [{"footprints": [footprint("hits-first", 2), footprint("second", 4)]}]
+        inventory = [
+            {"cohort": "jecam", "sources": primary, "batches": []},
+            {"cohort": "first", "sources": first, "batches": []},
+            {"cohort": "second", "sources": second, "batches": []},
+        ]
+        with patch("crop_pipeline.cabbage_test_check.discover", return_value=inventory), patch.object(
+            workflow.external.test_cohort, "source_footprints",
+            side_effect=lambda sources: (f for s in sources for f in s["footprints"]),
+        ):
+            sources, excluded, _ = workflow.external.supplemental_inputs(Path("fixture"), primary)
+        self.assertEqual(excluded, {"first": {"hits-primary"}, "second": {"hits-first"}})
+        self.assertEqual([(s["test_cohort"], s["excluded_test_groups"]) for s in sources],
+                         [("first", ["hits-primary"]), ("second", ["hits-first"])])
+
+    def test_large_json_handoff_round_trips_without_pretty_print_overhead(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "windows.json"
+            payload = {"fixed": [{"pixel": 1, "valid": True}] * 50_000, "aligned": []}
+            save_json(path, payload)
+            self.assertEqual(json.loads(path.read_text()), payload)
+            self.assertLess(path.stat().st_size, len(json.dumps(payload, indent=2)) // 2)
+
     def test_export_excludes_shared_development_locations_before_matching(self):
         rows = reference_rows()
         train, validation, test = rows[0], rows[3], rows[6]
@@ -70,7 +101,7 @@ class PreprocessingWorkflowTests(unittest.TestCase):
 
     def fixture(self, root):
         (root / "pyproject.toml").touch()
-        state = root / "sen4agrinet_work/adaptive_training/campaign/rounds/0001/source/state.json"
+        state = root / "data/pipeline_work/adaptive_training/campaign/rounds/0001/source/state.json"
         save_json(state, {"status": "completed", "task_id": "preserve"})
         return state
 
@@ -206,10 +237,4 @@ class PreprocessingWorkflowTests(unittest.TestCase):
                             exec("".join(cell["source"]), namespace)
             self.assertTrue(resolve_stage_pointer(workflow.pointer(root, "features")).is_file())
 
-    def test_original_notebook_outputs_are_archived_exactly(self):
-        repository = Path(__file__).resolve().parents[1]
-        archive = repository / "notebooks/archive/preprocessing_before_reorganization"
-        for entry in json.loads((archive / "inventory.json").read_text()):
-            self.assertEqual(hashlib.sha256((repository / entry["archive"]).read_bytes()).hexdigest(), entry["sha256"])
-            self.assertFalse((repository / entry["original"]).exists())
-            self.assertTrue((repository / entry["active"]).is_file())
+    # Historical notebook integration retired; active workflow coverage is separate.

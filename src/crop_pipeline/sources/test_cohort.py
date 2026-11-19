@@ -13,6 +13,7 @@ DEVELOPMENT = REQUIRED_DEVELOPMENT | {"eurocrops"}
 TEST = "cropharvest"
 TEST_POLICY = {**adaptive.DEFAULT_POLICY, "test_source": TEST}
 CABBAGE_SUPPLEMENT_POLICY = {**TEST_POLICY, "cohort": "non_jecam_cabbage_supplement_v1"}
+CARROT_POTATO_SUPPLEMENT_POLICY = {**TEST_POLICY, "cohort": "non_jecam_carrot_potato_supplement_v1"}
 
 
 def source_role(source_name):
@@ -85,4 +86,42 @@ def prepare_cabbage_supplement(report_folder, archive_root, features, provenance
         {**provenance, "cohort": CABBAGE_SUPPLEMENT_POLICY["cohort"],
          "excluded_overlap_groups": sorted(excluded)},
         policy=CABBAGE_SUPPLEMENT_POLICY, parcels_per_crop=limit, candidate_crops=("cabbage",),
+    )
+
+
+def prepare_carrot_potato_supplement(report_folder, archive_root, features, provenance, limit):
+    """Collect separately after screening against development and reserved test parcels."""
+    from crop_pipeline.windows.seasons import file_sha256
+
+    crops = ("carrot", "potato")
+    features = list(features)
+    development = completed_sources(report_folder)
+    occupied = list(source_footprints(development))
+    for policy in (TEST_POLICY, CABBAGE_SUPPLEMENT_POLICY):
+        campaign = adaptive.root(report_folder, policy)
+        selections = [json.loads(path.read_text())
+                      for path in campaign.glob("rounds/*/*/selection.json")]
+        keys = {key for selection in selections for key in selection["physical_keys"]}
+        selected = [f for f in features if adaptive.physical_key(TEST, f["properties"]) in keys]
+        occupied.extend(selected)
+        selected_keys = {adaptive.physical_key(TEST, f["properties"]) for f in selected}
+        for path in sorted(campaign.glob("rounds/*/*/completed.json")):
+            handoffs = json.loads(path.read_text())["handoffs"]
+            handoff_paths = [Path(record["path"]) for record in handoffs]
+            if any(file_sha256(p) != record["sha256"] for p, record in zip(handoff_paths, handoffs)):
+                raise ValueError("Existing test handoff changed after registration")
+            occupied.extend(source_footprints(pilot_sources.load_sources(handoff_paths)))
+        if keys - selected_keys:
+            raise ValueError("Current references lack saved test selections needed for overlap screening")
+    candidates = [f for f in features if f["properties"]["crop"] in crops
+                  and f["properties"]["source_dataset"] != "jecam"]
+    candidates, excluded = exclude_overlap(candidates, occupied)
+    print(f"Supplemental carrot and potato: {len(candidates)} eligible footprints, "
+          f"{len(excluded)} overlapping parcel groups excluded")
+    return adaptive.prepare_round_batches(
+        TEST, candidates, archive_root, report_folder,
+        {**provenance, "cohort": CARROT_POTATO_SUPPLEMENT_POLICY["cohort"],
+         "excluded_overlap_groups": sorted(excluded)},
+        policy=CARROT_POTATO_SUPPLEMENT_POLICY, parcels_per_crop=limit,
+        extra_batches=5, candidate_crops=crops,
     )

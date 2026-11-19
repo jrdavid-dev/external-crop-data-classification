@@ -76,6 +76,9 @@ def audit_source(source, analysis_folder, minimum_fraction):
     table_mode = source.get("archive_format") == "selected_pixel_parquet_v1"
     manifests = {} if table_mode else manifest_paths(source["progress_folder"])
     all_quality, observed, partitions = [], [], {}
+    excluded = set(source.get("excluded_test_groups", ()))
+    regions = [region for region in regions
+               if region["properties"]["partition_group"] not in excluded]
     for region in regions:
         identifier = region["properties"]["fragment_id"]
         region["properties"].update(
@@ -84,6 +87,8 @@ def audit_source(source, analysis_folder, minimum_fraction):
             dataset_revision=source["dataset_revision"],
             imagery_request_version=source["request_version"],
         )
+        if "test_cohort" in source:
+            region["properties"]["test_cohort"] = source["test_cohort"]
         output_folder = Path(analysis_folder) / "quality/tiles" / identifier
         if table_mode:
             from crop_pipeline.imagery import pixel_tables

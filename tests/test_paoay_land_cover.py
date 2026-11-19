@@ -198,34 +198,7 @@ class PaoayLandCoverTests(unittest.TestCase):
         figure.savefig(self.root / 'preview.png')
         plt.close(figure)
 
-    def test_notebook_run_all_and_pending_previous_stage_are_local(self):
-        root = self.root
-        (root / 'pyproject.toml').write_text('[project]\nname="fixture"\n')
-        (root / 'src/crop_pipeline').mkdir(parents=True)
-        paoay = root / 'sen4agrinet_work/paoay'
-        source_pointer = paoay / 'dynamic_world/dynamic_world_stage.json'
-        write_stage_pointer(source_pointer, self.world_handoff)
-        notebook = json.loads((REPOSITORY / 'notebooks/paoay/archive/eight_notebook_workflow/10_paoay_land_cover.ipynb').read_text())
-        def run():
-            namespace = {}
-            try:
-                for cell in notebook['cells']:
-                    if cell['cell_type'] == 'code':
-                        exec(compile(''.join(cell['source']), 'paoay-land-cover-notebook', 'exec'), namespace)
-                        namespace['show_preview'] = False
-            finally:
-                progress.finish_notebook()
-            return namespace
-        with chdir(root), redirect_stdout(io.StringIO()), \
-             patch('socket.socket.connect', side_effect=AssertionError('No network')), \
-             patch('subprocess.check_call', side_effect=AssertionError('No installation')):
-            namespace = run()
-            self.assertEqual(resolve_stage_pointer(namespace['land_cover_pointer']), namespace['land_cover_handoff'])
-            write_stage_pointer(source_pointer, status='pending', reason='Notebook 09 incomplete')
-            with self.assertRaisesRegex(RuntimeError, 'pending'):
-                run()
-        with self.assertRaisesRegex(RuntimeError, 'pending'):
-            resolve_stage_pointer(namespace['land_cover_pointer'])
+    # Historical notebook integration retired; active workflow coverage is separate.
 
 
 if __name__ == '__main__':

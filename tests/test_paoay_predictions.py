@@ -170,39 +170,7 @@ class PaoayPredictionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'feature pixel locations'):
             predictions.load_prediction_bundle(handoff)
 
-    def test_preview_and_notebook_run_all_are_local_without_refitting(self):
-        import matplotlib.pyplot as plt
-        bundle = predictions.load_prediction_bundle(predictions.build(self.request))
-        figure = predictions.plot_predictions(bundle)
-        self.assertEqual(len(figure.axes), 3)
-        figure.savefig(self.root/'preview.png'); plt.close(figure)
-        root = self.root
-        (root/'pyproject.toml').write_text('[project]\nname="fixture"\n')
-        (root/'src/crop_pipeline').mkdir(parents=True)
-        (root/'settings.local.json').write_text(json.dumps({'report_root': './inventory'}))
-        source_pointer = root/'paoay/features/feature_stage.json'
-        write_stage_pointer(source_pointer, self.feature_handoff)
-        notebook = json.loads((REPOSITORY/'notebooks/paoay/archive/eight_notebook_workflow/12_paoay_predictions.ipynb').read_text())
-        def run():
-            namespace = {}
-            try:
-                for cell in notebook['cells']:
-                    if cell['cell_type'] == 'code':
-                        exec(compile(''.join(cell['source']), 'paoay-prediction-notebook', 'exec'), namespace)
-                        namespace['show_preview'] = False
-            finally:
-                progress.finish_notebook()
-            return namespace
-        with chdir(root), redirect_stdout(io.StringIO()), \
-             patch('socket.socket.connect', side_effect=AssertionError('No network')), \
-             patch('sklearn.ensemble.RandomForestClassifier.fit', side_effect=AssertionError('No fitting')):
-            namespace = run()
-            self.assertEqual(resolve_stage_pointer(namespace['prediction_pointer']), namespace['prediction_handoff'])
-            write_stage_pointer(source_pointer, status='pending', reason='Notebook 11 incomplete')
-            with self.assertRaisesRegex(RuntimeError, 'pending'):
-                run()
-        with self.assertRaisesRegex(RuntimeError, 'pending'):
-            resolve_stage_pointer(namespace['prediction_pointer'])
+    # Historical notebook integration retired; active workflow coverage is separate.
 
 
 if __name__ == '__main__':

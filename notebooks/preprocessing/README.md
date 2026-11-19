@@ -2,8 +2,8 @@
 
 | Notebook | Responsibility | Main output |
 | --- | --- | --- |
-| 01_imagery_quality.ipynb | Verify completed collection, exclude test overlaps, audit original imagery quality | Quality counts, collection snapshot, quality.json |
-| 02_window_selection.ipynb | Apply fixed January–April and existing green-up-aligned windows | Complete-window counts before pixel cap, windows.json |
+| 01_imagery_quality.ipynb | Verify completed development, primary JECAM and available supplements, exclude test overlaps, audit original imagery quality | Quality counts, collection snapshot, quality.json |
+| 02_window_selection.ipynb | Apply fixed May–August and existing green-up-aligned windows | Complete-window counts before pixel cap, windows.json |
 | 03_feature_engineering.ipynb | Export existing features with locked partitions and pixel cap | Separate development/test packages, usable_samples.csv, readable report |
 
 Run 01 → 02 → 03 with a fresh kernel per notebook if desired. Notebooks 02 and 03
@@ -41,6 +41,8 @@ The canonical artifacts remain under the configured report root's sibling
 - Fixed/aligned **full** cohorts have separate coverage; **matched** cohorts use the same locations. Never add cohort counts together.
 - Budgets are collection targets, not scientific accuracy criteria. Green-up estimates are not verified crop dates. Legacy cloud-loss diagnostics remain unavailable where counts were not collected.
 
+The test feature export carries cohort labels. `usable_samples.csv` reports development and primary JECAM. `test_population_coverage.csv` also reports each registered supplement and the combined pool. Only completed supplemental batches contribute imagery. Earlier cohorts take precedence over overlapping supplements, with JECAM first among test cohorts.
+
 Continue with [training](../training) and [testing](../testing) after feature export.
 
-Original notebooks and saved outputs are available in the [preprocessing archive](../archive/preprocessing_before_reorganization) and [collection archive](../archive/collection_before_reorganization).
+Original notebooks and saved outputs are available in the [preprocessing archive](https://github.com/jrdavid-dev/external-crop-data-classification/tree/c1fe80c/notebooks/archive/preprocessing_before_reorganization) and [collection archive](https://github.com/jrdavid-dev/external-crop-data-classification/tree/c1fe80c/notebooks/archive/collection_before_reorganization).

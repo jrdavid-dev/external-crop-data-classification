@@ -1,6 +1,6 @@
 """Multi-year land activity (active cropland, perennial vegetation, bare/built) for the Atok study area.
 
-Ported from the archived Atok cropping-pattern notebook (notebooks/archive/14_atok_unsupervised.ipynb):
+Ported from the archived Atok cropping-pattern notebook (https://github.com/jrdavid-dev/external-crop-data-classification/tree/c1fe80c/notebooks/archive/14_atok_unsupervised.ipynb):
 growth cycles are detected in 2019-2026 half-month Sentinel-2 composites, eight pixel summaries are
 clustered with a stable K-means, and clusters are named by fixed rules. The result is descriptive and
 unvalidated: it never changes the frozen crop predictions and is not crop/noncrop ground truth.
@@ -468,7 +468,7 @@ def build(request):
                     'composites_used': len(request['identity']['composites']),
                     'chosen_k': next(row['k'] for row in table if row['chosen']),
                     'crop_predictions_changed': False,
-                    'method_source': 'notebooks/archive/14_atok_unsupervised.ipynb (land activity, NAMRIA check)',
+                    'method_source': 'https://github.com/jrdavid-dev/external-crop-data-classification/tree/c1fe80c/notebooks/archive/14_atok_unsupervised.ipynb (land activity, NAMRIA check)',
                     'interpretation': ('Unsupervised, rule-named land activity from 2019-2026 composites; descriptive '
                                        'and unvalidated. Not crop/noncrop ground truth; crop predictions are unchanged.'),
                     'files': {name: {'sha256': references.checksum(staging / name)} for name in FILES}}

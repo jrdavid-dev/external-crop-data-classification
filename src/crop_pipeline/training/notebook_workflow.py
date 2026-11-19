@@ -157,7 +157,35 @@ def evaluate(repository, test_path=None, models_handoff=None):
     reports.mkdir()
     predictions.mkdir()
     model_index = handoff.parent / 'models.json'
-    scores = source_holdout.score(snapshot, model_index, destination=reports, predictions_directory=predictions)
+    cohorts = set(data.get("test_cohorts", ()))
+    groups = {}
+    for rows in data['rows'].values():
+        for row in rows:
+            cohort = row.get("test_cohort", "jecam")
+            cohorts.add(cohort)
+            if groups.setdefault(row["partition_group"], cohort) != cohort:
+                raise ValueError("Test parcel appears in multiple test cohorts")
+    supplements = cohorts - {"jecam"}
+    if any(not name.isascii() or not name.replace("_", "").isalnum() or name == "combined"
+           for name in supplements):
+        raise ValueError("Invalid supplemental test cohort name")
+    scopes = ["jecam", *sorted(supplements)]
+    if supplements:
+        scopes.append("combined")
+    for scope in scopes:
+        report_folder = reports if scope == "jecam" else reports / scope
+        prediction_folder = predictions if scope == "jecam" else predictions / scope
+        report_folder.mkdir(exist_ok=True)
+        prediction_folder.mkdir(exist_ok=True)
+        _score_scope(snapshot, model_index, report_folder, prediction_folder, scope)
+    save_json(reports / "test_scopes.json", scopes)
+    receipt = _seal(run, 'scores', models_handoff=str(handoff),
+                    models_handoff_sha256=seasons.file_sha256(handoff), test_source=str(source))
+    return _publish(repository, 'testing', 'scores', receipt)
+
+
+def _score_scope(snapshot, model_index, reports, predictions, scope):
+    scores = source_holdout.score(snapshot, model_index, destination=reports, predictions_directory=predictions, scope=scope)
     baseline = {}
     for name, entry in _read(model_index).items():
         manifest = _read(entry['path'])
@@ -173,9 +201,6 @@ def evaluate(repository, test_path=None, models_handoff=None):
             metrics.pop('balanced_accuracy', None)
         baseline[name] = {'training_majority_class': crop, 'metrics': metrics}
     save_json(reports / 'majority_baseline.json', baseline)
-    receipt = _seal(run, 'scores', models_handoff=str(handoff),
-                    models_handoff_sha256=seasons.file_sha256(handoff), test_source=str(source))
-    return _publish(repository, 'testing', 'scores', receipt)
 
 
 def report(repository, scores_handoff=None):
@@ -187,34 +212,38 @@ def report(repository, scores_handoff=None):
     if receipt.exists():
         _verify(receipt, 'report')
         return _publish(repository, 'testing', 'report', receipt)
-    scores = _read(reports / 'test_scores.json')
-    baselines = _read(reports / 'majority_baseline.json')
+    scope_file = reports / "test_scopes.json"
+    scopes = _read(scope_file) if scope_file.exists() else ["jecam"]
     per_crop, confusion = [], []
     lines = ['# External test results', '',
-             'Frozen development models evaluated on CropHarvest JECAM parcels. '
+             'Frozen development models evaluated on the primary JECAM and available supplemental test cohorts. '
              'Predictions average pixel probabilities within each parcel. '
              'These results do not measure Paoay accuracy.', '',
              'Matched cohorts hold locations constant; full cohorts can have different coverage. '
              'The baseline predicts the most common training parcel crop. '
              'Missing crops suppress the three-class macro-F1. No test-based model selection.', '',
-             '| Cohort | Coverage status | Macro-F1 | Training-majority baseline F1 | Meets F1 criteria |',
-             '| --- | --- | --- | --- | --- |']
-    for name, metrics in scores.items():
-        baseline = baselines.get(name, {}).get('metrics', {})
-        macro, baseline_macro = metrics.get('macro_f1'), baseline.get('macro_f1')
-        outcome = 'unavailable'
-        if macro is not None and baseline_macro is not None:
-            passes = (macro >= .5 and macro > baseline_macro
-                      and all(item['f1'] >= .5 for item in metrics['per_crop'].values()))
-            outcome = 'yes' if passes else 'no'
-        lines.append(f"| {name} | {metrics['status']} | {metrics.get('macro_f1', 'unavailable')} | "
-                     f"{baseline.get('macro_f1', 'unavailable')} | {outcome} |")
-        for crop, values in metrics.get('per_crop', {}).items():
-            per_crop.append({'cohort': name, 'crop': crop, **values, **metrics['coverage'][crop]})
-        for i, actual in enumerate(metrics.get('classes', [])):
-            for j, predicted in enumerate(metrics['classes']):
-                confusion.append({'cohort': name, 'actual': actual, 'predicted': predicted,
-                                  'parcels': metrics['confusion_matrix'][i][j]})
+             '| Test population | Window cohort | Coverage status | Macro-F1 | Training-majority baseline F1 | Meets F1 criteria |',
+             '| --- | --- | --- | --- | --- | --- |']
+    for scope in scopes:
+        folder = reports if scope == "jecam" else reports / scope
+        scores = _read(folder / "test_scores.json")
+        baselines = _read(folder / "majority_baseline.json")
+        for name, metrics in scores.items():
+            baseline = baselines.get(name, {}).get('metrics', {})
+            macro, baseline_macro = metrics.get('macro_f1'), baseline.get('macro_f1')
+            outcome = 'unavailable'
+            if macro is not None and baseline_macro is not None:
+                passes = (macro >= .5 and macro > baseline_macro
+                          and all(item['f1'] >= .5 for item in metrics['per_crop'].values()))
+                outcome = 'yes' if passes else 'no'
+            lines.append(f"| {scope} | {name} | {metrics['status']} | {metrics.get('macro_f1', 'unavailable')} | "
+                         f"{baseline.get('macro_f1', 'unavailable')} | {outcome} |")
+            for crop, values in metrics.get('per_crop', {}).items():
+                per_crop.append({'test_population': scope, 'cohort': name, 'crop': crop, **values, **metrics['coverage'][crop]})
+            for i, actual in enumerate(metrics.get('classes', [])):
+                for j, predicted in enumerate(metrics['classes']):
+                    confusion.append({'test_population': scope, 'cohort': name, 'actual': actual, 'predicted': predicted,
+                                      'parcels': metrics['confusion_matrix'][i][j]})
     # Diagnostics live separately from sealed scoring files.
     diagnostics = reports / 'diagnostics'
     diagnostics.mkdir(exist_ok=False)

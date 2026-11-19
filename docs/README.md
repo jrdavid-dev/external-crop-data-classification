@@ -1,17 +1,22 @@
-# Workflow guides
+# Documentation
 
-Start with the [project design and deliverables](project_design.md). It records the active experiment, data roles, acceptance criteria, and open work.
+Read **[project design](project_design.md) → [workflow](workflow.md) →
+[methodology](methodology.md)** for the current external classification experiment.
 
-| Guide | Use it for |
+| Guide | Open it for |
 | --- | --- |
-| [Fresh clone](fresh_clone.md) | Environment and reference setup |
-| [Notebook workflow](workflow.md) | Run order and handoffs |
-| [Adaptive collection](adaptive_training.md) | Batch selection, quotas and resuming collection |
-| [Sen4AgriNet](sen4agrinet.md) and [CropHarvest](cropharvest.md) | Source-specific reference and collection controls |
-| [Progress](progress.md) and [output layout](output_layout.md) | Read saved progress, reports and artifacts |
-| [Methodology](methodology.md) | Imagery, sampling and timing rules |
-| [Training and external testing](external_training_notebooks.md) | Model selection, freezing and external evaluation |
-| [Paoay workflow](paoay_workflow.md) and [field checks](paoay_field_checks.md) | Local application and field evidence |
-| [Pixel tables](pixel_tables.md) and [full-year catalogue](full_year_collection.md) | Transport, storage and optional collection tools |
+| [Project design](project_design.md) | Scope, data roles, targets and deliverables |
+| [Workflow](workflow.md) | Notebook order, handoffs, reruns and troubleshooting |
+| [Methodology](methodology.md) | Imagery rules, features, model settings and scoring |
+| [Setup](fresh_clone.md) | Environment and collect/import starting routes |
+| [Collection](collection.md) | Source controls, reference audits, locked partitions and resuming jobs |
+| [Research basis](research_basis.md) | Sources, project choices and limits of claims |
+| [Share imagery](sharing_imagery.md) | Export/import TIFFs, labels and metadata without recollecting |
+| [Storage](storage_layout.md) | Canonical folders, output navigation and recovery |
+| [Demo notes](notebook_demo.md) | What to present and how to explain results |
+| [Paoay application](paoay_workflow.md) | Separate optional application and field-observation guide |
 
-[Earlier feature experiments](feature_experiments.md), [legacy training notes](training.md), and the [live transport validation](live_batch_validation.md) document historical experiments.
+Paoay is deferred for the current external experiment. The
+[transport reference](reference/transport.md) is for maintainers. Dated experiments,
+verification results and cleanup/migration audits live in [history](history/README.md);
+they are not additional onboarding steps.

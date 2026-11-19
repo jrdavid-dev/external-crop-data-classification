@@ -22,7 +22,13 @@ def save_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
+    # Large row collections can exhaust disk and memory when pretty-printed.
+    rows = value.values() if isinstance(value, dict) else (value,)
+    if any(isinstance(item, list) and len(item) >= 50_000 for item in rows):
+        with temporary.open("w", encoding="utf-8") as stream:
+            json.dump(value, stream, separators=(",", ":"), allow_nan=False)
+    else:
+        temporary.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
     temporary.replace(path)
 
 

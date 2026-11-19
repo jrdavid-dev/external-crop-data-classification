@@ -233,33 +233,7 @@ class PaoayFeatureTests(unittest.TestCase):
             features.build(self.request)
         self.assertEqual(matrix.read_bytes(), b'changed')
 
-    def test_notebook_run_all_is_local_and_previous_pending_stage_blocks_it(self):
-        root = self.root
-        (root / 'pyproject.toml').write_text('[project]\nname="fixture"\n')
-        (root / 'src/crop_pipeline').mkdir(parents=True)
-        (root / 'settings.local.json').write_text(json.dumps({'report_root': './inventory'}))
-        source_pointer = root / 'paoay/land_cover/land_cover_stage.json'
-        write_stage_pointer(source_pointer, self.guidance)
-        notebook = json.loads((REPOSITORY / 'notebooks/paoay/archive/eight_notebook_workflow/11_paoay_features.ipynb').read_text())
-        def run():
-            namespace = {}
-            try:
-                for cell in notebook['cells']:
-                    if cell['cell_type'] == 'code':
-                        exec(compile(''.join(cell['source']), 'paoay-feature-notebook', 'exec'), namespace)
-            finally:
-                progress.finish_notebook()
-            return namespace
-        with chdir(root), redirect_stdout(io.StringIO()), patch('socket.socket.connect', side_effect=AssertionError('No network')), \
-             patch('joblib.load', side_effect=AssertionError('No model load')), \
-             patch('sklearn.ensemble.RandomForestClassifier.fit', side_effect=AssertionError('No fitting')):
-            namespace = run()
-            self.assertEqual(resolve_stage_pointer(namespace['feature_pointer']), namespace['feature_handoff'])
-            write_stage_pointer(source_pointer, status='pending', reason='Notebook 10 incomplete')
-            with self.assertRaisesRegex(RuntimeError, 'pending'):
-                run()
-        with self.assertRaisesRegex(RuntimeError, 'pending'):
-            resolve_stage_pointer(namespace['feature_pointer'])
+    # Historical notebook integration retired; active workflow coverage is separate.
 
 
 if __name__ == '__main__':

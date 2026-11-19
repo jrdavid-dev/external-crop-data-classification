@@ -23,7 +23,7 @@ def paths(repository):
     root = Path(repository).resolve()
     settings_path = root / "settings.local.json"
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
-    report = (root / Path(settings.get("report_root", "sen4agrinet_work/inventory")).expanduser()).resolve()
+    report = (root / Path(settings.get("report_root", "data/pipeline_work/inventory")).expanduser()).resolve()
     return root, report, report.parent / "analysis/external"
 
 
@@ -112,7 +112,9 @@ def audit(repository):
     data = json.loads(handoff.read_text())
     counts = handoff.parent / "quality_counts.csv"
     seasons.write_records(counts, quality_counts(data))
-    return publish(root, "quality", handoff, [handoff, snapshot, counts,
+    overlap_report = handoff.parent / "test_overlap_exclusions.json"
+    audit_reports = [overlap_report] if overlap_report.exists() else []
+    return publish(root, "quality", handoff, [handoff, snapshot, counts, *audit_reports,
                    *[Path(p) for p in data["pixel_paths"].values()]])
 
 
@@ -168,6 +170,24 @@ def coverage_rows(development, test):
     return result
 
 
+def test_population_coverage(test):
+    populations = set(test.get("test_cohorts", ())) | {"jecam"}
+    populations.update(row.get("test_cohort", "jecam")
+                       for rows in test["rows"].values() for row in rows)
+    empty_development = {"rows": {name: [] for name in test["rows"]}}
+    result = []
+    for population in [*sorted(populations), "combined"]:
+        scoped = {"rows": {
+            name: [r for r in rows if population == "combined"
+                   or r.get("test_cohort", "jecam") == population]
+            for name, rows in test["rows"].items()
+        }}
+        result.extend({"test_population": population, **row}
+                      for row in coverage_rows(empty_development, scoped)
+                      if row["partition"] == "test")
+    return result
+
+
 def export_features(repository, window_handoff=None):
     root, report, _ = paths(repository)
     pending(root, "features")
@@ -186,9 +206,14 @@ def export_features(repository, window_handoff=None):
     check_snapshot(windows, report)
     development = handoff.parent / "features_development.json"
     test = handoff.parent / "features_test.json"
-    rows = coverage_rows(json.loads(development.read_text()), json.loads(test.read_text()))
+    test_data = json.loads(test.read_text())
+    primary = {"rows": {name: [r for r in rows if r.get("test_cohort", "jecam") == "jecam"]
+                        for name, rows in test_data["rows"].items()}}
+    rows = coverage_rows(json.loads(development.read_text()), primary)
     counts = handoff.parent / "usable_samples.csv"
     seasons.write_records(counts, rows)
+    population_counts = handoff.parent / "test_population_coverage.csv"
+    seasons.write_records(population_counts, test_population_coverage(test_data))
     report_path = handoff.parent / "preprocessing_report.md"
     text = ["# Usable external samples", "",
             "Counts below are after window qualification, complete features and the existing per-parcel cap.",
@@ -198,9 +223,10 @@ def export_features(repository, window_handoff=None):
             "| Cohort | Partition | Crop | Parcel groups | Pixels | Parcel shortfall | Pixel shortfall |",
             "| --- | --- | --- | ---: | ---: | ---: | ---: |"]
     text += [f"| {r['cohort']} | {r['partition']} | {r['crop']} | {r['usable_parcel_groups']} | {r['usable_pixels']} | {r['parcel_shortfall']} | {r['pixel_shortfall']} |" for r in rows]
-    text += ["", "The test set is external CropHarvest JECAM, not local accuracy evidence.",
+    text += ["", "The table shows development and primary JECAM coverage.",
+             "See test_population_coverage.csv for JECAM, each supplement and the combined external pool.",
              "Original imagery masks, 0.80 coverage requirement, eight-bin completeness, timing rules and locked partitions are unchanged."]
     report_path.write_text("\n".join(text) + "\n")
-    return publish(root, "features", handoff, [handoff, windows, development, test, counts, report_path,
+    return publish(root, "features", handoff, [handoff, windows, development, test, counts, population_counts, report_path,
                    handoff.parent / "window_coverage.json", handoff.parent / "collection_snapshot.json",
                    handoff.parent / "development_overlap_exclusions.json"])

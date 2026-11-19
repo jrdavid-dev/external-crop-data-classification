@@ -401,7 +401,7 @@ class FinalWorkflowTests(unittest.TestCase):
         prediction_pointer=paoay/'predictions/prediction_stage.json'
         write_stage_pointer(prediction_pointer,self.prediction)
         def run(name):
-            notebook=json.loads((REPOSITORY/'notebooks/paoay/archive/eight_notebook_workflow'/name).read_text())
+            notebook=json.loads((REPOSITORY/'notebooks/paoay'/name).read_text())
             namespace={}
             try:
                 for cell in notebook['cells']:
@@ -415,15 +415,15 @@ class FinalWorkflowTests(unittest.TestCase):
              patch('socket.socket.connect',side_effect=AssertionError('No network')), \
              patch('joblib.load',side_effect=AssertionError('No model loading')), \
              patch('sklearn.ensemble.RandomForestClassifier.fit',side_effect=AssertionError('No fitting')):
-            first=run('13_paoay_maps.ipynb')
-            second=run('14_paoay_review.ipynb')
+            first=run('04_maps.ipynb')
+            second=run('05_reference_field_review.ipynb')
             self.assertEqual(resolve_stage_pointer(first['map_pointer']),first['map_handoff'])
             self.assertEqual(resolve_stage_pointer(second['review_pointer']),second['review_handoff'])
             write_stage_pointer(prediction_pointer,status='pending',reason='Notebook 12 incomplete')
             with self.assertRaisesRegex(RuntimeError,'pending'):
-                run('13_paoay_maps.ipynb')
+                run('04_maps.ipynb')
             with self.assertRaisesRegex(RuntimeError,'pending'):
-                run('14_paoay_review.ipynb')
+                run('05_reference_field_review.ipynb')
         with self.assertRaisesRegex(RuntimeError,'pending'):
             resolve_stage_pointer(second['review_pointer'])
 

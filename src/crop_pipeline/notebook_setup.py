@@ -16,8 +16,8 @@ from pathlib import Path
 DEFAULT_SETTINGS = {
     "dataset_root": "./ground_truth",
     "imagery_root": "./ground_truth/sentinel2_pilot_composites",
-    "report_root": "./sen4agrinet_work/inventory",
-    "annual_archive_root": "./sen4agrinet_work/annual_archive",
+    "report_root": "./data/pipeline_work/inventory",
+    "annual_archive_root": "./data/pipeline_work/annual_archive",
     "analysis_collection": "adaptive_training",
     "earth_engine_project": "",
 }

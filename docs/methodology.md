@@ -1,13 +1,24 @@
 # Data and processing rules
 
+For the current experiment, start with [project design](project_design.md) and
+[research basis and limits](research_basis.md). The classifier uses **72 interval
+predictors**: five bands plus NDVI, NDRE, NDMI and SAVI in eight bins.
+The 64-feature description below refers to the base window-completeness stage;
+older feature experiments are historical.
+
 These rules explain what a usable sample means. The exact timing cutoffs are development choices; they have not been validated as crop-specific planting or harvesting rules.
 
 ## Reference sources
 
-| Dataset | Labels used | Year |
-|---|---|---:|
-| [Sen4AgriNet](https://huggingface.co/datasets/orion-ai-lab/S4A) | All indexed target-crop parcels | Indexed observation years |
-| [FranceCrops](https://huggingface.co/datasets/saget-antoine/francecrops) | `CHU` cabbage and `PTC` table-potato parcels | 2022 |
+| Dataset/cohort | Role and crop labels | Observation years |
+| --- | --- | --- |
+| Sen4AgriNet | Development potato/carrot from bounded reference scans | Recorded source years |
+| FranceCrops | Development `CHU` cabbage and `PTC` table potato | 2022 |
+| EuroCrops | Additional development carrot, local Dutch declarations | 2021 |
+| CropHarvest JECAM | Primary external test for carrot/cabbage/potato | Resolved label years |
+| Non-JECAM CropHarvest | Separate carrot/potato and cabbage test supplements | Resolved label years |
+| California DWR | Supplemental T6 single-crop carrot pilot | 2023 |
+| Denmark Marker | Supplemental declared white/red cabbage (408/418) | 2023 |
 
 FranceCrops is pinned to revision `6b6c51b780d8579138593f92738ed52f2528096e`. Labels are joined to parcel boundaries by `parcel_id`; invalid boundaries are excluded. Its original validation/test parcels can be archived but remain outside model-development exports. A 10 m inward buffer reduces boundary mixing.
 
@@ -17,9 +28,9 @@ An annual crop label identifies the reported crop, but does not prove which crop
 
 ## Candidate sampling and imagery
 
-The default adaptive workflow selects up to 50 candidate parcels per available crop per source per round, then retains at most 20 usable pixels per parcel after window assessment. The optional full-catalogue workflow uses every eligible parcel and interior pixel in supplied inventories. Same-parcel fragments share one group. Contested locations are excluded, and bounded tiles preserve the original parcel identity. FranceCrops and CropHarvest retain a 10 m inward buffer; Sen4AgriNet retains its existing declared crop-mask cells with no additional inward buffer. This is an existing source-specific rule, not evidence of equivalent boundary uncertainty; adding erosion would change selected pixels and require a separately versioned methodology change.
+Collection uses bounded, source-specific parcel batches. Batch limits, crop filters and extra slots are workload settings in the notebooks; they are not one universal 50-parcel rule. Retain at most 20 usable pixels per parcel after window assessment. The optional full-catalogue workflow uses every eligible parcel and interior pixel in supplied inventories. Same-parcel fragments share one group. Contested locations are excluded, and bounded tiles preserve the original parcel identity. FranceCrops and CropHarvest retain a 10 m inward buffer; Sen4AgriNet retains its existing declared crop-mask cells with no additional inward buffer. This is an existing source-specific rule, not evidence of equivalent boundary uncertainty; adding erosion would change selected pixels and require a separately versioned methodology change.
 
-All three sources use Sentinel-2 surface reflectance from `COPERNICUS/S2_SR_HARMONIZED`:
+The external imagery collection uses Sentinel-2 surface reflectance from `COPERNICUS/S2_SR_HARMONIZED`:
 
 - Mask unsuitable SCL classes, cloud probability at the configured cutoff of 40, and invalid scene edges. Missing cloud-probability matches are not treated as clear.
 - Align B5/B11 to the 10 m grid using bilinear interpolation before compositing. Quality masks use nearest-neighbor resampling.
@@ -64,18 +75,57 @@ For each parcel, evaluate qualified windows chronologically. Keep the **earliest
 
 A complete pixel needs five bands—B3, B4, B5, B8, B11—and NDVI, NDRE and NDMI in every interval: **64 finite base features**. Missing bins, low coverage, invalid observation counts and zero index denominators cause exclusion. No imputation is used.
 
-For adaptive collection, deduplicate usable locations and apply the per-parcel sampling budget and locked partitions. The optional full-catalogue workflow retains every unique usable external pixel across both policies. Reference-supported rows take precedence for duplicate locations. Preserve registered local evaluation rows and upstream reserved roles. The old 500-pixel pilot cap applies only when deliberately reopening a pilot collection.
+For adaptive collection, deduplicate usable locations and apply the per-parcel sampling budget and locked partitions. Historical full-catalogue experiments used different selection budgets; those are not the active capped export. Reference-supported rows take precedence for duplicate locations. Preserve registered local evaluation rows and upstream reserved roles. Legacy pilot budgets are historical and do not define a separate mode in the active notebooks.
 
-Timing, cycle-selection and usable-selection audits explain losses. Source collection and window selection are separate; changing the latter can reuse the annual archive. See [full-year collection](full_year_collection.md).
+Timing, cycle-selection and usable-selection audits explain losses. Source collection and window selection are separate; changing the latter can reuse the annual archive. See [collection](collection.md) and the [transport reference](reference/transport.md).
 
 ## Study scope
 
 This is a three-class pipeline for known carrot, cabbage and potato parcels. General land-cover mapping needs additional classes. Source/year differences and nearby-parcel similarity can influence accuracy. Independent local evaluation is needed before making claims about Benguet.
 
-## Saved preprocessing examples
+## Observation loss accounting
 
-Section 15 of the window notebook displays one deterministic example per crop using saved files only: reference/sample locations, post-mask pixel eligibility, daily timelines with the selected four-month window, and eight half-month composites. PNGs and the example-selection manifest are saved in the selected analysis folder’s `preprocessing_visuals/`. Original unmasked scenes are not stored, so the screening view is not a before/after cloud-removal comparison.
+New external selected-pixel exports record the number of dates with B3 support in matched granules before screening, clear dates, cloud or shadow rejection, and other rejection. A date with any surviving granule counts as clear. If none survives, a cloud or shadow flag on a supported granule takes precedence over other reasons. Granule matches and acquisition dates are reported separately from pixel-date counts. Legacy files can still be read and show unavailable diagnostics as null. New Paoay downloads use the same daily screening definitions. Their receipts store totals over ROI pixel-dates and the fraction rejected by cloud or shadow. The seven base archive measurements stay compatible with saved rasters; classifier predictors remain the five bands and four indices listed above. Previously downloaded intervals retain acquisition matching and usable coverage, and their cloud and shadow loss remains unavailable.
 
-### Observation loss accounting
+## Classifier features
 
-New external selected-pixel exports record the number of dates with B3 support in matched granules before screening, clear dates, cloud or shadow rejection, and other rejection. A date with any surviving granule counts as clear. If none survives, a cloud or shadow flag on a supported granule takes precedence over other reasons. Granule matches and acquisition dates are reported separately from pixel-date counts. Legacy files can still be read and show unavailable diagnostics as null. New Paoay downloads use the same daily screening definitions. Their receipts store totals over ROI pixel-dates and the fraction rejected by cloud or shadow. The seven classifier bands stay compatible with saved rasters. Previously downloaded intervals retain acquisition matching and usable coverage, and their cloud and shadow loss remains unavailable.
+Each of eight bins contributes B3, B4, B5, B8, B11 and four indices: 72 ordered
+predictors. The 64-value base completeness stage precedes the eight SAVI values.
+Use scaled reflectance for these formulas and the saved recipe for feature order.
+
+| Index | Formula |
+| --- | --- |
+| NDVI | `(B8 − B4) / (B8 + B4)` |
+| NDRE | `(B8 − B5) / (B8 + B5)` |
+| NDMI | `(B8 − B11) / (B8 + B11)` |
+| SAVI | `(1 + L) × (B8 − B4) / (B8 + B4 + L)`, with saved `L = 0.5` |
+
+Missing/nonfinite inputs and invalid denominators are not imputed. Research
+attribution and the limits of these choices are in [research basis](research_basis.md).
+
+## Model selection and scoring
+
+Random Forest settings are 1,000 trees, seed 42, square-root feature sampling and
+50% bootstrap sampling. Full cohorts choose minimum leaf size 2 or 4 on validation
+parcel macro-F1; matched cohorts retain leaf size 2. Training weights give crops
+equal total weight, then parcels equal shares within crop; confidence distributes
+a parcel's share across its pixels (confirmed 1.0, reported 0.5 before normalization).
+
+Both window recipes use the ordered 72 interval predictors. The older 48-shape
+and 120-combined recipes are retained as [historical feature context](history/feature_experiments.md),
+not alternative designs selected by the current notebooks. Fixed windows are
+May–August; aligned windows follow the saved green-up recipe. Old exports lacking
+fixed-start metadata retain their January-start interpretation and must be paired
+with matching model/input recipes.
+
+Test scoring averages pixel probabilities within each parcel. The baseline
+predicts the most common training parcel crop; ties follow first occurrence in
+the saved training rows. Evaluate it on the same test parcels as each model.
+Report precision, recall, F1, parcel support, coverage and confusion matrices;
+missing test crops suppress three-class macro-F1 and balanced accuracy.
+
+The reporting criteria require macro-F1 ≥ 0.50, strictly above the baseline, and
+F1 ≥ 0.50 for every crop. They are project criteria, not proof of usefulness.
+Report JECAM, each supplement and the combined pool separately. Validation selects
+settings; external scores never tune models, windows or collection. Local Paoay
+accuracy still requires independent dated evidence.

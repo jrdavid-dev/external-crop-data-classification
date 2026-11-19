@@ -8,10 +8,10 @@ from crop_pipeline.output_layout import refresh
 
 class OutputLayoutTests(unittest.TestCase):
     def fixture(self, root):
-        image = root / "sen4agrinet_work/annual_tifs/eurocrops/2021/tile.tif"
+        image = root / "data/pipeline_work/annual_tifs/eurocrops/2021/tile.tif"
         image.parent.mkdir(parents=True)
         image.write_bytes(b"original imagery")
-        run = root / "sen4agrinet_work/analysis/external/external_fixture"
+        run = root / "data/pipeline_work/analysis/external/external_fixture"
         run.mkdir(parents=True)
         (run / "features_test.json").write_text('{"rows": {}}')
         return image, run
@@ -34,6 +34,28 @@ class OutputLayoutTests(unittest.TestCase):
             refresh(root)
             self.assertTrue((root / "pipeline_outputs/preprocessing/external_second/windows/windows.json").samefile(new / "windows.json"))
             self.assertEqual(len(list((root / "pipeline_outputs").glob("integrity_*.json"))), 1)
+
+    def test_owned_readme_redirects_to_merged_storage_guide_only(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            guide = root / "docs/storage_layout.md"
+            guide.parent.mkdir()
+            guide.write_text("current storage instructions")
+            output = root / "pipeline_outputs"
+            output.mkdir()
+            readme = output / "README.md"
+            readme.symlink_to("../docs/output_layout.md")
+            (output / "layout_manifest.json").write_text(json.dumps({
+                "kind": "linked_pipeline_output_layout",
+                "links": {"README.md": "../docs/output_layout.md"}}))
+            refresh(root)
+            self.assertTrue(readme.samefile(guide))
+            refresh(root)
+            readme.unlink()
+            readme.write_text("user notes")
+            with self.assertRaises(FileExistsError):
+                refresh(root)
+            self.assertEqual(readme.read_text(), "user notes")
 
     def test_collision_stops_before_creating_other_links(self):
         with TemporaryDirectory() as folder:

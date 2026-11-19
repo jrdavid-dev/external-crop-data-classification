@@ -24,9 +24,25 @@ def contract(plan):
 
 
 def paths(root, plan):
-    key = batch.content_key(contract(plan))[:20]
+    saved_contract = contract(plan)
+    key = batch.content_key(saved_contract)[:20]
     folder = Path(root) / plan["fragment_id"]
-    return folder / f"{key}.parquet", folder / f"{key}.json"
+    expected = (folder / f"{key}.parquet", folder / f"{key}.json")
+    if expected[0].exists() or expected[1].exists():
+        return expected
+    # Relocation changes absolute mask paths in settings, hence the computed
+    # filename. Keep original cache identities and reuse only an exact contract.
+    matches = []
+    for receipt in sorted(folder.glob("*.json")):
+        try:
+            saved = json.loads(receipt.read_text())
+        except (ValueError, OSError):
+            continue
+        if saved.get("contract") == saved_contract and receipt.with_suffix(".parquet").is_file():
+            matches.append((receipt.with_suffix(".parquet"), receipt, saved.get("sha256")))
+    if len({item[2] for item in matches}) > 1:
+        raise ValueError("Conflicting pixel caches for the same saved contract")
+    return matches[0][:2] if matches else expected
 
 
 def validate_frame(frame, plan):

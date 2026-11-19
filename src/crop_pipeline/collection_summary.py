@@ -41,7 +41,7 @@ def inspect_collection(repository):
     # never copied into the report or its input list.
     settings_path = root / "settings.local.json"
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
-    report_root = (root / Path(settings.get("report_root", "sen4agrinet_work/inventory")).expanduser()).resolve()
+    report_root = (root / Path(settings.get("report_root", "data/pipeline_work/inventory")).expanduser()).resolve()
     campaigns = report_root.parent / "adaptive_training"
     batches, members, policies = [], {}, []
     for campaign in sorted(campaigns.glob("*")):
