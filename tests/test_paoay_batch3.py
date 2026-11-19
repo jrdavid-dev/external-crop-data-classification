@@ -148,8 +148,9 @@ class FiveNotebookWorkflowTests(unittest.TestCase):
             (root/'src/crop_pipeline').mkdir(parents=True)
             (root/'settings.local.json').write_text(json.dumps({'earth_engine_project':'fixture-project'}))
             kmz=root/'data/paoay'
-            refs.write_kmz(kmz/'00 - Region of Interest-2.kmz',[
-                refs.placemark('Region of Interest',geometry=refs.polygon(120.7,16.6,120.703,16.603)),
+            refs.write_kmz(kmz/'00 - Region of Interest.kmz',[
+                refs.placemark('Region of Interest',geometry=refs.polygon(120.7,16.6,120.703,16.603))])
+            refs.write_kmz(kmz/'00 - Atok Boundary.kmz',[
                 refs.placemark('Area 1','Crop rotation; year unconfirmed',geometry=refs.polygon(120.7,16.6,120.7015,16.603))])
             refs.write_kmz(kmz/'Crop Area.kmz',[
                 refs.placemark('B2','Lettuce all year',geometry=refs.polygon(120.7015,16.6,120.703,16.603))])

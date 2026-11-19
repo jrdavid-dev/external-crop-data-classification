@@ -434,6 +434,11 @@ def chunk(items, size_of, limit):
     return groups
 
 
+def task_description(source, kind, year, key):
+    """Earth Engine task label naming the data source; jobs are tracked by task id, not this label."""
+    return f"{source or 'crop_pipeline'}_{kind}_{year}_{key}"[:100]
+
+
 def start_export(ee, collection, asset_id, description):
     task = ee.batch.Export.table.toAsset(
         collection=collection,
@@ -469,6 +474,7 @@ def submit_daily(
     year,
     region_days_per_task=6000,
     checkpoint_folder=None,
+    source=None,
 ):
     """Submit daily-summary tasks for regions without a local checkpoint; return at once."""
     ledger = load_ledger(ledger_path)
@@ -498,7 +504,7 @@ def submit_daily(
             ee,
             daily_collection(ee, retriever, group),
             asset_id,
-            f"cropharvest_daily_{year}_{key}",
+            task_description(source, "daily", year, key),
         )
         entry = {
             "task_id": task_id,
@@ -560,7 +566,7 @@ def pending_composites(retriever, plans):
 
 def submit_composites(
     ee, retriever, plans, ledger_path, temp_folder, year, pixels_per_task=60000,
-    selected_only=False,
+    selected_only=False, source=None,
 ):
     """Submit composite tasks for qualified bins not yet saved locally; return at once."""
     ledger = load_ledger(ledger_path)
@@ -597,7 +603,7 @@ def submit_composites(
             composite_collection(ee, retriever, group, selected_only=True) if selected_only
             else composite_collection(ee, retriever, group),
             asset_id,
-            f"cropharvest_composites_{year}_{key}",
+            task_description(source, kind, year, key),
         )
         entry = {
             "task_id": task_id,

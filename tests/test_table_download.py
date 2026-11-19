@@ -56,6 +56,17 @@ class TableDownloadTests(unittest.TestCase):
         sleep.assert_called_once_with(2)
         self.assertEqual(ee.data._get_state().max_retries, 5)
 
+    @patch('crop_pipeline.imagery.table_download.time.sleep')
+    def test_earth_engine_memory_errors_are_retried_with_backoff(self, sleep):
+        memory = Exception('Earth Engine memory capacity exceeded.')
+        ee = fake_ee([memory, memory, page(4)])
+        self.assertEqual(table_download.download(ee, 'asset').value.tolist(), [4])
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [2, 4])
+        ee = fake_ee([memory] * 4)
+        with self.assertRaisesRegex(RuntimeError, 'memory capacity'):
+            table_download.download(ee, 'asset')
+        self.assertEqual(ee.data.computeFeatures.call_count, 4)
+
     def test_nontransient_and_repeated_token(self):
         ee = fake_ee([ValueError('permission denied')])
         with self.assertRaises(RuntimeError):

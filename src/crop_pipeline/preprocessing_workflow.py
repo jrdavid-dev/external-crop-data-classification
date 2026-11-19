@@ -98,6 +98,38 @@ def quality_counts(data):
     return rows
 
 
+LOSS_FIELDS = ("pre_mask_count", "cloud_shadow_count", "other_rejection_count", "clear_pixel_dates")
+
+
+def _loss_row(rows):
+    counted = [r for r in rows if r.get("pre_mask_count") is not None]
+    totals = {field: sum(int(r.get(field) or 0) for r in counted) for field in LOSS_FIELDS}
+    acquired = totals["pre_mask_count"]
+    return {"audited_tile_intervals": len(rows), "intervals_without_pre_mask_counts": len(rows) - len(counted),
+            "pixel_dates_with_acquisition": acquired, "cloud_or_shadow_pixel_dates": totals["cloud_shadow_count"],
+            "other_rejected_pixel_dates": totals["other_rejection_count"], "clear_pixel_dates": totals["clear_pixel_dates"],
+            "cloud_or_shadow_share": round(totals["cloud_shadow_count"] / acquired, 4) if acquired else None,
+            "clear_share": round(totals["clear_pixel_dates"] / acquired, 4) if acquired else None,
+            "quality_pass_tile_intervals": sum(r["status"] == "quality_pass" for r in rows)}
+
+
+def observation_loss(data):
+    """Pixel-date losses before compositing, by partition/crop and by calendar half-month.
+
+    A pixel-date is one selected parcel pixel on one Sentinel-2 acquisition date. Rows from
+    legacy archives without pre-mask counts are counted separately, never as zero loss.
+    """
+    partitions = {r["properties"]["fragment_id"]: r["properties"]["partition"] for r in data["regions"]}
+    by_crop, by_half_month = {}, {}
+    for row in data["quality_rows"]:
+        by_crop.setdefault((partitions.get(row["region_id"], "unassigned"), row["crop"]), []).append(row)
+        by_half_month.setdefault(row["start"][5:10], []).append(row)
+    crop_rows = [{"partition": partition, "crop": crop, **_loss_row(by_crop[(partition, crop)])}
+                 for partition in PARTITIONS for crop in CROPS if (partition, crop) in by_crop]
+    month_rows = [{"half_month_start": start, **_loss_row(rows)} for start, rows in sorted(by_half_month.items())]
+    return crop_rows, month_rows, _loss_row(data["quality_rows"])
+
+
 def audit(repository):
     root, report, output = paths(repository)
     pending(root, "quality")
@@ -114,7 +146,12 @@ def audit(repository):
     seasons.write_records(counts, quality_counts(data))
     overlap_report = handoff.parent / "test_overlap_exclusions.json"
     audit_reports = [overlap_report] if overlap_report.exists() else []
-    return publish(root, "quality", handoff, [handoff, snapshot, counts, *audit_reports,
+    loss_by_crop, loss_by_half_month, _ = observation_loss(data)
+    loss = handoff.parent / "observation_loss.csv"
+    loss_months = handoff.parent / "observation_loss_by_half_month.csv"
+    seasons.write_records(loss, loss_by_crop)
+    seasons.write_records(loss_months, loss_by_half_month)
+    return publish(root, "quality", handoff, [handoff, snapshot, counts, *audit_reports, loss, loss_months,
                    *[Path(p) for p in data["pixel_paths"].values()]])
 
 

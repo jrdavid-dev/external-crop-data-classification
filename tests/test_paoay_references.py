@@ -36,9 +36,11 @@ def write_kmz(path, placemarks):
 
 def fixture(folder):
     folder = Path(folder)
-    first = write_kmz(folder / '00 - Region of Interest-2.kmz', [
+    first = write_kmz(folder / '00 - Region of Interest.kmz', [
         placemark('Region of Interest', geometry=polygon(120.7, 16.6, 120.74, 16.64)),
         placemark('Area 1', 'Mixed crops<br>Year not confirmed', extra='<TimeStamp><when>2025-01-01</when></TimeStamp>'),
+    ])
+    boundary = write_kmz(folder / '00 - Atok Boundary.kmz', [
         placemark('Area 2', 'A rotation calendar', geometry=polygon(120.706, 16.606, 120.716, 16.616)),
     ])
     second = write_kmz(folder / 'Crop Area.kmz', [
@@ -46,7 +48,7 @@ def fixture(folder):
                   extra='<ExtendedData><Data name="evidence"><value>calendar only</value></Data></ExtendedData>'),
         placemark('B2', 'Lettuce all year', geometry=polygon(120.75, 16.65, 120.76, 16.66)),
     ])
-    return [first, second]
+    return [first, boundary, second]
 
 
 class PaoayReferenceTests(unittest.TestCase):

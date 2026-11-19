@@ -44,10 +44,12 @@ are reported separately from quality/class coverage. Select models with validati
 only. Missing test crops suppress three-class aggregates. Software completion and
 sample targets do not establish crop accuracy.
 
-The optional [Paoay 01–05 plus land activity 06](docs/paoay_workflow.md) is separate
+The optional [Paoay 01–05 plus optional 06–07](docs/paoay_workflow.md) is separate
 and deferred for the current external experiment. Its historical January–April
 2024 application requires a matching saved model recipe and independent dated
-reference evidence before any local accuracy claim.
+reference evidence before any local accuracy claim. Notebook 07 is an exploratory
+aligned-model application with documented imagery/timing differences; it is
+separate from primary external evaluation.
 
 ## Data and outputs
 

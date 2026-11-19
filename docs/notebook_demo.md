@@ -18,7 +18,7 @@ supplements separately before discussing a combined score. Missing reference
 crops prevent a three-class aggregate. The reporting F1 criteria are project
 targets, not a published guarantee of usefulness.
 
-Paoay 01–06 is a separate application demo. Reference notes, screening maps,
+Paoay 01–05 with optional 06–07 is a separate application demo. Reference notes, screening maps,
 applicability and seasonal comparisons are diagnostics, not local accuracy
 validation. Keep dates visible and distinguish estimated crop choices from dated
 field observations.

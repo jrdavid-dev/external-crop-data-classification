@@ -89,14 +89,17 @@ def collect_batch_year(ee, source_plan, year, inputs, attempt_folder=None,
             pixel_tables.import_existing_rasters(retriever, plan)
         # Multiple tiles share each daily export, but retain their established checkpoint paths.
         batch.submit_daily(ee, retriever, plans, inputs["timeline_folder"], ledger,
-                           temp_folder, int(year), checkpoint_folder=timeline_folder)
-        batch.submit_composites(ee, retriever, plans, ledger, temp_folder, int(year), selected_only=True)
+                           temp_folder, int(year), checkpoint_folder=timeline_folder,
+                           source=source_plan["source"])
+        batch.submit_composites(ee, retriever, plans, ledger, temp_folder, int(year), selected_only=True,
+                                source=source_plan["source"])
         missing_images = pixel_tables.pending(retriever, plans)
     else:
         for plan in missing_daily:
             batch.submit_daily(ee, retriever, [plan], timeline_folder(plan), ledger,
-                               temp_folder, int(year))
-        batch.submit_composites(ee, retriever, plans, ledger, temp_folder, int(year))
+                               temp_folder, int(year), source=source_plan["source"])
+        batch.submit_composites(ee, retriever, plans, ledger, temp_folder, int(year),
+                                source=source_plan["source"])
         missing_images = batch.pending_composites(retriever, plans)
     progress = batch_progress.snapshot(plans, missing_images, missing_daily,
                                        batch.load_ledger(ledger), table_mode)
