@@ -1,0 +1,102 @@
+diff --git a/README.md b/README.md
+index bed83e9..29ad14e 100644
+--- a/README.md
++++ b/README.md
+@@ -51,6 +51,25 @@ reference evidence before any local accuracy claim. Notebook 07 is an explorator
+ aligned-model application with documented imagery/timing differences; it is
+ separate from primary external evaluation.
+ 
++For mapping Paoay, the [improved pipeline](notebooks/improved/README.md) (whole-year
++harmonic Sentinel-2 features plus Sentinel-1, selected on development data only) is the
++proposed approach, pending team agreement: fixed four-month windows are rarely clear in the
++Atok monsoon. Its notebook 05 prepares the January field-visit plan and field sheet.
++The main pipeline above remains the baseline.
++
++## Experiment folders
++
++| Folder | What it holds |
++| --- | --- |
++| [tuning](notebooks/tuning/) | Random Forest grid, spatial CV and seed stability |
++| [transfer](notebooks/transfer/README.md) | Fixed-window start-month sweep (06) and Paoay start-month maps (13) |
++| [archive](notebooks/archive/experiments_20261121/README.md) | Superseded experiments with their findings: transfer 01–05, 07–12 (dataset bias) and pilots 00–12 |
++| [improved](notebooks/improved/README.md) | Main-pipeline safeguards plus the features that worked; all test populations; Paoay map; field plan |
++| [mixed_training](notebooks/mixed_training/README.md) | Part of the test places moved into training; "new place" check |
++
++These folders write only to their own `pipeline_outputs/<folder>/` runs and never change the
++main pipeline's pointers or frozen models.
++
+ ## Data and outputs
+ 
+ Authoritative working data is under **`data/pipeline_work/`**; upstream reference
+diff --git a/docs/classification_dataset_register.md b/docs/classification_dataset_register.md
+index ddaee40..c808de7 100644
+--- a/docs/classification_dataset_register.md
++++ b/docs/classification_dataset_register.md
+@@ -54,4 +54,5 @@ The counts can be reproduced from the ignored working outputs in the project che
+ - Development split, country, year and crop: `pipeline_outputs/development_error_review_2026-11-19/parcel_diagnostics.json`, fixed matched, geographic out-of-fold training and locked validation.
+ - External scope, label text, site, year and field identity: `pipeline_outputs/test_audit_2026-11-19/parcel_audit.json`, fixed matched. Cohort totals: `pipeline_outputs/preprocessing/external_xxu0iz4o/features/usable_samples.csv`.
+ - Mappings: [Sen4AgriNet](../src/crop_pipeline/sources/sen4agrinet.py), [FranceCrops](../src/crop_pipeline/sources/francecrops.py), [EuroCrops](../src/crop_pipeline/sources/eurocrops.py), [Denmark](../src/crop_pipeline/sources/denmark.py), and [collection documentation](collection.md).
++- Re-checked on 21 November 2026 against preprocessing `external_9ye1x2kd` and testing `run_2c43db2af7bc` (all four supplements collected): matched test counts unchanged (100 carrot, 31 cabbage, 50 potato).
+ - Local evidence: `data/pipeline_work/paoay/field_review/bundles/929cda2b0290abe9b68e/report.md`. Retired Dutch campaign role: `data/pipeline_work/retired_campaigns/ba5a6dfb78cd/policy.json`.
+diff --git a/docs/paoay_workflow.md b/docs/paoay_workflow.md
+index a43aa9c..4eaa5f2 100644
+--- a/docs/paoay_workflow.md
++++ b/docs/paoay_workflow.md
+@@ -1,6 +1,6 @@
+ # Paoay application
+ 
+-Paoay is deferred for the current external experiment. The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06 and exploratory aligned-map notebook 07. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
++Paoay is deferred for the current external experiment; see "Window choice and the whole-year map" below for the 21 November 2026 window findings and the proposed whole-year map. The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06 and exploratory aligned-map notebook 07. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
+ 
+ ## Run order
+ 
+@@ -90,6 +90,27 @@ Notebook 07 is separate from the fixed-model sequence and writes only to `paoay/
+ 
+ Recorded deviations from training: Cloud Score+ instead of the SCL/cloud-probability mask; each half-month median is treated as one observation at its bin midpoint (training required per-date observations); per-pixel clear bins instead of a parcel coverage fraction and clear-date count. The aligned recipe was chosen after the external test scores were known, so this map is exploratory and is not a test of that choice.
+ 
++## Window choice and the whole-year map (added 21 November 2026)
++
++The default fixed training window moved from January–April to May–August, which suits the European
++development data. In Paoay it is almost never clear: notebook 06's `four_month_windows.csv` shows
++1.2 % of active cropland with all eight May–August half-months clear in 2024 and 0 % in 2019–2023
++and 2025, against 100 % for January–April 2024. Notebooks 02–05 are therefore kept as the
++**January–April 2024 baseline** with their matching saved model; they were not rerun for May–August.
++
++[Transfer notebook 13](../notebooks/transfer/13_paoay_start_month_maps.ipynb) trains one fixed-window
++model per start month (development parcels only) and maps Paoay in each window's clearest year. The
++windows that score best in Europe (May–September) are 1–6 % clear in Paoay; the only fully clear one
++(January–April 2024) scores lowest in Europe and maps mostly potato. No window gives a crop mix close
++to the PSA Benguet shares.
++
++The proposed Paoay approach, pending team agreement, is the [improved pipeline](../notebooks/improved/README.md):
++whole-year harmonic Sentinel-2 features plus Sentinel-1 need no clear four-month window and classify
++every study pixel (notebook 04). It is still potato-biased and unvalidated. Its notebook 05 is a
++**statistical sampling design** for the January visit (stratified random by map class inside cropland,
++reserves, reference-area points), unlike the checklist below. Take its `visit_points.kml` and
++`field_sheet.csv` to the field; both omit predictions. Do not take the plan's `visit_plan.png`, which shows the map.
++
+ ## Preservation and outputs
+ 
+ Outputs remain under the parent of `report_root`, normally `data/pipeline_work/paoay/`: `references`, `sentinel2`, `dynamic_world`, `land_cover`, `features`, `predictions`, `applicability`, `season_shift`, `crop_baseline`, `screening`, `maps`, `review` and `field_review`.
+@@ -106,7 +127,7 @@ Notebook 05 freezes the preliminary map and creates editable records under `paoa
+ 
+ Run 01 → 02 → 03 → 04 → 05. Keep the map dates visible. The current baseline is January–April 2024; a later January visit does not directly verify those crops. For historical comparisons, obtain farmer recall or dated records covering the relevant period.
+ 
+-Use `field_check_plan.csv` for boundary names, notes and suitability. It omits predictions to help avoid observation bias. Visit a practical mix of accepted and uncertain areas, not only apparent errors. This checklist is not a statistical accuracy-sampling design.
++Use `field_check_plan.csv` for boundary names, notes and suitability. It omits predictions to help avoid observation bias. Visit a practical mix of accepted and uncertain areas, not only apparent errors. This checklist is not a statistical accuracy-sampling design; for one, use the improved pipeline's notebook 05 visit plan (see "Window choice and the whole-year map" above).
+ 
+ ### During the visit
+ 
+diff --git a/notebooks/preprocessing/01_imagery_quality.ipynb b/notebooks/preprocessing/01_imagery_quality.ipynb
+index 69eb92c..399b93f 100644
+--- a/notebooks/preprocessing/01_imagery_quality.ipynb
++++ b/notebooks/preprocessing/01_imagery_quality.ipynb
+@@ -282,7 +282,7 @@
+    "source": [
+     "## Evidence: reference parcels on downloaded imagery\n",
+     "\n",
+-    "One parcel per source and crop (median selected-pixel count, chosen without looking at model results). The red line is the reference parcel outline from the source dataset. The coloured cells are the Sentinel-2 pixels actually downloaded into the annual TIFF, shown as NDVI for the eight Jan–Apr half-months. Empty cells failed the cloud mask or were not selected. Loading `quality.json` can take a minute for large runs."
++    "One parcel per source and crop (median selected-pixel count, chosen without looking at model results). The red line is the reference parcel outline from the source dataset. The coloured cells are the Sentinel-2 pixels actually downloaded into the annual TIFF, shown as NDVI for the first eight half-months of the year (January–April). This is a view of the downloaded imagery only; the fixed training window is May–August. Empty cells failed the cloud mask or were not selected. Loading `quality.json` can take a minute for large runs."
+    ]
+   },
+   {

@@ -9,7 +9,7 @@ from math import floor
 
 from shapely.geometry import shape
 
-from crop_pipeline.common import save_json
+from crop_pipeline.common import iter_json_object, save_json
 from crop_pipeline.sources import adaptive, sampling, test_cohort
 from crop_pipeline.windows import annual_archive, seasons
 from crop_pipeline.windows.workflow import WindowAnalysis
@@ -212,6 +212,10 @@ def select(quality_handoff, report_folder):
     return handoff
 
 
+# Fields read by pixel_key, exclude_shared_development_locations and capped.
+_SELECTION_FIELDS = ("partition_group", "region_id", "partition", "crop", "source_dataset", "source_crs", "x", "y")
+
+
 def pixel_key(row):
     return row["partition_group"], row["region_id"], *sampling.pixel_location(row)
 
@@ -253,23 +257,49 @@ def export_features(window_handoff):
     from crop_pipeline.features import experiments
 
     path = Path(window_handoff)
-    data = json.loads(path.read_text())
-    indexed = {}
+    # Two streaming passes keep memory bounded by the capped selection, not the
+    # full window handoff. Pass 1 holds only the fields used for de-duplication,
+    # shared-location exclusion, matching and capping; pass 2 loads selected rows.
+    names = ("fixed", "aligned")
+    indexed = {name: {} for name in names}
+    data = {}
+    positions = Counter()
+    strings = {}
+    for name, row in iter_json_object(path, arrays=names):
+        if name not in names:
+            data[name] = row
+            continue
+        record = {field: strings.setdefault(row[field], row[field]) if isinstance(row[field], str) else row[field]
+                  for field in _SELECTION_FIELDS if field in row}
+        record["_position"] = positions[name]
+        positions[name] += 1
+        indexed[name].setdefault(pixel_key(record), record)
     exclusions = {}
-    for name in ("fixed", "aligned"):
-        indexed[name] = {}
-        for row in data[name]:
-            indexed[name].setdefault(pixel_key(row), row)
+    for name in names:
         indexed[name], exclusions[name] = exclude_shared_development_locations(indexed[name])
     common = indexed["fixed"].keys() & indexed["aligned"].keys()
-    report = {"window_sha256": seasons.file_sha256(path), "quality": data["quality"],
-              "fixed_start_month": data.get("fixed_start_month", 1)}
+    selections = {}
     for cohort in ("full", "matched"):
         for name, rows in indexed.items():
             selected = rows if cohort == "full" else {key: rows[key] for key in common}
+            selections[name, cohort] = [record["_position"] for record in capped(selected)]
+    del indexed, strings
+    wanted = {name: {i for (window, _), chosen in selections.items() if window == name for i in chosen}
+              for name in names}
+    loaded = {name: {} for name in names}
+    positions = Counter()
+    for name, row in iter_json_object(path, arrays=names):
+        if name in names:
+            if positions[name] in wanted[name]:
+                loaded[name][positions[name]] = row
+            positions[name] += 1
+    report = {"window_sha256": seasons.file_sha256(path), "quality": data["quality"],
+              "fixed_start_month": data.get("fixed_start_month", 1)}
+    for cohort in ("full", "matched"):
+        for name in names:
             report[f"{name}_{cohort}"] = [
-                experiments.enhance_window(row, experiments.FEATURE_POLICY)
-                for row in capped(selected)
+                experiments.enhance_window(loaded[name][position], experiments.FEATURE_POLICY)
+                for position in selections[name, cohort]
             ]
     handoff = path.parent / "features.json"
     save_json(path.parent / "development_overlap_exclusions.json", exclusions)

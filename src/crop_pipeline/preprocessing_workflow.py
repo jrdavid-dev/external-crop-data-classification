@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from crop_pipeline.analysis_workflow import resolve_stage_pointer, write_stage_pointer
-from crop_pipeline.common import save_json
+from crop_pipeline.common import iter_json_object, save_json
 from crop_pipeline.output_layout import refresh
 from crop_pipeline.sources import adaptive
 from crop_pipeline.windows import external, seasons
@@ -175,12 +175,18 @@ def select(repository, quality_handoff=None):
             raise FileExistsError("Partial window outputs exist. Start a new imagery audit to preserve this attempt")
         handoff = external.select(quality, report)
         check_snapshot(quality, report)
-        data = json.loads(handoff.read_text())
+        # Stream the handoff: it can be larger than available memory.
+        pixels, groups = Counter(), {}
+        for name, row in iter_json_object(handoff, arrays=("fixed", "aligned")):
+            if name in ("fixed", "aligned"):
+                key = name, row["partition"], row["crop"]
+                pixels[key] += 1
+                groups.setdefault(key, set()).add(row["partition_group"])
         counts = handoff.parent / "window_counts.csv"
         seasons.write_records(counts, [
             {"window": name, "partition": partition, "crop": crop,
-             "complete_pixel_windows_before_cap": sum(r["partition"] == partition and r["crop"] == crop for r in data[name]),
-             "parcel_groups": len({r["partition_group"] for r in data[name] if r["partition"] == partition and r["crop"] == crop})}
+             "complete_pixel_windows_before_cap": pixels[name, partition, crop],
+             "parcel_groups": len(groups.get((name, partition, crop), ()))}
             for name in ("fixed", "aligned") for partition in PARTITIONS for crop in CROPS])
         return publish(root, "windows", handoff, [handoff, quality, quality.parent / "collection_snapshot.json", counts])
     refresh(root)
