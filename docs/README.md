@@ -8,6 +8,8 @@ Read **[project design](project_design.md) → [workflow](workflow.md) →
 | [Project design](project_design.md) | Scope, data roles, targets and deliverables |
 | [Workflow](workflow.md) | Notebook order, handoffs, reruns and troubleshooting |
 | [Methodology](methodology.md) | Imagery rules, features, model settings and scoring |
+| [External classification study](classification_external_study.md) | Thesis methods, saved results, limitations and reproducibility |
+| [Classification dataset register](classification_dataset_register.md) | Source roles, crop codes and matched coverage |
 | [Setup](fresh_clone.md) | Environment and collect/import starting routes |
 | [Collection](collection.md) | Source controls, reference audits, locked partitions and resuming jobs |
 | [Research basis](research_basis.md) | Sources, project choices and limits of claims |
