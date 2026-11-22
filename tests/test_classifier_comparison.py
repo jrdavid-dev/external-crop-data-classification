@@ -4,7 +4,15 @@ from unittest.mock import patch
 import numpy as np
 
 from crop_pipeline.training import classifier_comparison as comparison
-from crop_pipeline.training.classifiers import xgboost_available
+
+
+def xgboost_available():
+    """XGBoost installed and loadable (on macOS it also needs the OpenMP runtime)."""
+    try:
+        import xgboost  # noqa: F401
+    except Exception:
+        return False
+    return True
 
 
 class ClassifierComparisonTests(unittest.TestCase):

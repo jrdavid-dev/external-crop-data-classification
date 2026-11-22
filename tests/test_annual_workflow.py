@@ -61,16 +61,6 @@ def inputs_run(root, rows, arrays):
 FAST = {**development_views.SELECTION_FOREST, "n_estimators": 15}
 
 
-def small_families():
-    from crop_pipeline.training import classifiers
-    from sklearn.ensemble import RandomForestClassifier
-
-    return {"random_forest": {"original": RandomForestClassifier(n_estimators=15, random_state=42)},
-            "logistic_regression": {"C=1": classifiers.WeightedLogistic(C=1.0)},
-            "gradient_boosting": {"depth=2": classifiers.GradientBoosting(max_depth=2, n_estimators=20,
-                                                                          backend="sklearn_hist_gradient_boosting")}}
-
-
 class AnnualFeatureTests(unittest.TestCase):
     def test_harmonic_fit_recovers_mean_and_amplitude(self):
         t = (np.arange(24) + .5) / 24
@@ -164,59 +154,44 @@ class AnnualMapTests(unittest.TestCase):
             annual_maps.map_area(".", "baguio")
 
 
-class SelectionChoiceTests(unittest.TestCase):
-    def test_greenup_recipes_keep_the_annual_coverage_and_add_timing(self):
-        from crop_pipeline.features import greenup
+class SelectionAndRegistryTests(unittest.TestCase):
+    def test_selection_records_the_default_forest_and_freezing_another_needs_an_explicit_estimator(self):
+        from sklearn.linear_model import LogisticRegression
 
+        rows, arrays = synthetic()
+        with TemporaryDirectory() as folder, patch.object(development_views, "SELECTION_FOREST", FAST), \
+                patch.object(development_views, "FOREST", FAST):
+            root = Path(folder)
+            inputs_run(root, rows, arrays)
+            selection = annual_workflow.select(root, progress=None, recipes=["annual_s2"])
+            record = json.loads((selection.parent / "selection.json").read_text())
+            self.assertEqual(record["classifier"], annual_workflow.DEFAULT_CLASSIFIER)
+            self.assertNotIn("classifier_candidates", record)
+            # A selection naming another classifier cannot be frozen as a forest by accident.
+            other = annual_workflow._new_run(root, "selection")
+            (other / "selection.json").write_text(json.dumps({**record, "classifier": {"family": "logistic_regression",
+                                                                                        "setting": "C=1"}}))
+            receipt = annual_workflow.seal(other, "selection", inputs_handoff=json.loads(selection.read_text())["inputs_handoff"])
+            with self.assertRaises(ValueError):
+                annual_workflow.freeze(root, receipt)
+            models = annual_workflow.freeze(root, receipt, estimator=LogisticRegression(max_iter=500))
+            info = json.loads((models.parent / "model.json").read_text())
+            self.assertEqual((info["classifier"]["family"], info["classifier"]["estimator"]),
+                             ("logistic_regression", "LogisticRegression"))
+
+    def test_registered_experiment_recipes_are_usable_but_never_selection_defaults(self):
         rows, arrays = synthetic(pixels=1)
-        base = annual_workflow.recipe_matrix("annual_s2_s1", arrays)
-        for name in greenup.RECIPES:
-            X, ok, columns = annual_workflow.recipe_matrix(name, arrays)
-            self.assertEqual(ok.tolist(), base[1].tolist())
-            self.assertEqual(X.shape, (len(rows), len(base[2]) + len(greenup.TIMING_COLUMNS)))
-            self.assertEqual(columns[-len(greenup.TIMING_COLUMNS):], list(greenup.TIMING_COLUMNS))
-
-    def test_both_gradient_boosting_backends_fit_with_weights(self):
-        from crop_pipeline.training import classifiers
-
-        rows, arrays = synthetic(pixels=1)
-        X, _, _ = annual_workflow.recipe_matrix("annual_s2", arrays)
-        y = [r["crop"] for r in rows]
-        backends = ["sklearn_hist_gradient_boosting"] + (["xgboost"] if classifiers.xgboost_available() else [])
-        for backend in backends:
-            model = classifiers.GradientBoosting(max_depth=2, n_estimators=20, backend=backend)
-            model.fit(X, y, sample_weight=np.ones(len(y)))
-            self.assertEqual(model.backend_, backend)
-            self.assertEqual(set(model.classes_), set(CROPS))
-            self.assertEqual(model.predict_proba(X).shape, (len(y), 3))
-        self.assertIn(classifiers.gradient_boosting_backend(), ("xgboost", "sklearn_hist_gradient_boosting"))
-        # A dataset-holdout fit can see only two crops (no cabbage without FranceCrops).
-        two = [i for i, crop in enumerate(y) if crop != "cabbage"]
-        for backend in backends:
-            model = classifiers.GradientBoosting(max_depth=2, n_estimators=20, backend=backend)
-            model.fit(X[two], [y[i] for i in two], sample_weight=np.ones(len(two)))
-            self.assertEqual(model.predict_proba(X).shape, (len(y), 2))
-            self.assertEqual(set(model.classes_), {"carrot", "potato"})
-
-    def test_freezing_builds_the_recorded_classifier_and_old_selections_use_the_forest(self):
-        from sklearn.ensemble import RandomForestClassifier
-        from crop_pipeline.training import classifiers
-
-        choice, model = annual_workflow.selected_estimator(
-            {"classifier": {"family": "logistic_regression", "setting": "C=0.1"}})
-        self.assertIsInstance(model, classifiers.WeightedLogistic)
-        self.assertEqual(model.C, 0.1)
-        choice, model = annual_workflow.selected_estimator({"selected": "annual_s2_s1"})
-        self.assertEqual((choice["family"], choice["setting"]), classifiers.DEFAULT)
-        self.assertIsInstance(model, RandomForestClassifier)
-        self.assertEqual(model.n_estimators, development_views.FOREST["n_estimators"])
-
-    def test_classifier_choice_ties_go_to_the_forest(self):
-        results = {"random_forest": {"selection_score": .8}, "logistic_regression": {"selection_score": .8},
-                   "gradient_boosting": {"selection_score": .79}}
-        self.assertEqual(annual_workflow.choose_classifier(results), "random_forest")
-        results["gradient_boosting"]["selection_score"] = .81
-        self.assertEqual(annual_workflow.choose_classifier(results), "gradient_boosting")
+        recipe = {"annual_s2_copy_for_test": annual.RECIPES["annual_s2"]}
+        try:
+            annual_workflow.register_recipes(recipe)
+            X, ok, columns = annual_workflow.recipe_matrix("annual_s2_copy_for_test", arrays)
+            self.assertEqual(X.shape[1], len(columns))
+            self.assertNotIn("annual_s2_copy_for_test", annual_workflow.DEFAULT_RECIPES)
+            with self.assertRaises(ValueError):
+                annual_workflow.register_recipes({"annual_s2": annual.RECIPES["annual_s2_s1"]})
+        finally:
+            annual_workflow.RECIPES.pop("annual_s2_copy_for_test", None)
+        self.assertEqual(annual_workflow.DEFAULT_RECIPES, tuple(annual.RECIPES))
 
 
 class AnnualWorkflowTests(unittest.TestCase):
@@ -228,13 +203,12 @@ class AnnualWorkflowTests(unittest.TestCase):
             inputs_run(root, rows, arrays)
             with patch.object(development_views, "view_probabilities",
                               wraps=development_views.view_probabilities) as views:
-                selection = annual_workflow.select(root, progress=None, families=small_families())
+                selection = annual_workflow.select(root, progress=None)
             self.assertTrue(all(r["partition"] != "test" for call in views.call_args_list for r in call.args[1]))
             chosen = json.loads((selection.parent / "selection.json").read_text())
-            self.assertIn(chosen["selected"], annual_workflow.RECIPES)
-            self.assertEqual(set(chosen["candidates"]), set(annual_workflow.RECIPES))
-            self.assertIn(chosen["classifier"]["family"], small_families())
-            self.assertEqual(set(chosen["classifier_candidates"]), set(small_families()))
+            self.assertIn(chosen["selected"], annual_workflow.DEFAULT_RECIPES)
+            self.assertEqual(set(chosen["candidates"]), set(annual_workflow.DEFAULT_RECIPES))
+            self.assertEqual(chosen["classifier"], {"family": "random_forest", "setting": "original"})
             self.assertFalse(chosen["test_rows_used"])
             models = annual_workflow.freeze(root)
             info = json.loads((models.parent / "model.json").read_text())
@@ -262,7 +236,7 @@ class AnnualWorkflowTests(unittest.TestCase):
                 patch.object(development_views, "FOREST", FAST):
             root = Path(folder)
             receipt = inputs_run(root, rows, arrays)
-            annual_workflow.select(root, progress=None, families=small_families())
+            annual_workflow.select(root, progress=None)
             models = annual_workflow.freeze(root)
             info_path = models.parent / "model.json"
             info = json.loads(info_path.read_text())
@@ -272,7 +246,7 @@ class AnnualWorkflowTests(unittest.TestCase):
                 annual_workflow.test(root, models)
             (receipt.parent / "pixels.json").write_text("[]")
             with self.assertRaises(ValueError):
-                annual_workflow.select(root, progress=None, families=small_families())
+                annual_workflow.select(root, progress=None)
 
 
 if __name__ == "__main__":

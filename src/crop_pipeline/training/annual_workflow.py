@@ -23,9 +23,9 @@ import numpy as np
 from crop_pipeline import preprocessing_workflow
 from crop_pipeline.analysis_workflow import resolve_stage_pointer, write_stage_pointer
 from crop_pipeline.common import save_json
-from crop_pipeline.features import annual, greenup
+from crop_pipeline.features import annual
 from crop_pipeline.imagery import sentinel1
-from crop_pipeline.training import classifiers, development_views, earth_engine
+from crop_pipeline.training import development_views, earth_engine
 from crop_pipeline.windows import seasons
 
 AREA = "annual"
@@ -100,7 +100,20 @@ def load_inputs(folder):
     return json.loads((Path(folder) / "pixels.json").read_text()), arrays
 
 
-RECIPES = {**annual.RECIPES, **greenup.RECIPES}
+# Recipe registry: the pipeline's own recipes, plus any an experiment registers (``register_recipes``),
+# so frozen experiment models can be tested and mapped with the same stages.
+RECIPES = dict(annual.RECIPES)
+# Recipes the selection stage compares by default: the reported annual recipes only.
+DEFAULT_RECIPES = tuple(annual.RECIPES)
+DEFAULT_CLASSIFIER = {"family": "random_forest", "setting": "original"}
+
+
+def register_recipes(recipes):
+    """Make experiment recipes usable by ``freeze``, ``test`` and the maps; never selection defaults."""
+    clashes = {name for name in recipes if name in RECIPES and RECIPES[name] is not recipes[name]}
+    if clashes:
+        raise ValueError(f"Recipe names already registered: {sorted(clashes)}")
+    RECIPES.update(recipes)
 
 
 def recipe_matrix(name, arrays):
@@ -136,42 +149,6 @@ def development_candidates(rows, arrays, recipes=None, params=None, progress=pri
 def choose(results):
     """Highest selection score (rounded to 1e-6); ties go to fewer predictors."""
     return max(results, key=lambda n: (round(results[n]["selection_score"], 6), -results[n]["predictors"]))
-
-
-def tune_family(X, rows, settings, progress=None):
-    """The study's tuning rule: highest pooled spatial-CV macro-F1 in the training split; ties to the first listed."""
-    scores = {}
-    for label, model in settings.items():
-        views = development_views.view_probabilities(X, rows, estimator=model, views=("spatial_cv",))
-        pooled = {g: p for folds in views["spatial_cv"].values() for g, p in folds.items()}
-        scores[label] = development_views.scores(pooled)["macro_f1"]
-        if progress:
-            progress(f"  {label}: spatial CV {scores[label]:.3f}")
-    order = list(settings)
-    return max(scores, key=lambda label: (round(scores[label], 6), -order.index(label))), scores
-
-
-def classifier_candidates(X, rows, families=None, progress=print):
-    """Tune each family, then score each family's chosen setting on every development view."""
-    families = families or classifiers.families()
-    tuning, results = {}, {}
-    for family, settings in families.items():
-        if progress:
-            progress(f"tuning {family} ({len(settings)} settings)")
-        chosen, scores = tune_family(X, rows, settings, progress)
-        tuning[family] = {"chosen": chosen, "spatial_cv_macro_f1": scores}
-        summary = development_views.summarize(development_views.view_probabilities(X, rows,
-                                                                                   estimator=settings[chosen]))
-        results[family] = {"setting": chosen, **summary}
-        if progress:
-            progress(f"{family} {chosen}: selection score {summary['selection_score']:.3f}")
-    return tuning, results
-
-
-def choose_classifier(results):
-    """Highest selection score (rounded to 1e-6); ties go to the earlier family (Random Forest first)."""
-    order = list(results)
-    return max(results, key=lambda f: (round(results[f]["selection_score"], 6), -order.index(f)))
 
 
 def majority_crop(rows):
@@ -260,60 +237,52 @@ def build_inputs(repository, quality_handoff=None, ee=None, pixels_per_parcel=an
     return _publish(repository, "inputs", receipt)
 
 
-def select(repository, inputs_handoff=None, progress=print, recipes=None, families=None):
-    """Choose the recipe, then the classifier family and its settings, on development views only.
+def select(repository, inputs_handoff=None, progress=print, recipes=None):
+    """Choose the recipe on development views only; the classifier is the default Random Forest.
 
-    1. Every recipe is scored with the default forest; the highest selection score wins (ties to
-       fewer predictors).
-    2. On the chosen recipe, each classifier family is tuned by spatial CV in the training split
-       (the study's rule), and each family's chosen setting is scored on every view.
-    3. The family with the highest selection score wins; ties go to the Random Forest.
-    Test pixels are not read.
+    Every recipe in ``DEFAULT_RECIPES`` (or ``recipes``) is scored with the default forest on the
+    development pixels usable by every recipe; the highest selection score (mean of spatial CV and
+    dataset-holdout macro-F1) wins, ties to fewer predictors. Test pixels are not read.
     """
     _start(repository, "selection")
     inputs, _ = _input(repository, inputs_handoff, "inputs")
     rows, arrays = load_inputs(inputs.parent)
-    built = {name: recipe_matrix(name, arrays) for name in (recipes or RECIPES)}
-    recipe_results = development_candidates(rows, arrays, progress=progress, built=built)
-    recipe = choose(recipe_results)
-    index = development_index(rows, built)
-    development = [rows[i] for i in index]
-    tuning, classifier_results = classifier_candidates(built[recipe][0][index], development, families, progress)
-    family = choose_classifier(classifier_results)
+    built = {name: recipe_matrix(name, arrays) for name in (recipes or DEFAULT_RECIPES)}
+    results = development_candidates(rows, arrays, progress=progress, built=built)
+    recipe = choose(results)
     run = _new_run(repository, "selection")
     save_json(run / "selection.json", {
-        "selected": recipe, "classifier": {"family": family, "setting": classifier_results[family]["setting"]},
-        "selection_score": classifier_results[family]["selection_score"],
-        "rule": "recipe: highest mean of spatial CV and dataset-holdout macro-F1 with the default forest, ties to "
-                f"{TIE_BREAK}; settings: highest spatial-CV macro-F1 within each family, ties to the listed default; "
-                "family: highest selection score, ties to the Random Forest",
-        "forest": development_views.SELECTION_FOREST, "gradient_boosting_backend": classifiers.gradient_boosting_backend(),
-        "candidates": recipe_results, "classifier_tuning": tuning, "classifier_candidates": classifier_results,
+        "selected": recipe, "classifier": DEFAULT_CLASSIFIER, "selection_score": results[recipe]["selection_score"],
+        "rule": "highest mean of spatial CV and dataset-holdout macro-F1 with the default Random Forest; ties to "
+                f"{TIE_BREAK}", "forest": development_views.SELECTION_FOREST, "candidates": results,
         "test_rows_used": False})
     receipt = seal(run, "selection", inputs_handoff=str(inputs))
     return _publish(repository, "selection", receipt)
 
 
-def selected_estimator(selection):
-    """The frozen estimator for a selection record; older selections without a classifier use the forest."""
-    choice = selection.get("classifier") or {"family": classifiers.DEFAULT[0], "setting": classifiers.DEFAULT[1]}
-    return choice, classifiers.estimator(choice["family"], choice["setting"], final=True)
+def freeze(repository, selection_handoff=None, estimator=None):
+    """Fit the selected recipe on the locked training split; report locked validation.
 
-
-def freeze(repository, selection_handoff=None):
-    """Fit the selected recipe and classifier on the locked training split; report locked validation."""
+    The model is the default Random Forest (``development_views.FOREST``). An experiment may pass
+    another ``estimator`` (any classifier taking ``sample_weight``); its record names it.
+    """
     _start(repository, "models")
     selection, record = _input(repository, selection_handoff, "selection")
     chosen = json.loads((selection.parent / "selection.json").read_text())
     choice = chosen["selected"]
-    classifier, estimator = selected_estimator(chosen)
+    classifier = chosen.get("classifier") or DEFAULT_CLASSIFIER
+    if estimator is None and classifier != DEFAULT_CLASSIFIER:
+        raise ValueError(f"Selection records {classifier}; pass that estimator explicitly to freeze it")
     inputs, _ = verify(record["inputs_handoff"], "inputs")
     rows, arrays = load_inputs(inputs.parent)
     X, ok, columns = recipe_matrix(choice, arrays)
     train = np.asarray([i for i, r in enumerate(rows) if ok[i] and r["partition"] == "train"], dtype=int)
     validation = np.asarray([i for i, r in enumerate(rows) if ok[i] and r["partition"] == "validation"], dtype=int)
     train_rows = [rows[i] for i in train]
-    model = development_views.fit(X[train], train_rows, estimator=estimator)
+    if estimator is None:
+        model = development_views.fit(X[train], train_rows, development_views.FOREST)
+    else:
+        model = development_views.fit(X[train], train_rows, estimator=estimator)
     validation_table = parcel_table(model, X[validation], [rows[i] for i in validation])
     development = [rows[i] for i in np.r_[train, validation]]
     run = _new_run(repository, "models")

@@ -104,10 +104,9 @@ writes the paired comparison; Paoay 08 maps. Its stages write
 `current_<stage>.json` pointers, and never change the window runs. Selection reads
 only train and validation parcels: spatial CV within the training split and
 holding out one development dataset at a time, with the mean of the two as the
-selection score. It chooses the recipe first, then tunes each classifier family
-(Random Forest, logistic regression, gradient-boosted trees) by spatial CV and
-keeps the family with the best selection score; `selection.json` records every
-score and the gradient-boosting backend (XGBoost or scikit-learn).
+selection score. It chooses between Sentinel-2 only and Sentinel-2 plus radar
+and freezes the default Random Forest. Alternatives tried and not adopted are in
+[`experiments/`](../experiments/README.md).
 
 ## Progress and troubleshooting
 
