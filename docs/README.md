@@ -19,6 +19,4 @@ Read **[project design](project_design.md) → [workflow](workflow.md) →
 | [Paoay application](paoay_workflow.md) | Separate optional application and field-observation guide |
 
 Paoay is deferred for the current external experiment. The
-[transport reference](reference/transport.md) is for maintainers. Dated experiments,
-verification results and cleanup/migration audits live in [history](history/README.md);
-they are not additional onboarding steps.
+[transport reference](reference/transport.md) is for maintainers.

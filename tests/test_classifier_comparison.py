@@ -1,10 +1,10 @@
-from importlib.util import find_spec
 import unittest
 from unittest.mock import patch
 
 import numpy as np
 
 from crop_pipeline.training import classifier_comparison as comparison
+from crop_pipeline.training.classifiers import xgboost_available
 
 
 class ClassifierComparisonTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class ClassifierComparisonTests(unittest.TestCase):
                 self.assertTrue(np.all(probabilities >= 0))
 
 
-    @unittest.skipUnless(find_spec("xgboost"), "optional XGBoost dependency")
+    @unittest.skipUnless(xgboost_available(), "optional XGBoost dependency or its OpenMP runtime is missing")
     def test_xgboost_crop_names_follow_probability_columns(self):
         rows = self.rows()
         model = comparison.fit_classifier(

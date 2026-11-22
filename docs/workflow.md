@@ -97,6 +97,18 @@ test crops suppress three-class aggregates. Keep scientific constraints unchange
 when reporting a shortfall. Model settings and scoring definitions are in
 [methodology](methodology.md#model-selection-and-scoring).
 
+The annual harmonic recipe runs beside the window models: Training 04 builds
+inputs, selects on development views and freezes; Testing 05 scores once and
+writes the paired comparison; Paoay 08 maps. Its stages write
+`pipeline_outputs/annual/<stage>/run_<id>/` with sealed receipts and
+`current_<stage>.json` pointers, and never change the window runs. Selection reads
+only train and validation parcels: spatial CV within the training split and
+holding out one development dataset at a time, with the mean of the two as the
+selection score. It chooses the recipe first, then tunes each classifier family
+(Random Forest, logistic regression, gradient-boosted trees) by spatial CV and
+keeps the family with the best selection score; `selection.json` records every
+score and the gradient-boosting backend (XGBoost or scikit-learn).
+
 ## Progress and troubleshooting
 
 Where a notebook uses the shared progress display, counts describe its named
@@ -132,4 +144,3 @@ The notebook integration test uses tiny TIFF fixtures, mocked imagery audit/wind
 selection and small forests to verify handoffs, collection isolation and snapshot
 rejection. Separate tests cover the processing and transfer helpers. These checks
 do not replace a completed experiment on the chosen data or establish crop accuracy.
-Dated past test totals belong in [history](history/README.md), not a live run guide.
