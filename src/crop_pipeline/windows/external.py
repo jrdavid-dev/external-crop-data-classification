@@ -1,9 +1,11 @@
 """Local quality, window and feature handoffs for the external experiment."""
 
 from collections import Counter
+from contextlib import ExitStack
 from datetime import date
 import json
 from pathlib import Path
+from sys import intern
 from tempfile import mkdtemp
 from math import floor
 
@@ -11,10 +13,13 @@ from shapely.geometry import shape
 
 from crop_pipeline.common import save_json
 from crop_pipeline.sources import adaptive, sampling, test_cohort
-from crop_pipeline.windows import annual_archive, seasons
+from crop_pipeline.windows import annual_archive, json_rows, seasons
 from crop_pipeline.windows.workflow import WindowAnalysis
 
 FIXED_START_MONTH = 5
+DEVELOPMENT = "development"
+SPLIT_POLICY = "matched_first"
+SPLIT_FILENAME = "development_split.json"
 
 
 def snapshot(report_folder):
@@ -119,8 +124,8 @@ def audit(report_folder, output_root):
         source = test_cohort.source_role(p["source_dataset"])
         cohort = p.get("test_cohort") or ("jecam" if source == test_cohort.TEST else None)
         is_test = cohort is not None
-        partition = "test" if is_test else assignment[group]
-        if group not in exclusions.get(cohort, ()) and (is_test or partition in {"train", "validation"}):
+        partition = "test" if is_test else DEVELOPMENT
+        if group not in exclusions.get(cohort, ()) and (is_test or assignment[group] in {"train", "validation"}):
             metadata = {"test_cohort": cohort} if is_test else {}
             regions.append({**region, "properties": {**p, **metadata,
                             "partition": partition, "source_dataset": source}})
@@ -137,6 +142,7 @@ def audit(report_folder, output_root):
         "regions": regions, "quality_rows": quality_rows,
         "composite_rows": [row for row in analysis.composite_rows if row["region_id"] in eligible_ids],
         "pixel_paths": {key: str(path) for key, path in analysis.pixel_rows.paths.items() if key in eligible_ids},
+        "development_split_policy": SPLIT_POLICY,
         "sources": sources, "overlap_exclusions": sorted(overlaps),
         "supplemental_batches": supplemental_batches,
         "mask_loss": {
@@ -161,7 +167,7 @@ def fixed_windows(regions):
         }
 
 
-def select(quality_handoff, report_folder):
+def select(quality_handoff, report_folder, *, summarize=None):
     quality_handoff = Path(quality_handoff)
     saved = json.loads(quality_handoff.read_text())
     run = quality_handoff.parent
@@ -188,7 +194,7 @@ def select(quality_handoff, report_folder):
         fixed_windows(analysis.regions), analysis.pixel_rows, analysis.quality_rows, .8, 0,
     )
     aligned = analysis.feature_rows + analysis.estimated_feature_rows
-    partitions = {r["properties"]["partition_group"]: r["properties"]["partition"] for r in analysis.regions}
+    partitions = {r["properties"]["fragment_id"]: r["properties"]["partition"] for r in analysis.regions}
     test_cohorts = {r["properties"]["fragment_id"]: r["properties"]
                     for r in analysis.regions if r["properties"]["partition"] == "test"}
     sites = {}
@@ -197,7 +203,7 @@ def select(quality_handoff, report_folder):
         sites[region["properties"]["fragment_id"]] = f"{floor(point.y)},{floor(point.x)}"
     for row in fixed + aligned:
         row["site_cell"] = sites[row["region_id"]]
-        row["partition"] = partitions[row["partition_group"]]
+        row["partition"] = partitions[row["region_id"]]
         if row["partition"] == "test":
             reference = test_cohorts[row["region_id"]]
             row["test_cohort"] = reference.get("test_cohort", "jecam")
@@ -206,9 +212,13 @@ def select(quality_handoff, report_folder):
             row["field_id"] = row["partition_group"]
     seasons.write_records(run / "fixed_losses.csv", losses)
     handoff = run / "windows.json"
-    save_json(handoff, {"fixed": fixed, "aligned": aligned, "quality": str(quality_handoff),
-                        "test_cohorts": ["jecam", *saved.get("supplemental_batches", {})],
-                        "fixed_start_month": FIXED_START_MONTH})
+    windows = {"fixed": fixed, "aligned": aligned, "quality": str(quality_handoff),
+               "test_cohorts": ["jecam", *saved.get("supplemental_batches", {})],
+               "fixed_start_month": FIXED_START_MONTH,
+               "development_split_policy": saved.get("development_split_policy")}
+    if summarize is not None:
+        summarize(run / "window_counts.csv", windows)
+    save_json(handoff, windows)
     return handoff
 
 
@@ -216,31 +226,58 @@ def pixel_key(row):
     return row["partition_group"], row["region_id"], *sampling.pixel_location(row)
 
 
-def capped(rows):
+def capped_keys(keys):
     counts = Counter()
-    result = []
-    for key, row in sorted(rows.items(), key=lambda item: sampling.stable_rank(str(item[0]))):
-        group = row["partition_group"]
+    for key in sorted(keys, key=lambda key: sampling.stable_rank(str(key))):
+        group = key[0]
         if counts[group] < adaptive.DEFAULT_POLICY["pixels_per_parcel"]:
             counts[group] += 1
-            result.append(row)
-    return result
+            yield key
+
+
+def capped(rows):
+    return [rows[key] for key in capped_keys(rows)]
+
+
+def index_windows(path):
+    """Keep pixel identities, byte spans, and shared parcel metadata in memory."""
+    indexed = {"fixed": {}, "aligned": {}}
+    metadata, parcel_details = {}, {}
+    for name, row, span in json_rows.read_rows(path, indexed):
+        if span is None:
+            metadata[name] = row
+            continue
+        group, region, crs, x, y = pixel_key(row)
+        key = (intern(group), intern(region), intern(crs), x, y)
+        details = (key[0], row["partition"], row["source_dataset"], row["crop"],
+                   row.get("test_cohort", "jecam"))
+        shared = parcel_details.get(details)
+        if shared is None:
+            group, partition, source, crop, test_cohort = details
+            shared = parcel_details[details] = {
+                "partition_group": group, "partition": partition, "source_dataset": source,
+                "crop": crop, "test_cohort": test_cohort,
+            }
+        indexed[name].setdefault(key, (span, shared))
+    return indexed, metadata
 
 
 def exclude_shared_development_locations(rows):
-    """Drop ambiguous ground coordinates without moving any parcel assignment."""
-    groups_by_location = {}
-    for row in rows.values():
-        if row["partition"] in {"train", "validation"}:
-            groups_by_location.setdefault(sampling.pixel_location(row), set()).add(row["partition_group"])
-    shared = {location for location, groups in groups_by_location.items() if len(groups) > 1}
-    retained, exclusions = {}, Counter()
-    for key, row in rows.items():
-        if row["partition"] in {"train", "validation"} and sampling.pixel_location(row) in shared:
-            exclusions[row["partition"], row["source_dataset"], row["crop"], row["partition_group"]] += 1
-        else:
-            retained[key] = row
-    return retained, {
+    """Drop ambiguous ground coordinates from the index before matching and capping."""
+    owners, shared = {}, set()
+    for key, (_, row) in rows.items():
+        if row["partition"] != "test":
+            location = key[2:]
+            if owners.setdefault(location, key[0]) != key[0]:
+                shared.add(location)
+    exclusions = Counter()
+    if shared:
+        for key in list(rows):
+            _, row = rows[key]
+            if row["partition"] != "test" and key[2:] in shared:
+                exclusions[row["partition"], row["source_dataset"], row["crop"], key[0]] += 1
+                del rows[key]
+    return {
         "shared_locations": len(shared),
         "excluded": [
             {"partition": partition, "source": source, "crop": crop, "parcel_group": group, "pixel_rows": count}
@@ -249,47 +286,140 @@ def exclude_shared_development_locations(rows):
     }
 
 
-def export_features(window_handoff):
+def split_development(full, matched):
+    """Assign stable parcel IDs, stratifying first by crop and matched availability."""
+    crops = {}
+    for rows in full.values():
+        for row in rows:
+            if row["partition"] == DEVELOPMENT:
+                group, crop = row["partition_group"], row["crop"]
+                if crops.setdefault(group, crop) != crop:
+                    raise ValueError(f"Inconsistent crop labels for parcel group {group}")
+    usable = {
+        name: {row["partition_group"] for row in rows if row["partition"] == DEVELOPMENT}
+        for name, rows in full.items()
+    }
+    matched_groups = {row["partition_group"] for row in matched if row["partition"] == DEVELOPMENT}
+    strata = {}
+    for group, crop in crops.items():
+        availability = (group in matched_groups, group in usable["fixed"], group in usable["aligned"])
+        strata.setdefault((crop, availability), []).append(group)
+
+    policy = adaptive.DEFAULT_POLICY
+    targets = policy["targets"]
+    train = targets["train"]["parcels"]
+    validation = targets["validation"]["parcels"]
+    fraction = validation / (train + validation)
+    assignments = {}
+    coverage = set()
+    for (crop, (is_matched, fixed, aligned)), groups in sorted(strata.items(), reverse=True):
+        groups.sort(key=lambda group: (sampling.stable_rank(group, policy["seed"]), group))
+        recipes = [name for name, available in (("fixed", fixed), ("aligned", aligned)) if available]
+        if len(groups) > 1:
+            validation_count = max(1, min(len(groups) - 1, floor(len(groups) * fraction + .5)))
+        else:
+            # Prefer training for a singleton matched crop. Fill missing full-cohort
+            # validation coverage when all of its recipes already have training support.
+            validation_count = int(not is_matched
+                                   and all((crop, name, "train") in coverage for name in recipes)
+                                   and any((crop, name, "validation") not in coverage for name in recipes))
+        for index, group in enumerate(groups):
+            partition = "validation" if index < validation_count else "train"
+            assignments[group] = partition
+            coverage.update((crop, name, partition) for name in recipes)
+    return {"policy": SPLIT_POLICY, "seed": policy["seed"], "validation_fraction": fraction,
+            "matched_parcel_groups": sorted(matched_groups), "assignments": assignments}
+
+
+def write_feature_packages(path, indexed, selected, summaries, metadata, test_cohorts):
     from crop_pipeline.features import experiments
 
+    outputs = {split: path.parent / f"features_{split}.json" for split in ("development", "test")}
+    temporary = {split: target.with_suffix(".json.tmp") for split, target in outputs.items()}
+    try:
+        with ExitStack() as stack:
+            source = stack.enter_context(path.open("rb"))
+            streams = {split: stack.enter_context(target.open("w", encoding="utf-8"))
+                       for split, target in temporary.items()}
+            for split, stream in streams.items():
+                header = {**metadata, "test_cohorts": test_cohorts} if split == "test" else metadata
+                stream.write(json.dumps(header)[:-1] + ', "rows": {')
+            for index, (cohort, keys) in enumerate(selected.items()):
+                rows = indexed[cohort.split("_", 1)[0]]
+                positions = dict.fromkeys(streams, 0)
+                for stream in streams.values():
+                    stream.write(("," if index else "") + json.dumps(cohort) + ":[")
+                for key, details in zip(keys, summaries[cohort], strict=True):
+                    (offset, length), _ = rows[key]
+                    source.seek(offset)
+                    row = json.loads(source.read(length))
+                    row["partition"] = details["partition"]
+                    enhanced = experiments.enhance_window(row, experiments.FEATURE_POLICY)
+                    split = "test" if details["partition"] == "test" else "development"
+                    stream = streams[split]
+                    if positions[split]:
+                        stream.write(",")
+                    stream.write(json.dumps(enhanced, separators=(",", ":"), allow_nan=False))
+                    positions[split] += 1
+                for stream in streams.values():
+                    stream.write("]")
+            for stream in streams.values():
+                stream.write("}}")
+        for split, target in outputs.items():
+            temporary[split].replace(target)
+    finally:
+        for target in temporary.values():
+            target.unlink(missing_ok=True)
+
+
+def export_features(window_handoff, *, summarize=None):
     path = Path(window_handoff)
-    data = json.loads(path.read_text())
-    indexed = {}
-    exclusions = {}
-    for name in ("fixed", "aligned"):
-        indexed[name] = {}
-        for row in data[name]:
-            indexed[name].setdefault(pixel_key(row), row)
-        indexed[name], exclusions[name] = exclude_shared_development_locations(indexed[name])
-    common = indexed["fixed"].keys() & indexed["aligned"].keys()
-    report = {"window_sha256": seasons.file_sha256(path), "quality": data["quality"],
-              "fixed_start_month": data.get("fixed_start_month", 1)}
-    for cohort in ("full", "matched"):
-        for name, rows in indexed.items():
-            selected = rows if cohort == "full" else {key: rows[key] for key in common}
-            report[f"{name}_{cohort}"] = [
-                experiments.enhance_window(row, experiments.FEATURE_POLICY)
-                for row in capped(selected)
-            ]
-    handoff = path.parent / "features.json"
+    indexed, data = index_windows(path)
+    exclusions = {name: exclude_shared_development_locations(rows) for name, rows in indexed.items()}
+    fixed, aligned = indexed["fixed"], indexed["aligned"]
+    matched = list(capped_keys(key for key in fixed if key in aligned))
+    selected = {
+        "fixed_full": list(capped_keys(fixed)), "fixed_matched": matched,
+        "aligned_full": list(capped_keys(aligned)), "aligned_matched": matched,
+    }
+    summaries = {cohort: [indexed[cohort.split("_", 1)[0]][key][1] for key in keys]
+                 for cohort, keys in selected.items()}
+    metadata = {"window_sha256": seasons.file_sha256(path), "quality": data["quality"],
+                "fixed_start_month": data.get("fixed_start_month", 1)}
+    if data.get("development_split_policy") == SPLIT_POLICY:
+        full = {name: list({id(details): details for _, details in rows.values()}.values())
+                for name, rows in indexed.items()}
+        split = split_development(full, summaries["fixed_matched"])
+        assignments = split["assignments"]
+        test_groups = {row["partition_group"] for rows in full.values() for row in rows
+                       if row["partition"] == "test"}
+        if test_groups.intersection(assignments):
+            raise ValueError("Parcel groups shared by development and reserved test windows")
+        save_json(path.parent / SPLIT_FILENAME, {**split, "window_sha256": metadata["window_sha256"]})
+        # Detail records are shared by all indexed pixels of the parcel.
+        for rows in full.values():
+            for row in rows:
+                if row["partition"] == DEVELOPMENT:
+                    row["partition"] = assignments[row["partition_group"]]
+
+    test_cohorts = data.get("test_cohorts", ["jecam"])
+    write_feature_packages(path, indexed, selected, summaries, metadata, test_cohorts)
     save_json(path.parent / "development_overlap_exclusions.json", exclusions)
     coverage = {}
-    for name in ("fixed", "aligned"):
+    for name in indexed:
         groups = {}
-        for row in report[f"{name}_full"]:
+        for row in summaries[f"{name}_full"]:
             groups.setdefault((row["partition"], row["crop"]), set()).add(row["partition_group"])
         coverage[name] = {f"{partition}/{crop}": len(ids)
                           for (partition, crop), ids in sorted(groups.items())}
     save_json(path.parent / "window_coverage.json", coverage)
-    metadata = {key: report[key] for key in ("quality", "window_sha256", "fixed_start_month")}
-    for split in ("development", "test"):
-        save_json(path.parent / f"features_{split}.json", {
-            **metadata,
-            **({"test_cohorts": data.get("test_cohorts", ["jecam"])} if split == "test" else {}),
-            "rows": {
-                name: [row for row in rows if (row["partition"] == "test") == (split == "test")]
-                for name, rows in report.items() if name not in metadata
-            },
-        })
+    handoff = path.parent / "features.json"
+    if summarize is not None:
+        development = {"rows": {name: [row for row in rows if row["partition"] != "test"]
+                                for name, rows in summaries.items()}}
+        test = {"test_cohorts": test_cohorts,
+                "rows": {name: [row for row in rows if row["partition"] == "test"]
+                         for name, rows in summaries.items()}}
+        summarize(handoff, development, test)
     save_json(handoff, metadata)
     return handoff

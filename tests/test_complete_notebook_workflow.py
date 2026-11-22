@@ -25,11 +25,12 @@ from test_preprocessing_workflow import fake_audit, reference_rows
 REPOSITORY = Path(__file__).resolve().parents[1]
 
 
-def select_fixture(quality, report):
+def select_fixture(quality, report, *, summarize):
     from crop_pipeline.common import save_json
     rows = [{**r, 'window_start': '2020-05-01', 'window_end': '2020-09-01'} for r in reference_rows()]
-    save_json(quality.parent/'windows.json', {'fixed': rows, 'aligned': rows,
-                                            'quality': str(quality), 'fixed_start_month': 5})
+    windows = {'fixed': rows, 'aligned': rows, 'quality': str(quality), 'fixed_start_month': 5}
+    summarize(quality.parent/'window_counts.csv', windows)
+    save_json(quality.parent/'windows.json', windows)
     return quality.parent/'windows.json'
 
 

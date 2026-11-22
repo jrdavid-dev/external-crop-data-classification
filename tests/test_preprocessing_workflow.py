@@ -13,6 +13,7 @@ from shapely.geometry import box, mapping
 from crop_pipeline import preprocessing_workflow as workflow
 from crop_pipeline.analysis_workflow import resolve_stage_pointer
 from crop_pipeline.common import save_json
+from crop_pipeline.features.experiments import interval_columns
 from crop_pipeline.sources import adaptive
 from crop_pipeline.windows import seasons
 
@@ -31,20 +32,34 @@ def reference_rows():
     return rows
 
 
+def pooled_rows():
+    return [{**row, "partition": workflow.external.DEVELOPMENT} if row["partition"] != "test" else row
+            for row in reference_rows()]
+
+
 def fake_audit(report, output):
     run = Path(output) / "external_fixture"
     run.mkdir(parents=True, exist_ok=False)
     regions = [{"properties": {"fragment_id": r["region_id"], "partition_group": r["partition_group"],
                                 "crop": r["crop"], "partition": r["partition"], "selected_pixels": 1}}
-               for r in reference_rows()]
-    save_json(run / "quality.json", {"regions": regions, "quality_rows": [], "pixel_paths": {}})
+               for r in pooled_rows()]
+    save_json(run / "quality.json", {"regions": regions, "quality_rows": [], "pixel_paths": {},
+                                     "development_split_policy": workflow.external.SPLIT_POLICY})
     return run / "quality.json"
 
 
-def fake_select(quality, report):
-    rows = reference_rows()
-    save_json(quality.parent / "windows.json", {"fixed": rows, "aligned": rows[:-1], "quality": str(quality)})
-    return quality.parent / "windows.json"
+def save_windows(quality, fixed, aligned, summarize):
+    path = quality.parent / "windows.json"
+    windows = {"fixed": fixed, "aligned": aligned, "quality": str(quality),
+               "development_split_policy": workflow.external.SPLIT_POLICY}
+    summarize(path.with_name("window_counts.csv"), windows)
+    save_json(path, windows)
+    return path
+
+
+def fake_select(quality, report, *, summarize):
+    rows = pooled_rows()
+    return save_windows(quality, rows, rows[:-1], summarize)
 
 
 class PreprocessingWorkflowTests(unittest.TestCase):
@@ -78,6 +93,23 @@ class PreprocessingWorkflowTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text()), payload)
             self.assertLess(path.stat().st_size, len(json.dumps(payload, indent=2)) // 2)
 
+    def test_window_reader_byte_spans_across_chunks(self):
+        from crop_pipeline.windows import json_rows
+
+        data = {"quality": "audit/é.json", "fixed": [{"name": '日本語 "quoted" } ]'}],
+                "aligned": [], "fixed_start_month": 12}
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "windows.json"
+            payload = json.dumps(data, ensure_ascii=False, indent=2).replace("\n", "\r\n").encode()
+            path.write_bytes(payload)
+            with patch.object(json_rows, "_CHUNK_SIZE", 7):
+                records = list(json_rows.read_rows(path, {"fixed", "aligned"}))
+            self.assertEqual([(name, value) for name, value, _ in records],
+                             [("quality", data["quality"]), ("fixed", data["fixed"][0]),
+                              ("fixed_start_month", 12)])
+            _, row, (offset, length) = records[1]
+            self.assertEqual(json.loads(payload[offset:offset + length]), row)
+
     def test_export_excludes_shared_development_locations_before_matching(self):
         rows = reference_rows()
         train, validation, test = rows[0], rows[3], rows[6]
@@ -98,6 +130,73 @@ class PreprocessingWorkflowTests(unittest.TestCase):
             exclusions = json.loads(path.with_name("development_overlap_exclusions.json").read_text())
             self.assertEqual(exclusions["aligned"]["shared_locations"], 1)
             self.assertEqual({r["partition"] for r in exclusions["aligned"]["excluded"]}, {"train", "validation"})
+
+    def test_pooled_windows_lock_matched_groups_before_exporting_predictors(self):
+        external = workflow.external
+        first, second, test = (reference_rows()[i] for i in (0, 3, 6))
+        first = {**first, "partition": external.DEVELOPMENT}
+        second = {**second, "partition": external.DEVELOPMENT}
+        fixed_only = {**first, "partition_group": "fixed-only", "field_id": "fixed-only",
+                      "region_id": "fixed-only", "x": 1000}
+        shared = [{**first, "x": first["x"] + offset} for offset in range(25)]
+        test = {**test, "test_cohort": "jecam"}
+        fixed = [*shared, second, fixed_only, test]
+        aligned = [*shared, second, test]
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+
+            def pooled_select(quality, report, *, summarize):
+                return save_windows(quality, fixed, aligned, summarize)
+
+            with patch.object(external, "audit", side_effect=fake_audit), patch.object(
+                external, "select", side_effect=pooled_select
+            ):
+                workflow.audit(root)
+                windows = workflow.select(root)
+
+            receipt_path = workflow.record_path(windows)
+            receipt = json.loads(receipt_path.read_text())
+            receipt["files"].update({str(path): digest
+                                     for path, digest in workflow._PRE_STREAMING_CODE.items()})
+            save_json(receipt_path, receipt)
+            read_text = Path.read_text
+
+            def reject_large_json_read(path, *args, **kwargs):
+                if path.name in {"windows.json", "features_development.json", "features_test.json"}:
+                    self.fail(f"Feature export must avoid loading all of {path.name}")
+                return read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", reject_large_json_read):
+                handoff = workflow.export_features(root)
+
+            split_path = handoff.parent / external.SPLIT_FILENAME
+            lock = json.loads(split_path.read_text())
+            self.assertEqual(lock["matched_parcel_groups"], sorted(
+                [first["partition_group"], second["partition_group"]]))
+            assignments = lock["assignments"]
+            self.assertEqual({assignments[group] for group in lock["matched_parcel_groups"]},
+                             {"train", "validation"})
+            self.assertEqual(set(assignments), {*lock["matched_parcel_groups"], "fixed-only"})
+
+            features = json.loads(handoff.with_name("features_development.json").read_text())["rows"]
+            for rows in features.values():
+                for row in rows:
+                    self.assertEqual(row["partition"], assignments[row["partition_group"]])
+                    self.assertTrue(set(interval_columns()).issubset(row))
+            self.assertEqual(len(interval_columns()), 72)
+            self.assertEqual(len(features["fixed_matched"]), 21)
+            self.assertEqual([external.pixel_key(row) for row in features["fixed_matched"]],
+                             [external.pixel_key(row) for row in features["aligned_matched"]])
+
+            test_rows = json.loads(handoff.with_name("features_test.json").read_text())["rows"]
+            for rows in test_rows.values():
+                self.assertEqual([(r["partition"], r["test_cohort"], external.pixel_key(r)) for r in rows],
+                                 [("test", "jecam", external.pixel_key(test))])
+            self.assertEqual(workflow.export_features(root), handoff)
+            split_path.write_text("{}")
+            with self.assertRaisesRegex(ValueError, "output changed"):
+                workflow.export_features(root)
 
     def fixture(self, root):
         (root / "pyproject.toml").touch()
@@ -190,6 +289,34 @@ class PreprocessingWorkflowTests(unittest.TestCase):
                 resolve_stage_pointer(workflow.pointer(root, "windows"))
             self.assertFalse((workflow.paths(root)[2] / "external_fixture/windows.json").exists())
 
+    def test_window_counts_do_not_read_window_json_and_accept_prior_quality_code(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            with patch.object(workflow.external, "audit", side_effect=fake_audit):
+                quality = workflow.audit(root)
+            receipt_path = workflow.record_path(quality)
+            receipt = json.loads(receipt_path.read_text())
+            receipt["files"].update({str(path): digest
+                                     for path, digest in workflow._COMPATIBLE_QUALITY_CODE.items()})
+            save_json(receipt_path, receipt)
+            read_text = Path.read_text
+
+            def reject_window_read(path, *args, **kwargs):
+                if path.name == "windows.json":
+                    self.fail("Window counting must use the generated rows")
+                return read_text(path, *args, **kwargs)
+
+            with patch.object(workflow.external, "select", side_effect=fake_select), patch.object(
+                Path, "read_text", reject_window_read
+            ):
+                windows = workflow.select(root)
+            counts = seasons.read_table(windows.with_name("window_counts.csv"))
+            self.assertEqual(len(counts), 12)
+            row = next(r for r in counts if (r["window"], r["partition"], r["crop"])
+                       == ("fixed", "development", "carrot"))
+            self.assertEqual((row["complete_pixel_windows_before_cap"], row["parcel_groups"]), ("2", "2"))
+
     def test_partial_outputs_are_preserved_instead_of_overwritten(self):
         with TemporaryDirectory() as folder:
             root = Path(folder)
@@ -219,10 +346,9 @@ class PreprocessingWorkflowTests(unittest.TestCase):
             root = Path(folder)
             self.fixture(root)
 
-            def many_pixels(quality, report):
-                rows = [{**row, "x": row["x"] + offset} for row in reference_rows() for offset in range(25)]
-                save_json(quality.parent / "windows.json", {"fixed": rows, "aligned": rows, "quality": str(quality)})
-                return quality.parent / "windows.json"
+            def many_pixels(quality, report, *, summarize):
+                rows = [{**row, "x": row["x"] + offset} for row in pooled_rows() for offset in range(25)]
+                return save_windows(quality, rows, rows, summarize)
 
             with patch.object(workflow.external, "audit", side_effect=fake_audit), patch.object(workflow.external, "select", side_effect=many_pixels):
                 workflow.audit(root)

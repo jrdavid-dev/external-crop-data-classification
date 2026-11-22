@@ -2,7 +2,9 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from zipfile import ZipFile
 
+import geopandas as gpd
 import pyarrow as arrow
 import pyarrow.parquet as parquet
 from shapely.geometry import box
@@ -38,3 +40,22 @@ class EuroCropsTests(unittest.TestCase):
             self.assertEqual(checked_rows(rows, test=False), rows)
             with self.assertRaisesRegex(ValueError, "Unexpected source"):
                 checked_rows(rows, test=True)
+
+    def test_dutch_2020_archive_uses_declared_production_and_year_scoped_ids(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            df = gpd.GeoDataFrame(
+                {"objectid": [1, 2], "gewascode": ["2783", "2784"]},
+                geometry=[box(5.01, 52, 5.02, 52.01), box(5.03, 52, 5.04, 52.01)],
+                crs="EPSG:4326",
+            )
+            df.to_file(root / "NL_2020_EC21.shp")
+            archive = root / "NL_2020.zip"
+            with ZipFile(archive, "w") as zipped:
+                for member in root.glob("NL_2020_EC21.*"):
+                    zipped.write(member, member.name)
+            [feature] = eurocrops.load_carrots(archive)
+            properties = feature["properties"]
+            self.assertEqual(properties["partition_group"], "eurocrops|NL|2020|1")
+            self.assertEqual(adaptive.physical_key(eurocrops.SOURCE, properties), "eurocrops|NL|2020:1")
+            self.assertEqual(properties["source_class_code"], "2783")

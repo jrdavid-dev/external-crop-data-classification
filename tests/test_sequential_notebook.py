@@ -6,7 +6,6 @@ import json
 import re
 import tempfile
 import unittest
-from collections import Counter
 from contextlib import chdir, redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -16,7 +15,7 @@ from shapely.geometry import box, mapping
 from shapely.ops import transform as transform_geometry
 
 from crop_pipeline.common import save_json
-from crop_pipeline.sources import sen4agrinet
+from crop_pipeline.sources import adaptive, sen4agrinet
 from crop_pipeline.windows.seasons import file_sha256
 
 
@@ -209,12 +208,12 @@ class SequentialNotebookTests(unittest.TestCase):
             self.assertFalse(namespace["dataset_folder"].exists())
             plan = namespace["annual_plan"]
             self.assertEqual(namespace["candidate_parcels_per_crop"], 50)
-            # Select only 50 of the 120 eligible carrot parcels.
+            selection = adaptive.read_json(Path(namespace["adaptive_context"]["folder"]) / "selection.json", {})
+            self.assertEqual(len(selection["groups"]), 50)
+            self.assertTrue(all(group.rsplit("|", 1)[-1].startswith("potato_") for group in selection["groups"]))
+            self.assertEqual(set(selection["assignments"].values()), {"train"})
             self.assertEqual(plan["estimate"]["parcels"], 50)
-            self.assertEqual(
-                plan["years"]["2020"]["pixels_per_crop"],
-                {"carrot": 5000},
-            )
+            self.assertEqual(plan["years"]["2020"]["pixels_per_crop"], {"potato": 5000})
             self.assertEqual(namespace["collection_result"]["status"], "disabled")
             self.assertFalse(namespace["run_satellite_collection"])
 

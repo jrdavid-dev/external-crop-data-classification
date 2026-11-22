@@ -18,6 +18,17 @@ STAGES = ("quality", "windows", "features")
 CROPS = ("carrot", "cabbage", "potato")
 PARTITIONS = ("train", "validation", "test")
 
+# These exact implementations produced compatible audit or window handoffs
+# before the memory changes. Data artifacts still require their original hashes.
+_PRE_STREAMING_CODE = {
+    Path(__file__).resolve(): "290527ef7b619068fd48dccf1ccecde91f42e5000acc4765357258e293938101",
+    Path(external.__file__).resolve(): "81006b141e46dfcc2d318fde67fe44de44fb38b8d07d106c1e8ef4f6c9f543a0",
+}
+_COMPATIBLE_QUALITY_CODE = {
+    Path(__file__).resolve(): "704dc217236aa7918b6a0152a5098088f21eecf2f0d74c86d7e4568d1d5a2ced",
+    Path(external.__file__).resolve(): "e2d072d4ccb123d0e4acb11e25891c9c30c1640162ecdae48ebcc05b185a5bae",
+}
+
 
 def paths(repository):
     root = Path(repository).resolve()
@@ -70,7 +81,14 @@ def verify(handoff, stage):
     if str(handoff) not in data["files"]:
         raise ValueError("Preprocessing receipt does not include its handoff")
     for path, digest in data["files"].items():
-        if not Path(path).is_file() or seasons.file_sha256(path) != digest:
+        saved_path = Path(path)
+        compatible = (
+            (stage in {"quality", "windows"} and _PRE_STREAMING_CODE.get(saved_path) == digest)
+            or (stage == "quality" and _COMPATIBLE_QUALITY_CODE.get(saved_path) == digest)
+        )
+        if compatible and saved_path.is_file():
+            continue
+        if not saved_path.is_file() or seasons.file_sha256(saved_path) != digest:
             raise ValueError(f"Saved preprocessing output changed: {path}")
     return handoff
 
@@ -81,9 +99,15 @@ def check_snapshot(handoff, report):
         raise RuntimeError("Collection changed since the imagery audit. Finish collection and start a new audit; existing outputs remain saved.")
 
 
+def input_partitions(data):
+    if data.get("development_split_policy") == external.SPLIT_POLICY:
+        return (external.DEVELOPMENT, "test")
+    return PARTITIONS
+
+
 def quality_counts(data):
     rows = []
-    for partition in PARTITIONS:
+    for partition in input_partitions(data):
         for crop in CROPS:
             regions = [r["properties"] for r in data["regions"]
                        if r["properties"]["partition"] == partition and r["properties"]["crop"] == crop]
@@ -125,7 +149,7 @@ def observation_loss(data):
         by_crop.setdefault((partitions.get(row["region_id"], "unassigned"), row["crop"]), []).append(row)
         by_half_month.setdefault(row["start"][5:10], []).append(row)
     crop_rows = [{"partition": partition, "crop": crop, **_loss_row(by_crop[(partition, crop)])}
-                 for partition in PARTITIONS for crop in CROPS if (partition, crop) in by_crop]
+                 for partition in input_partitions(data) for crop in CROPS if (partition, crop) in by_crop]
     month_rows = [{"half_month_start": start, **_loss_row(rows)} for start, rows in sorted(by_half_month.items())]
     return crop_rows, month_rows, _loss_row(data["quality_rows"])
 
@@ -162,6 +186,22 @@ def choose_input(root, explicit, stage):
     return verify(path, stage)
 
 
+def write_window_counts(path, data):
+    counts = Counter()
+    groups = {}
+    for name in ("fixed", "aligned"):
+        for row in data[name]:
+            key = (name, row["partition"], row["crop"])
+            counts[key] += 1
+            groups.setdefault(key, set()).add(row["partition_group"])
+    seasons.write_records(path, [
+        {"window": name, "partition": partition, "crop": crop,
+         "complete_pixel_windows_before_cap": counts[name, partition, crop],
+         "parcel_groups": len(groups.get((name, partition, crop), ()))}
+        for name in ("fixed", "aligned") for partition in input_partitions(data) for crop in CROPS
+    ])
+
+
 def select(repository, quality_handoff=None):
     root, report, _ = paths(repository)
     pending(root, "windows")
@@ -173,15 +213,9 @@ def select(repository, quality_handoff=None):
     else:
         if existing.exists() or (quality.parent / "greenup").exists():
             raise FileExistsError("Partial window outputs exist. Start a new imagery audit to preserve this attempt")
-        handoff = external.select(quality, report)
+        handoff = external.select(quality, report, summarize=write_window_counts)
         check_snapshot(quality, report)
-        data = json.loads(handoff.read_text())
         counts = handoff.parent / "window_counts.csv"
-        seasons.write_records(counts, [
-            {"window": name, "partition": partition, "crop": crop,
-             "complete_pixel_windows_before_cap": sum(r["partition"] == partition and r["crop"] == crop for r in data[name]),
-             "parcel_groups": len({r["partition_group"] for r in data[name] if r["partition"] == partition and r["crop"] == crop})}
-            for name in ("fixed", "aligned") for partition in PARTITIONS for crop in CROPS])
         return publish(root, "windows", handoff, [handoff, quality, quality.parent / "collection_snapshot.json", counts])
     refresh(root)
     write_stage_pointer(pointer(root, "windows"), handoff)
@@ -237,22 +271,34 @@ def export_features(repository, window_handoff=None):
         write_stage_pointer(pointer(root, "features"), handoff)
         return handoff
     if any((windows.parent / name).exists() for name in
-           ("features.json", "features_development.json", "features_test.json")):
+           ("features.json", "features_development.json", "features_test.json", external.SPLIT_FILENAME)):
         raise FileExistsError("Partial feature outputs exist. Start a new imagery audit to preserve this attempt")
-    handoff = external.export_features(windows)
+    handoff = external.export_features(windows, summarize=write_feature_reports)
     check_snapshot(windows, report)
     development = handoff.parent / "features_development.json"
     test = handoff.parent / "features_test.json"
-    test_data = json.loads(test.read_text())
+    split_path = handoff.parent / external.SPLIT_FILENAME
+    split_files = [split_path] if split_path.is_file() else []
+    return publish(root, "features", handoff, [handoff, windows, development, test,
+                   handoff.parent / "usable_samples.csv", handoff.parent / "test_population_coverage.csv",
+                   handoff.parent / "preprocessing_report.md", handoff.parent / "window_coverage.json",
+                   handoff.parent / "collection_snapshot.json", handoff.parent / "development_overlap_exclusions.json",
+                   *split_files])
+
+
+def write_feature_reports(handoff, development, test_data):
     primary = {"rows": {name: [r for r in rows if r.get("test_cohort", "jecam") == "jecam"]
                         for name, rows in test_data["rows"].items()}}
-    rows = coverage_rows(json.loads(development.read_text()), primary)
+    rows = coverage_rows(development, primary)
     counts = handoff.parent / "usable_samples.csv"
     seasons.write_records(counts, rows)
     population_counts = handoff.parent / "test_population_coverage.csv"
     seasons.write_records(population_counts, test_population_coverage(test_data))
     report_path = handoff.parent / "preprocessing_report.md"
+    split_path = handoff.parent / external.SPLIT_FILENAME
     text = ["# Usable external samples", "",
+            *([f"Development assignments were locked by parcel after matching. See {split_path.name}."]
+              if split_path.is_file() else []),
             "Counts below are after window qualification, complete features and the existing per-parcel cap.",
             "Shared development pixel locations are excluded from both parcel records before capping. See development_overlap_exclusions.json.",
             "Budgets are collection targets, not accuracy guarantees. Zero means no usable samples for that cohort.",
@@ -262,8 +308,5 @@ def export_features(repository, window_handoff=None):
     text += [f"| {r['cohort']} | {r['partition']} | {r['crop']} | {r['usable_parcel_groups']} | {r['usable_pixels']} | {r['parcel_shortfall']} | {r['pixel_shortfall']} |" for r in rows]
     text += ["", "The table shows development and primary JECAM coverage.",
              "See test_population_coverage.csv for JECAM, each supplement and the combined external pool.",
-             "Original imagery masks, 0.80 coverage requirement, eight-bin completeness, timing rules and locked partitions are unchanged."]
+             "Original imagery masks, 0.80 coverage requirement, eight-bin completeness and timing rules apply to all cohorts."]
     report_path.write_text("\n".join(text) + "\n")
-    return publish(root, "features", handoff, [handoff, windows, development, test, counts, population_counts, report_path,
-                   handoff.parent / "window_coverage.json", handoff.parent / "collection_snapshot.json",
-                   handoff.parent / "development_overlap_exclusions.json"])

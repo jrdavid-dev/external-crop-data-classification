@@ -100,16 +100,17 @@ def draw_reference_profile(rows):
 
 def draw_quality_pass_rates(rows):
     """Share of audited tile intervals passing the 80% valid-pixel rule (quality_counts.csv)."""
+    partitions = ("development", "test") if any(r["partition"] == "development" for r in rows) else PARTITIONS
     values = {}
     for crop in CROPS:
         values[crop] = []
-        for partition in PARTITIONS:
+        for partition in partitions:
             match = [r for r in rows if r["crop"] == crop and r["partition"] == partition]
             audited = sum(int(r["audited_tile_intervals"]) for r in match)
             passed = sum(int(r["quality_pass_tile_intervals"]) for r in match)
             values[crop].append(round(passed / audited, 2) if audited else None)
     figure, axis = plt.subplots(figsize=(8, 4))
-    _crop_bars(axis, list(PARTITIONS), values)
+    _crop_bars(axis, list(partitions), values)
     axis.set_ylim(0, 1.25)
     axis.set_ylabel("Half-month composites passing")
     _style(axis, "Imagery quality: composites with ≥ 80% valid pixels")
@@ -144,16 +145,21 @@ def draw_observation_loss(rows):
 
 def draw_window_counts(rows):
     """Parcel groups with a complete fixed or aligned window (window_counts.csv)."""
+    pooled = any(r["partition"] == "development" for r in rows)
+    partitions = ("development", "test") if pooled else PARTITIONS
+    targets = None if pooled else partition_targets("parcels")
     figure, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
     for axis, window in zip(axes, ("fixed", "aligned")):
         values = {crop: [int(next((r["parcel_groups"] for r in rows if r["window"] == window
                                    and r["partition"] == p and r["crop"] == crop), 0))
-                         for p in PARTITIONS] for crop in CROPS}
-        _crop_bars(axis, list(PARTITIONS), values, targets=partition_targets("parcels"))
+                         for p in partitions] for crop in CROPS}
+        _crop_bars(axis, list(partitions), values, targets=targets)
         _style(axis, f"{'Fixed calendar' if window == 'fixed' else 'Aligned green-up'} window")
     axes[0].set_ylabel("Parcel groups with a complete window")
     axes[1].legend(frameon=False, ncol=4, fontsize=8)
-    figure.suptitle("Parcels with a complete four-month window / parcel target (before pixel capping)", x=0.01, ha="left",
+    title = ("Parcels with a complete four-month window before matching and splitting" if pooled
+             else "Parcels with a complete four-month window / parcel target (before pixel capping)")
+    figure.suptitle(title, x=0.01, ha="left",
                     fontweight="bold", color=INK)
     figure.tight_layout()
     return figure

@@ -16,11 +16,27 @@ Run 08 after collection or whenever a local progress snapshot is useful. Continu
 with [preprocessing 01](../preprocessing/01_imagery_quality.ipynb), then
 preprocessing 02–03. Collection and preprocessing numbering are separate.
 
-The source notebooks retain the exact pre-reorganization controls: new Sen4AgriNet
-batches currently request carrot, FranceCrops requests cabbage, and
-EuroCrops retains its completed carrot campaign. These are deliberate top-ups; earlier batches may contain
-other crops. Review the existing `extra_batches` and collection flags before Run All.
-No operational settings, buffers, quality rules or campaign IDs were reset.
+## Matched development top-up
+
+Use **Run All** in 03 for FranceCrops cabbage training and validation, then in
+02 for Sen4AgriNet potato training. Each notebook plans
+one named batch and resumes it on reruns. The existing locked split rule selects
+new candidates. Use **Run All** in 04 for EuroCrops carrot validation. It uses
+the [Dutch 2020 release from Zenodo](https://zenodo.org/records/10118572), caches
+the archive locally, and screens candidate footprints against saved development
+and test parcels. Keep notebooks 05–07 out of this top-up.
+
+If a run reports pending exports, rerun the same notebook until it reports
+completion. Then run preprocessing 01–03 in order. Check the matched rows in
+`usable_samples.csv` before running Training 01 and, if you need frozen models,
+Training 02. A top-up can still leave shortfalls, especially for carrot validation.
+
+A confirmed match needs the same locations to pass both window recipes. For
+archive triage, start with fixed-window parcels that have a detected green-up
+candidate. Cross-reference the saved development features with
+`windows/greenup/candidate_greenup.csv`, then check the aligned-window quality
+and complete pixel overlap. A detected candidate only identifies parcels to
+review. Newly queried parcels become confirmed matches during preprocessing.
 
 ## Outputs and safety
 

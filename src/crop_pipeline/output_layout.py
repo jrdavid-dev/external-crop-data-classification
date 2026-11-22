@@ -78,7 +78,8 @@ def layout_plan(repository):
             if not item.is_file():
                 continue
             section = ("features" if item.name.startswith("features") or item.name in {
-                           "usable_samples.csv", "preprocessing_report.md", "test_population_coverage.csv"} else
+                           "usable_samples.csv", "preprocessing_report.md", "test_population_coverage.csv",
+                           "development_split.json"} else
                        "windows" if item.name.startswith(("windows", "window_")) or item.name == "fixed_losses.csv"
                        else "quality")
             link(f"{prefix}/{section}/{item.name}", item)

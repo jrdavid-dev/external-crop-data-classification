@@ -353,6 +353,49 @@ class AdaptiveCollectionTests(unittest.TestCase):
                     if policy:
                         self.assertEqual(set(selection["assignments"].values()), {"test"})
 
+    def test_matched_top_up_selects_only_requested_crop_partitions_and_resumes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            report = root / "inventory"
+            source = "sen4agrinet"
+            features = [
+                reference_feature(f"{crop}_{i}", left=500000 + i * 500, crop=crop)
+                for crop in ("carrot", "potato") for i in range(30)
+            ]
+            scope = {"carrot": ("validation",), "potato": ("train",)}
+
+            def prepare(source, catalog, archive, provenance, **kwargs):
+                run = Path(archive) / "plan"
+                plan = {"source": source, "run_folder": str(run), "years": {}}
+                save_json(run / "collection_plan.json", plan)
+                return plan
+
+            with patch.object(adaptive.annual, "prepare_source", side_effect=prepare) as planner:
+                args = (source, features, root, report, {})
+                original = adaptive.prepare_round_batches(*args, parcels_per_crop=2)
+                batches = adaptive.prepare_round_batches(*args, parcels_per_crop=2, development_top_up=scope)
+                resumed = adaptive.prepare_round_batches(*args, parcels_per_crop=2, development_top_up=scope)
+                next_batch = adaptive.prepare_round_batches(
+                    *args, parcels_per_crop=2, development_top_up=scope, top_up_number=2)
+                next_resumed = adaptive.prepare_round_batches(
+                    *args, parcels_per_crop=2, development_top_up=scope, top_up_number=2)
+                self.assertEqual(planner.call_count, 3)
+
+            self.assertEqual(next_batch, next_resumed)
+            self.assertEqual(batches, resumed)
+            self.assertEqual(len(batches), 1)
+            def selection(batch):
+                return adaptive.read_json(Path(batch[0][1]["folder"]) / "selection.json", {})
+            selected = selection(batches)
+            self.assertEqual(len(selected["groups"]), 4)
+            self.assertEqual(len(selection(next_batch)["groups"]), 4)
+            self.assertTrue(set(selection(next_batch)["physical_keys"]).isdisjoint(
+                selected["physical_keys"] + selection(original)["physical_keys"]))
+            self.assertTrue(set(selected["physical_keys"]).isdisjoint(selection(original)["physical_keys"]))
+            for group, partition in selected["assignments"].items():
+                crop = group.rsplit("|", 1)[-1].split("_")[0]
+                self.assertIn(partition, scope[crop])
+
     def test_multi_batch_collection_resumes_each_plan_and_authenticates_once(self):
         batches = [({"run_folder":"old"}, {"folder":"/old"}),
                    ({"run_folder":"extra"}, {"folder":"/extra"})]

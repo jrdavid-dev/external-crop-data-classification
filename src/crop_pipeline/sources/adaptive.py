@@ -222,15 +222,21 @@ def resolve_collection(report_folder, policy=None):
                if read_json(path, {}).get("status") not in {"completed", "disabled", "skipped"}]
     if pending:
         raise RuntimeError("Finish the current candidate batches before window assessment: " + ", ".join(map(str, pending)))
-    records = [record for path in sorted(campaign.glob("rounds/*/*/completed.json"))
-               for record in read_json(path, {})["handoffs"]]
+    records = registered_handoffs(campaign)
     if not records:
         raise FileNotFoundError("Run source notebooks to complete a small adaptive candidate batch first")
+    from crop_pipeline.imagery.batch_export import content_key
+    return [Path(record["path"]) for record in records], f"{COLLECTION_NAME}_{policy_key(policy or DEFAULT_POLICY)}_{content_key(records)[:12]}"
+
+
+def registered_handoffs(campaign):
+    """Read verified completed handoffs even while new collection is pending."""
+    records = [record for path in sorted(campaign.glob("rounds/*/*/completed.json"))
+               for record in read_json(path, {})["handoffs"]]
     for record in records:
         if file_sha256(Path(record["path"])) != record["sha256"]:
             raise ValueError("Adaptive handoff changed after registration")
-    from crop_pipeline.imagery.batch_export import content_key
-    return [Path(record["path"]) for record in records], f"{COLLECTION_NAME}_{policy_key(policy or DEFAULT_POLICY)}_{content_key(records)[:12]}"
+    return records
 
 
 def assignments(report_folder, policy=None):
@@ -316,7 +322,8 @@ def require_targets(report_folder, policy=None):
 
 def prepare_round_batches(source, features, archive_root, report_folder, provenance,
                           parcels_per_crop=ROUND_PARCELS_PER_CROP, inward_buffer_metres=10, candidate_crops=None,
-                          extra_batches=0, policy=None, require_full_batch=False):
+                          extra_batches=0, policy=None, require_full_batch=False,
+                          development_top_up=None, top_up_number=1):
     """Resume saved plans and optionally add numbered batches in the current round."""
     if type(extra_batches) is not int or extra_batches < 0:
         raise ValueError("extra_batches must be a nonnegative integer")
@@ -324,6 +331,56 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
     round_number = read_json(campaign / "feedback.json", {}).get("next_round", 1)
     round_folder = campaign / "rounds" / f"{round_number:04d}"
     label = None if policy and policy.get("test_source") == source else f"overnight_{parcels_per_crop}"
+
+    if type(top_up_number) is not int or top_up_number < 1 or (top_up_number > 1 and development_top_up is None):
+        raise ValueError("A top-up number must be a positive integer for a development top-up")
+    eligible_groups = None
+    if development_top_up is not None:
+        if extra_batches or policy and policy.get("test_source"):
+            raise ValueError("Use one development-only batch per top-up")
+        if not development_top_up or any(
+            crop not in annual.TARGET_CROPS or not splits or set(splits) - {"train", "validation"}
+            for crop, splits in development_top_up.items()
+        ):
+            raise ValueError("Top-ups need known crops and training or validation splits")
+        if candidate_crops is not None and set(candidate_crops) != set(development_top_up):
+            raise ValueError("Candidate crops must match the development top-up")
+        candidate_crops = tuple(development_top_up)
+        scope = ("_".join((crop, *sorted(splits))) for crop, splits in sorted(development_top_up.items()))
+        label = "matched_top_up_" + "_".join(scope)
+        if top_up_number > 1:
+            label += f"_{top_up_number:04d}"
+        seed = (policy or DEFAULT_POLICY)["seed"]
+        eligible_groups = set()
+        for feature in features:
+            properties = feature["properties"]
+            splits = development_top_up.get(properties.get("crop"), ())
+            if splits and partition_for(physical_key(source, properties), seed) in splits:
+                eligible_groups.add(properties["partition_group"])
+        from crop_pipeline.cabbage_test_check import discover
+        from crop_pipeline.sources import test_cohort
+
+        test_sources = [entry for cohort in discover(report_folder) for entry in cohort["sources"]]
+        _, overlaps = test_cohort.exclude_overlap(
+            (feature for feature in features if feature["properties"]["partition_group"] in eligible_groups),
+            test_cohort.source_footprints(test_sources),
+        )
+        eligible_groups.difference_update(overlaps)
+        print(f"Development top-up: {len(overlaps)} candidate groups overlap saved test footprints.")
+        if source == "eurocrops":
+            from crop_pipeline.sources import pilot_sources
+
+            # Dutch fields can recur under different identifiers in yearly tables.
+            prior_paths = list(dict.fromkeys(
+                Path(record["path"]) for record in registered_handoffs(campaign)
+            ))
+            prior_sources = pilot_sources.load_sources(prior_paths) if prior_paths else []
+            _, repeated = test_cohort.exclude_overlap(
+                (feature for feature in features if feature["properties"]["partition_group"] in eligible_groups),
+                test_cohort.source_footprints(prior_sources),
+            )
+            eligible_groups.difference_update(repeated)
+            print(f"EuroCrops top-up: {len(repeated)} candidate groups overlap saved development footprints.")
 
     def selection_folder(batch_label):
         return round_folder / (f"{source}_{batch_label}" if batch_label else source)
@@ -339,7 +396,8 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
         from crop_pipeline.imagery.batch_export import content_key
         pool = sorted({physical_key(source, feature["properties"]) for feature in features
                        if feature["properties"].get("source_split", "train") == "train"
-                       and feature["properties"].get("crop") in (candidate_crops or annual.TARGET_CROPS)})
+                       and feature["properties"].get("crop") in (candidate_crops or annual.TARGET_CROPS)
+                       and (eligible_groups is None or feature["properties"]["partition_group"] in eligible_groups)})
         return f"{prefix}{content_key(pool)[:8]}"
 
     label = expand_empty_selection(label)
@@ -347,7 +405,8 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
     batches = []
     for path in sorted(round_folder.glob("*/context.json")):
         context = read_json(path, {})
-        if context.get("source") != source:
+        if context.get("source") != source or (
+                development_top_up is not None and path.parent != extension_folder):
             continue
         state = read_json(path.parent / "state.json", {})
         if state.get("status") in {"completed", "skipped"} and path.parent != extension_folder:
@@ -408,7 +467,8 @@ def prepare_round_batches(source, features, archive_root, report_folder, provena
         batches.append(prepare_batch(source, features, archive_root, report_folder, provenance,
             inward_buffer_metres=inward_buffer_metres, batch_label=label, policy=policy,
             round_parcels_per_crop=parcels_per_crop, candidate_crops=candidate_crops,
-            require_full_batch=require_full_batch))
+            require_full_batch=require_full_batch,
+            count_existing_round=development_top_up is None, eligible_groups=eligible_groups))
     for index in range(1, extra_batches + 1):
         batch_label = expand_empty_selection(f"extra_{index:04d}")
         folder = selection_folder(batch_label)

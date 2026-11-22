@@ -22,9 +22,9 @@ cloud jobs.
 | Collect primary test | [Collection 05](../notebooks/data_collection/05_cropharvest_test_collection.ipynb), `collection_cohort = "jecam"` | CropHarvest references | Separate primary test campaign |
 | Optional supplements | Collection 05 supplement modes; [06 California](../notebooks/data_collection/06_california_carrot_test_supplement.ipynb); [07 Denmark](../notebooks/data_collection/07_denmark_cabbage_test_supplement.ipynb) | References and overlap-screen inputs | Separate supplemental test campaigns |
 | Summarize | [Collection 08](../notebooks/data_collection/08_dataset_summary.ipynb) | Saved collection records | Metadata snapshot; does not certify usable imagery |
-| 1 | [Preprocessing 01](../notebooks/preprocessing/01_imagery_quality.ipynb) | Completed collection or imported batches | `quality.json`: imagery audit and collection snapshot |
+| 1 | [Preprocessing 01](../notebooks/preprocessing/01_imagery_quality.ipynb) | Completed collection or imported batches | `quality.json`: imagery audit of pooled development and reserved test parcels, plus collection snapshot |
 | 2 | [Preprocessing 02](../notebooks/preprocessing/02_window_selection.ipynb) | Verified quality handoff | `windows.json`: fixed/aligned qualifying windows |
-| 3 | [Preprocessing 03](../notebooks/preprocessing/03_feature_engineering.ipynb) | Verified windows handoff | `features.json`, `features_development.json`, `features_test.json`, counts and shortfalls |
+| 3 | [Preprocessing 03](../notebooks/preprocessing/03_feature_engineering.ipynb) | Verified windows handoff | `features.json`, `features_development.json`, `features_test.json`, locked development assignments, counts and shortfalls |
 | 4 | [Training 01](../notebooks/training/01_train_and_validate.ipynb) | Development features only | `training.json`: fitted candidates and validation selection |
 | 5 | [Training 02](../notebooks/training/02_freeze_models.ipynb) | Verified training handoff | `models/models_stage.json`: frozen copies; no refitting |
 | 6 | [Testing 01](../notebooks/testing/01_external_test_evaluation.ipynb) | Frozen models and matching test features | `scores.json`: parcel predictions, scores and majority baseline |

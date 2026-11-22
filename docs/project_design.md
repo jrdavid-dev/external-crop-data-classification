@@ -26,7 +26,7 @@ In implementation terms, **batch 1** organizes collection, **batch 2** organizes
 
 ## Invariants and remaining work
 
-- Preserve locked parcel assignments, collection ledgers, TIFFs, and source provenance. Screen test footprints against development. Exclude pixel locations shared by different development parcel groups within each recipe before matching and capping, including repeated farmland across years.
+- Preserve collection assignments, ledgers, TIFFs, and source provenance. For each new preprocessing run, lock a development train/validation assignment per parcel group after selecting matched pixel locations. Screen test footprints against development. Exclude pixel locations shared by different development parcel groups within each recipe before matching and capping, including repeated farmland across years.
 - Keep the 80% validity requirement, eight-bin completeness, finite features, and 20-pixel parcel cap. Targets per crop are **60 parcels / 1,200 pixels** in training and **20 parcels / 400 pixels** each in validation and testing. Assess targets per recipe and split. Pilot runs can report shortfalls; reaching the targets does not establish accuracy.
 - Report primary JECAM, each supplemental campaign and the combined external pool. Screen supplements against development and primary test footprints before scoring.
 - Before the final experiment, check selected top-up completion, rerun preprocessing after collection changes, and inspect current counts and receipts before training. Record any remaining quota gaps and geographic concentration in the final evaluation.
