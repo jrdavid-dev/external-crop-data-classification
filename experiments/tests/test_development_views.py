@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from crop_pipeline.training import development_views
+from experiments.annual import development_views
 
 CROPS = development_views.CROPS
 SOURCES = ("sen4agrinet", "francecrops", "eurocrops")

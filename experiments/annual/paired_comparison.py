@@ -7,7 +7,7 @@ is scored on the parcels that baseline model scored, with the parcel resampling 
 ``external_report``: seed, campaign-by-reference-crop strata, 95% percentile intervals.
 Saved confusion matrices are checked against the prediction files before scoring.
 
-    .venv/bin/python -m crop_pipeline.training.paired_comparison \
+    .venv/bin/python -m experiments.annual.paired_comparison \
         pipeline_outputs/annual/test/run_<id> annual pipeline_outputs/testing/run_<id> \
         pipeline_outputs/reports/<new_folder> [--revised-scope]
 

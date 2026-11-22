@@ -19,9 +19,9 @@ from datetime import date
 
 import numpy as np
 
-from crop_pipeline.features import annual
+from experiments.annual import features as annual
 from crop_pipeline.imagery import quality
-from crop_pipeline.training import annual_workflow
+from experiments.annual import workflow as annual_workflow
 
 REFERENCE_YEAR = 2021
 DETECTOR = {**quality.DEFAULT_DETECTOR, "relative_threshold": 0.2}  # as in paoay.aligned and windows.workflow

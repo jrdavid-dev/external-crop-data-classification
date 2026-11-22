@@ -20,9 +20,9 @@ from datetime import date
 
 import numpy as np
 
-from crop_pipeline.features import annual
+from experiments.annual import features as annual
 from crop_pipeline.features.experiments import INDEX_NAMES, temporal_shape
-from crop_pipeline.training import annual_workflow
+from experiments.annual import workflow as annual_workflow
 
 REFERENCE_YEAR = 2021
 

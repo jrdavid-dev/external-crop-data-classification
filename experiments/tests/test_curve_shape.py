@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from crop_pipeline.features import annual
+from experiments.annual import features as annual
 from experiments.curve_shape import shape
 from crop_pipeline.features.experiments import temporal_shape
 

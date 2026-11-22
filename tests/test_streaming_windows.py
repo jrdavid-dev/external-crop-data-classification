@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from crop_pipeline.common import iter_json_array, iter_json_object, json_scalars, save_json
+from crop_pipeline.common import save_json
 from crop_pipeline.features import experiments
 from crop_pipeline.windows import external, seasons
 
@@ -44,30 +44,6 @@ def window_rows():
                                  "window_start": "2020-05-01", "window_end": "2020-09-01",
                                  **{column: .2 + pixel / 100 for column in seasons.feature_columns()}})
     return rows
-
-
-class StreamingJsonTests(unittest.TestCase):
-    def test_reader_matches_json_across_chunk_boundaries_and_layouts(self):
-        payload = {"fixed": [{"i": i, "s": 'a"},]' * i, "n": [1.5, None, {"x": []}]} for i in range(40)],
-                   "quality": "q", "aligned": [], "fixed_start_month": 12345}
-        with TemporaryDirectory() as folder:
-            path = Path(folder) / "windows.json"
-            for indent in (None, 2):
-                path.write_text(json.dumps(payload, indent=indent))
-                for chunk in (1, 5, 4096):
-                    items = list(iter_json_object(path, arrays=("fixed", "aligned"), chunk_size=chunk))
-                    self.assertEqual([v for k, v in items if k == "fixed"], payload["fixed"])
-                    self.assertEqual({k: v for k, v in items if k not in ("fixed", "aligned")},
-                                     {"quality": "q", "fixed_start_month": 12345})
-                self.assertEqual(list(iter_json_array(path, "fixed")), payload["fixed"])
-                self.assertEqual(json_scalars(path, ("fixed", "aligned"))["fixed_start_month"], 12345)
-
-    def test_truncated_file_is_rejected(self):
-        with TemporaryDirectory() as folder:
-            path = Path(folder) / "windows.json"
-            path.write_text('{"fixed": [{"a": 1}, {"a": 2')
-            with self.assertRaises(ValueError):
-                list(iter_json_object(path, arrays=("fixed",)))
 
 
 class StreamingExportTests(unittest.TestCase):

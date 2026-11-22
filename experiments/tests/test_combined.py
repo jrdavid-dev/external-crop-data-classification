@@ -2,8 +2,8 @@ import unittest
 
 import numpy as np
 
-from crop_pipeline.features import annual
-from crop_pipeline.training import development_views
+from experiments.annual import features as annual
+from experiments.annual import development_views
 from experiments.classifiers import combined
 
 

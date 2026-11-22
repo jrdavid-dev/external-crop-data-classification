@@ -18,8 +18,8 @@ import numpy as np
 
 from crop_pipeline.analysis_workflow import resolve_stage_pointer
 from crop_pipeline.common import save_json
-from crop_pipeline.imagery import sentinel1
-from crop_pipeline.training import annual_workflow as workflow
+from experiments.annual import sentinel1
+from experiments.annual import workflow as workflow
 from crop_pipeline.windows import seasons
 
 CROPS = workflow.CROPS

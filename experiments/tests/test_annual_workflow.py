@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import numpy as np
 
-from crop_pipeline.features import annual
-from crop_pipeline.imagery import sentinel1
-from crop_pipeline.training import annual_workflow, development_views
+from experiments.annual import features as annual
+from experiments.annual import sentinel1
+from experiments.annual import workflow as annual_workflow, development_views
 
 CROPS = development_views.CROPS
 SOURCES = ("sen4agrinet", "francecrops", "eurocrops")
@@ -107,6 +107,20 @@ class Sentinel1CacheTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 sentinel1.sample(rows, cache, ee=None)
 
+    def test_cache_is_reused_when_row_numbers_shift(self):
+        rows = [{"x": float(i), "y": 0., "source_crs": "EPSG:32631", "year": 2021} for i in range(5)]
+        with TemporaryDirectory() as folder:
+            name, part, _, _ = next(sentinel1.chunks(rows))
+            features = [{"properties": {"i": i, "VV_00": -10.0 - i}} for i in part]
+            (Path(folder) / name).write_text(json.dumps({"features": features}))
+            # Dropping a parcel elsewhere shifts these rows by one; the same points reuse the cache.
+            shifted = [{"x": 9., "y": 9., "source_crs": "EPSG:32631", "year": 2020}] + rows
+            (Path(folder) / next(sentinel1.chunks(shifted))[0]).write_text(
+                json.dumps({"features": [{"properties": {"i": 0}}]}))
+            values = sentinel1.sample(shifted, folder, ee=None)
+            self.assertEqual(values[4, 0, 0], -13.0)
+            self.assertTrue(np.isnan(values[0, 0, 0]))
+
     def test_missing_requests_are_fetched_once_and_cached(self):
         rows = [{"x": float(i), "y": 0., "source_crs": "EPSG:32631", "year": 2021} for i in range(3)]
         with TemporaryDirectory() as folder, patch.object(sentinel1, "_request") as request:
@@ -120,7 +134,7 @@ class Sentinel1CacheTests(unittest.TestCase):
 
 class AnnualMapTests(unittest.TestCase):
     def test_confidence_rule_and_missing_features(self):
-        from crop_pipeline.training import annual_maps
+        from experiments.annual import maps as annual_maps
 
         class Model:
             classes_ = np.array(["carrot", "potato"])  # cabbage absent from this fit
@@ -135,7 +149,7 @@ class AnnualMapTests(unittest.TestCase):
         self.assertEqual(accepted.tolist(), [True, False, True, False])
 
     def test_range_flag_needs_more_than_a_fifth_of_predictors_outside(self):
-        from crop_pipeline.training import annual_maps
+        from experiments.annual import maps as annual_maps
 
         training = np.tile(np.linspace(0, 1, 101)[:, None], (1, 10))
         inside = np.full(10, .5)
@@ -148,7 +162,7 @@ class AnnualMapTests(unittest.TestCase):
         self.assertEqual(flagged.tolist(), [False, False, True])
 
     def test_unknown_area_is_refused(self):
-        from crop_pipeline.training import annual_maps
+        from experiments.annual import maps as annual_maps
 
         with self.assertRaises(ValueError):
             annual_maps.map_area(".", "baguio")
@@ -247,6 +261,31 @@ class AnnualWorkflowTests(unittest.TestCase):
             (receipt.parent / "pixels.json").write_text("[]")
             with self.assertRaises(ValueError):
                 annual_workflow.select(root, progress=None)
+
+
+
+class CollectionSplitTests(unittest.TestCase):
+    def rows(self):
+        return [{"partition_group": g, "partition": p} for g, p in
+                (("a", "development"), ("a", "development"), ("b", "development"), ("t", "test"))]
+
+    def test_pooled_development_takes_the_collection_locks(self):
+        with TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / "collection_snapshot.json").write_text(json.dumps({"report_root": "inventory"}))
+            with patch.object(annual_workflow.adaptive, "assignments",
+                              return_value={"a": "train", "b": "validation", "t": "test"}) as locks:
+                rows, split = annual_workflow.collection_partitions(folder / "quality.json", self.rows())
+            locks.assert_called_once_with("inventory")
+            self.assertEqual([r["partition"] for r in rows], ["train", "train", "validation", "test"])
+            self.assertEqual((split["train_parcels"], split["validation_parcels"]), (1, 1))
+            with patch.object(annual_workflow.adaptive, "assignments", return_value={"a": "train"}), \
+                    self.assertRaises(ValueError):
+                annual_workflow.collection_partitions(folder / "quality.json", self.rows())
+
+    def test_older_handoffs_are_unchanged(self):
+        older = [{"partition_group": "a", "partition": "train"}, {"partition_group": "t", "partition": "test"}]
+        self.assertEqual(annual_workflow.collection_partitions(Path("unused"), older), (older, None))
 
 
 if __name__ == "__main__":

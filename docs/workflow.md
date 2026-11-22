@@ -97,16 +97,9 @@ test crops suppress three-class aggregates. Keep scientific constraints unchange
 when reporting a shortfall. Model settings and scoring definitions are in
 [methodology](methodology.md#model-selection-and-scoring).
 
-The annual harmonic recipe runs beside the window models: Training 04 builds
-inputs, selects on development views and freezes; Testing 05 scores once and
-writes the paired comparison; Paoay 08 maps. Its stages write
-`pipeline_outputs/annual/<stage>/run_<id>/` with sealed receipts and
-`current_<stage>.json` pointers, and never change the window runs. Selection reads
-only train and validation parcels: spatial CV within the training split and
-holding out one development dataset at a time, with the mean of the two as the
-selection score. It chooses between Sentinel-2 only and Sentinel-2 plus radar
-and freezes the default Random Forest. Alternatives tried and not adopted are in
-[`experiments/`](../experiments/README.md).
+Experiments to improve on these models, including the annual harmonic recipe,
+are in [`experiments/`](../experiments/README.md); they read the window runs but
+never change them.
 
 ## Progress and troubleshooting
 

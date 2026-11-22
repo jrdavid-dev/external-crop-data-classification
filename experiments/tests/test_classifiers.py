@@ -4,8 +4,8 @@ import unittest
 
 import numpy as np
 
-from crop_pipeline.features import annual
-from crop_pipeline.training import annual_workflow, development_views
+from experiments.annual import features as annual
+from experiments.annual import workflow as annual_workflow, development_views
 from experiments.classifiers import classifiers
 
 CROPS = development_views.CROPS

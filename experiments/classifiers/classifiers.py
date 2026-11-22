@@ -20,7 +20,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-from crop_pipeline.training import development_views
+from experiments.annual import development_views
 from crop_pipeline.training.classifier_comparison import CANDIDATES, XGBOOST_CANDIDATES
 from crop_pipeline.training.model_followups import TUNING_CANDIDATES
 
@@ -150,7 +150,7 @@ def best_family(results):
 def compare_on_selection(repository, selection_handoff=None, families_=None, progress=print):
     """Run the comparison on a pipeline selection's recipe and development pixels; returns (tuning, results)."""
     import json
-    from crop_pipeline.training import annual_workflow as aw
+    from experiments.annual import workflow as aw
 
     selection, record = aw._input(repository, selection_handoff, "selection")
     recipe = json.loads((selection.parent / "selection.json").read_text())["selected"]

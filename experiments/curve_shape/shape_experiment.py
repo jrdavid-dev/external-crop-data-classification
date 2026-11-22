@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from crop_pipeline.common import save_json
-from crop_pipeline.training import annual_workflow as aw, development_views, paired_comparison
+from experiments.annual import workflow as aw, development_views, paired_comparison
 from experiments.curve_shape import shape  # noqa: F401  (registers the curve-shape recipes)
 
 RECIPES = {"A": "annual_s2_s1", "B": "annual_shape", "B+radar": "annual_shape_s1", "C": "annual_s2_s1_shape"}

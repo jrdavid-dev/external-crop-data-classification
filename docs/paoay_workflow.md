@@ -1,6 +1,6 @@
 # Paoay application
 
-Paoay is deferred for the current external experiment. The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06 and exploratory aligned-map notebook 07. They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
+Paoay is deferred for the current external experiment. The [external classification workflow](workflow.md) runs in its own folders. The five core Paoay notebooks are numbered 01–05, followed by optional land activity notebook 06, exploratory aligned-map notebook 07 and area review 09. Annual-model maps are an experiment ([`experiments/notebooks/annual/`](../experiments/notebooks/annual/README.md)). They apply the fixed model, retain uncertainty and prepare field-review records. Software checks do not establish local crop accuracy.
 
 ## Run order
 
@@ -13,6 +13,7 @@ Paoay is deferred for the current external experiment. The [external classificat
 | [05 Reference and field review](../notebooks/paoay/05_reference_field_review.ipynb) | Summarize notes, freeze the preliminary map and prepare January records |
 | [06 Land activity](../notebooks/paoay/06_land_activity.ipynb) | Optional: map 2019–2026 active cropland, check it against NAMRIA land use and split the crop map by it |
 | [07 Exploratory aligned map](../notebooks/paoay/07_aligned_exploratory_map.ipynb) | Optional, exploratory: apply the aligned matched model to Cloud Score+ composites with per-pixel green-up windows |
+| [09 Area review](../notebooks/paoay/09_area_review.ipynb) | Optional: predicted labels inside each reference boundary for every saved map, KMZ calendar context compared with predictions, and NAMRIA ELUM 2023 farmland |
 
 Use the existing project kernel; **Restart Kernel → Run All** for each notebook in order. Nothing runs just by opening a notebook. The original eight entry points, outputs and metadata remain in the [checksum-verified archive](https://github.com/jrdavid-dev/external-crop-data-classification/tree/c1fe80c/notebooks/paoay/archive/eight_notebook_workflow/README.md). Do not run archived entry points in the active sequence.
 
@@ -90,9 +91,17 @@ Notebook 07 is separate from the fixed-model sequence and writes only to `paoay/
 
 Recorded deviations from training: Cloud Score+ instead of the SCL/cloud-probability mask; each half-month median is treated as one observation at its bin midpoint (training required per-date observations); per-pixel clear bins instead of a parcel coverage fraction and clear-date count. The aligned recipe was chosen after the external test scores were known, so this map is exploratory and is not a test of that choice.
 
+## 09: area review
+
+Notebook 09 reads saved maps only: the 04 crop baseline (January–April 2024) and the 07 aligned map when it exists for the current Training 02 model. It writes to `paoay/area_review/<crop baseline bundle>/`.
+
+- **Boundaries with predicted labels:** one zoomed panel per reference area and map, with the boundary and ELUM farmland outlined, and `area_labels.csv`.
+- **Calendar context:** entries come from a calendar CSV (`paoay_calendar_file`; default `review/calendars/kmz_notes_calendar.csv`, the same columns as the 05 calendar, so 05 can use it too). Months run from planting to harvest as written in the KMZ notes; every excerpt must occur in those notes. A confident pixel is calendar-consistent when its crop has an entry for that area whose months overlap the months its prediction describes (the map window or the pixel's own aligned window). Seedbeds, unconfirmed entries and unmodelled crops are listed but never count. Outputs: `calendar_comparison.csv`, `calendar_detail.csv` and a figure. This is context, not accuracy: a calendar does not say which crop occupied a polygon in 2024.
+- **ELUM farmland:** NAMRIA ELUM 2023 sub-classes Crops, Orchard, Agroforestry and SAFDZ (`atok_landuse_path`). General Production Agriculture is excluded (closed forest on alienable land in the ELUM metadata), as are pasture and grazing land. The notebook reports the ELUM classes inside each reference polygon and label shares inside and outside farmland, beside the 06 active-cropland class (`farmland_labels.csv`). Farmland is a land-use designation; it bounds where the three-crop model applies but does not validate its labels.
+
 ## Preservation and outputs
 
-Outputs remain under the parent of `report_root`, normally `data/pipeline_work/paoay/`: `references`, `sentinel2`, `dynamic_world`, `land_cover`, `features`, `predictions`, `applicability`, `season_shift`, `crop_baseline`, `screening`, `maps`, `review` and `field_review`.
+Outputs remain under the parent of `report_root`, normally `data/pipeline_work/paoay/`: `references`, `sentinel2`, `dynamic_world`, `land_cover`, `features`, `predictions`, `applicability`, `season_shift`, `crop_baseline`, `screening`, `maps`, `review`, `field_review` and `area_review`.
 
 Existing stage-pointer names remain compatible; 04 adds crop-baseline/screening pointers and 05 adds `field_review/field_review_stage.json`. Changed inputs, rules or code select new keyed bundles. Failed stages remain pending, preventing silent fallback to older successes. Existing imagery, archives, model packages, partitions, jobs, mutable reviews and historical outputs stay intact. Local settings, raw/generated files and field records remain outside Git.
 

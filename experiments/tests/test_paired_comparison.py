@@ -8,7 +8,7 @@ import unittest
 
 import numpy as np
 
-from crop_pipeline.training import paired_comparison
+from experiments.annual import paired_comparison
 from crop_pipeline.training.external_report import CROPS, confusion, metric_values
 
 BASELINE_MODELS = ("fixed_full", "aligned_full")

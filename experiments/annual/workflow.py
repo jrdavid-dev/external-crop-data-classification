@@ -13,6 +13,7 @@ main testing layout so the external report and the paired comparison can read th
 
 from collections import Counter, defaultdict
 import csv
+import hashlib
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -23,10 +24,11 @@ import numpy as np
 from crop_pipeline import preprocessing_workflow
 from crop_pipeline.analysis_workflow import resolve_stage_pointer, write_stage_pointer
 from crop_pipeline.common import save_json
-from crop_pipeline.features import annual
-from crop_pipeline.imagery import sentinel1
-from crop_pipeline.training import development_views, earth_engine
-from crop_pipeline.windows import seasons
+from crop_pipeline.sources import adaptive
+from crop_pipeline.training import earth_engine
+from crop_pipeline.windows import external, seasons
+from experiments.annual import development_views, sentinel1
+from experiments.annual import features as annual
 
 AREA = "annual"
 CROPS = development_views.CROPS
@@ -207,6 +209,32 @@ def write_table(path, rows):
         writer.writerows(rows)
 
 
+def collection_partitions(quality_path, rows):
+    """The annual experiment's own train/validation split: the collection-time locks.
+
+    Current quality handoffs pool development parcels as ``development``, and the window models
+    re-split them in Preprocessing 03 among parcels with a qualifying window. The annual recipe
+    needs no window, so it keeps its own split: the train/validation lock each parcel group got at
+    collection (seed 42), which covers every development parcel in the audit. Older handoffs that
+    already carry train/validation are returned unchanged.
+    """
+    pooled = {r["partition_group"] for r in rows if r["partition"] == external.DEVELOPMENT}
+    if not pooled:
+        return rows, None
+    snapshot = json.loads((Path(quality_path).parent / "collection_snapshot.json").read_text())
+    locks = adaptive.assignments(snapshot["report_root"])
+    missing = sorted(group for group in pooled if locks.get(group) not in ("train", "validation"))
+    if missing:
+        raise ValueError(f"{len(missing)} development parcel groups have no collection train/validation lock")
+    rows = [{**r, "partition": locks[r["partition_group"]]} if r["partition"] == external.DEVELOPMENT else r
+            for r in rows]
+    used = {group: locks[group] for group in sorted(pooled)}
+    return rows, {"source": "collection_assignments", "report_root": snapshot["report_root"],
+                  "assignments_sha256": hashlib.sha256(json.dumps(used, sort_keys=True).encode()).hexdigest(),
+                  "train_parcels": sum(v == "train" for v in used.values()),
+                  "validation_parcels": sum(v == "validation" for v in used.values())}
+
+
 # Stages
 
 def build_inputs(repository, quality_handoff=None, ee=None, pixels_per_parcel=annual.PIXELS_PER_PARCEL,
@@ -217,6 +245,7 @@ def build_inputs(repository, quality_handoff=None, ee=None, pixels_per_parcel=an
     quality_path = preprocessing_workflow.choose_input(root, quality_handoff, "quality")
     quality = json.loads(quality_path.read_text())
     rows, s2_values, s2_valid = annual.load_series(quality["regions"], quality["pixel_paths"], pixels_per_parcel)
+    rows, split = collection_partitions(quality_path, rows)
     shared = set(annual.shared_development_locations(rows))
     keep = np.asarray([i for i in range(len(rows)) if i not in shared], dtype=int)
     excluded = Counter((rows[i]["partition"], rows[i]["source_dataset"], rows[i]["crop"]) for i in shared)
@@ -231,6 +260,7 @@ def build_inputs(repository, quality_handoff=None, ee=None, pixels_per_parcel=an
     receipt = seal(run, "inputs", quality_handoff=str(quality_path), quality_sha256=seasons.file_sha256(quality_path),
                    recipe_version=annual.RECIPE_VERSION, pixels_per_parcel=pixels_per_parcel, pixels=len(rows),
                    parcels=len({r["partition_group"] for r in rows}),
+                   development_split=split,
                    shared_development_locations_excluded=[
                        {"partition": p, "source": s, "crop": c, "pixel_rows": n}
                        for (p, s, c), n in sorted(excluded.items())])

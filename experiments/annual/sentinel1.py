@@ -105,15 +105,19 @@ def sample(rows, cache, ee=None, chunk=400, workers=8, progress=print):
     values = np.full((len(rows), BINS, len(POLARIZATIONS)), np.nan)
     names = band_names()
     for name, part, _, _ in plan:
-        expected = set(part)
-        for feature in json.loads((cache / name).read_text())["features"]:
+        features = json.loads((cache / name).read_text())["features"]
+        # The file name fixes the ordered points; the stored "i" are row numbers from the run that
+        # fetched it. Map them to this run's rows by position, so a subset of rows reuses the cache.
+        stored = sorted({feature["properties"]["i"] for feature in features})
+        if len(stored) != len(part) or len(features) != len(part):
+            raise ValueError(f"Cached Sentinel-1 request {name} holds another sample")
+        position = dict(zip(stored, part))
+        for feature in features:
             props = feature["properties"]
-            if props["i"] not in expected:
-                raise ValueError(f"Cached Sentinel-1 request {name} holds another sample")
             for j, band in enumerate(names):
                 value = props.get(band)
                 if value is not None and value != NODATA:
-                    values[props["i"], j % BINS, j // BINS] = value
+                    values[position[props["i"]], j % BINS, j // BINS] = value
     return values
 
 

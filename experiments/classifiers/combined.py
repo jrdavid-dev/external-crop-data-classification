@@ -27,10 +27,10 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
-from crop_pipeline.features import annual
+from experiments.annual import features as annual
 from crop_pipeline.imagery import quality
 from crop_pipeline.paoay import aligned
-from crop_pipeline.training import development_views
+from experiments.annual import development_views
 from crop_pipeline.training.classifier_comparison import CANDIDATES as CLASSIFIER_GRIDS
 from crop_pipeline.training.classifier_comparison import XGBOOST_CANDIDATES
 from crop_pipeline.training.model_followups import TUNING_CANDIDATES

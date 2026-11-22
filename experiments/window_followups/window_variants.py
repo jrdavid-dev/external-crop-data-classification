@@ -19,7 +19,8 @@ import numpy as np
 
 from crop_pipeline.common import save_json
 from crop_pipeline.features import experiments
-from crop_pipeline.training import development_views, exploratory, notebook_workflow, source_holdout
+from crop_pipeline.training import exploratory, notebook_workflow, source_holdout
+from experiments.annual import development_views
 from crop_pipeline.training.model_followups import TUNING_CANDIDATES
 from crop_pipeline.training.transfer_followups import parcel_medians
 from crop_pipeline.windows.seasons import file_sha256

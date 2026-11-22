@@ -8,12 +8,12 @@ rises most from its early-window minimum to its peak, and describes that one cyc
 window order. Calendar position is deliberately left out, so a cycle in March and one in
 July are described the same way.
 
-Builders follow ``crop_pipeline.features.annual`` and return ``(X, ok, columns)``.
+Builders follow ``experiments.annual.features`` and return ``(X, ok, columns)``.
 """
 
 import numpy as np
 
-from crop_pipeline.features import annual
+from experiments.annual import features as annual
 
 WINDOW = 8
 MIN_RADAR_BINS = 22  # half-months with both polarizations, out of 24
