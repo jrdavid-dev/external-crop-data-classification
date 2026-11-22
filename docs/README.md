@@ -5,6 +5,7 @@ Read **[project design](project_design.md) → [workflow](workflow.md) →
 
 | Guide | Open it for |
 | --- | --- |
+| [Pipeline walkthrough](pipeline/README.md) | Stage-by-stage guide with figures from the current runs: data, preprocessing, models, limits and errors, Atok application, experiments |
 | [Project design](project_design.md) | Scope, data roles, targets and deliverables |
 | [Workflow](workflow.md) | Notebook order, handoffs, reruns and troubleshooting |
 | [Methodology](methodology.md) | Imagery rules, features, model settings and scoring |

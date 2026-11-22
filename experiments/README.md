@@ -10,6 +10,10 @@ reads them, and writes its own outputs to `pipeline_outputs/` (ignored by Git).
 
 ## Index
 
+Start with [`notebooks/experiments_explained.ipynb`](notebooks/experiments_explained.ipynb): one notebook that
+explains every experiment (train, validation and test), why each setting and month was chosen, and what it
+means for Atok, with charts read from the saved runs.
+
 External scores (JECAM macro-F1, combined pool) were computed after the test parcels had already
 been seen for the window models, so they are retrospective. Numbers are for the expanded dataset
 (Jose's plus 1,500 extra development parcels) unless marked; the annual Random Forest scores
@@ -28,6 +32,7 @@ JECAM 0.395 on it and 0.348 on Jose's original dataset.
 | Other classifiers | `classifiers/` | Logistic regression and gradient-boosted trees (XGBoost) with the external study's grids | Higher development scores (0.804, 0.811 vs 0.802) but worse on JECAM (0.201, 0.300 vs 0.395) on both datasets | No (recorded as a negative finding) |
 | Short-cycle radar | `short_cycle/` | Describe one Sentinel-1 crop cycle instead of the whole year | Selection 0.720 vs 0.789; flips the Paoay map from potato to cabbage | No |
 | Mixed training | `mixed_training/` | Do labels from the test places help a new place? | Same-place labels raised held-out scores 0.56 → 0.71; other places did not help a new place (0.53) | Motivates local labels |
+| Weighted mixed training | `mixed_training/weighted.py` | Add half of each external place's 10 km blocks to training, with weight 1×/2×/5× chosen by block-wise CV; score held-out blocks, and new places | Rerun 22 Nov 2026 (`pipeline_outputs/mixed_training/weighted_20261122`): same-place JECAM 0.294 → 0.62–0.67; higher weight did not help (CV picked 5/2/1 across seeds); new place 0.290, no gain | Motivates local labels; no weighting |
 | Field-visit plan | `field_plan/` | Stratified points and field sheets for the January 2027 visit | 65 points, 60 reserves, KMZ reference points | Planning tool |
 | Walkthrough | `walkthrough/` | Figures and summaries for the walkthrough notebook | Reads current outputs only | Presentation |
 

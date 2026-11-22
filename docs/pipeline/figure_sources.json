@@ -1,0 +1,109 @@
+{
+  "runs": {
+    "features": "sen4agrinet_work/analysis/external/external_epbjofk7",
+    "training": "pipeline_outputs/training/run_79cc09f61c3e",
+    "testing": "pipeline_outputs/testing/run_78548ef86423",
+    "experiments": "pipeline_outputs/experiments/rerun_20261122",
+    "mixed_training": "pipeline_outputs/mixed_training/weighted_20261122"
+  },
+  "figures": {
+    "figures/pipeline_overview.png": {
+      "schematic": "diagram of the documented recipe; no run data"
+    },
+    "01_data/figures/usable_parcels.png": {
+      "sen4agrinet_work/analysis/external/external_epbjofk7/usable_samples.csv": "af604d89eb19619e75efb713414516377e424e00709c91f5b11d4e21c3e73ad5",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/test_population_coverage.csv": "3af0085b03b73351667cf811d3f632cc17fe197fd201af2a19b436fb30260c32"
+    },
+    "01_data/figures/parcel_locations.png": {
+      "sen4agrinet_work/analysis/external/external_epbjofk7/features_development.json": "7d22c6def56c2e88779219b352b34348cf9870fffb4d2e2911eaf96237e4d4cb",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/features_test.json": "846f59d32b24cfd8faac0b5c25e73aa10eec1cc304541688a82401e180c213dc"
+    },
+    "02_preprocessing/figures/clear_observations.png": {
+      "sen4agrinet_work/analysis/external/external_epbjofk7/observation_loss_by_half_month.csv": "68744fd4943deee807f66c5f88a757c2f8ae04d1ac6a095e0c6c764c15ec0282"
+    },
+    "02_preprocessing/figures/window_recipes.png": {
+      "schematic": "diagram of the documented recipe; no run data"
+    },
+    "02_preprocessing/figures/window_funnel.png": {
+      "sen4agrinet_work/analysis/external/external_epbjofk7/window_counts.csv": "7ad197d78054be6e1fc6764a4e7a49ccdaf166199a51186537712ae38110b1f1",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/usable_samples.csv": "af604d89eb19619e75efb713414516377e424e00709c91f5b11d4e21c3e73ad5"
+    },
+    "03_models/figures/validation_vs_external.png": {
+      "pipeline_outputs/testing/run_78548ef86423/reports/test_scores.json": "be0f409702add79f14894671e4d1bc6a5233646b00975163f5dc38acaa7e56ae",
+      "pipeline_outputs/testing/run_78548ef86423/reports/combined/test_scores.json": "1daf3e34a2d4cc25421743bc563250e33a891b1ab9726412fb1189995b73010d",
+      "pipeline_outputs/testing/run_78548ef86423/reports/majority_baseline.json": "68e751d947dc124a8d1a64ef7740ca0be2b4b07d62cadd12c6de768662b22c71",
+      "pipeline_outputs/training/run_79cc09f61c3e/models/fixed_full/model_manifest.json": "bbdaf312420551886f9acce63e7f64b730903c4fba869fd9f62010ebdc553e59",
+      "pipeline_outputs/training/run_79cc09f61c3e/models/aligned_full/model_manifest.json": "6f4c0ded083d4ed94539c6f65227ae9cdbf02b87b31fa5cac265ab7bcdb0bdbe",
+      "pipeline_outputs/training/run_79cc09f61c3e/models/fixed_matched/model_manifest.json": "beb979b39b96d707be80af754c852b85640f9daf3bd563badf041f5854476bec",
+      "pipeline_outputs/training/run_79cc09f61c3e/models/aligned_matched/model_manifest.json": "ca1fe376e8338d6d89002c32ea4a201dd36b1a8a5836c9c48a09b7e166709447"
+    },
+    "03_models/figures/jecam_confusion.png": {
+      "pipeline_outputs/testing/run_78548ef86423/reports/test_scores.json": "be0f409702add79f14894671e4d1bc6a5233646b00975163f5dc38acaa7e56ae"
+    },
+    "04_limits_and_errors/figures/comparison_variants.png": {
+      "pipeline_outputs/testing/run_78548ef86423_batch2/comparison_metrics.csv": "079ff0192bdd76e44222569d8548e3adeefe07316be9575ebf2f56868fa417b5",
+      "pipeline_outputs/testing/run_78548ef86423_batch2/shape_comparison/comparison_metrics.csv": "bfdf3f961a73336fa3ddce4879ed58e9bb7ea5946af63e83efa56181bfb427bc",
+      "pipeline_outputs/testing/run_78548ef86423_batch2/indices_only_comparison/comparison_metrics.csv": "31e0f142f8e242338ff33cda3f115141b46c117036a31df99e355b475bf049c1",
+      "pipeline_outputs/testing/run_78548ef86423_batch2/tuned_comparison/comparison_metrics.csv": "4d6c472898e597ec4d18676c2cf6694abb640a86bc0434bf05f9daa9f3386751"
+    },
+    "04_limits_and_errors/figures/error_analysis.png": {
+      "pipeline_outputs/testing/run_78548ef86423_batch3/campaign_crop_errors.csv": "097f418e50bee0a90d5af7533aa4b532da4cc0213d86f92d36b4162d259c859c"
+    },
+    "04_limits_and_errors/figures/oob_optimism.png": {
+      "pipeline_outputs/testing/run_78548ef86423_batch3/oob_summary.csv": "da83315975726daa1ab25af3810060ce51dd8a37862e8a46edeaa8f6e90e1023"
+    },
+    "04_limits_and_errors/figures/applicability_and_season.png": {
+      "sen4agrinet_work/paoay/applicability/bundles/00e168caaa6d5ace3963/summary.csv": "ea6c70c8e6e0d93df50fb67b7947b7fd09dc8e270dd90d60e70571d5a831ecbe",
+      "sen4agrinet_work/paoay/season_shift/bundles/9b35149302205660af2b/curves.csv": "4f22089a2cf05421e426fac7d4f4d262108b21d8093827670433a11cbd468501"
+    },
+    "05_atok_application/figures/farmland_and_maps.png": {
+      "sen4agrinet_work/paoay/crop_baseline/bundles/864c133324dc6055de39/crop_baseline.tif": "a3c6a200e48e6d703c0399b0512ea86fa0b68d22a29a9a99a525faa3aeb588fe",
+      "sen4agrinet_work/paoay/review/calendars/kmz_notes_calendar.csv": "2a024e62c0f4f050318298ef749e038abe49afed04f5ac46f8bebabff266fa8c",
+      "sen4agrinet_work/paoay/land_activity/bundles/7a451e1678ff1cf5b266/land_activity.tif": "88acf02710c6d397d02aebab6c4a47a20b9d611b8dc9f1010b3df04b106dadc8",
+      "sen4agrinet_work/paoay/aligned_exploratory/a4aa748fd52767ac/aligned_map.tif": "4abac1607405aa8b81075a6932277580ae163d29d2e844864ef7a869d7a63b4c"
+    },
+    "05_atok_application/figures/area_boundaries.png": {
+      "sen4agrinet_work/paoay/crop_baseline/bundles/864c133324dc6055de39/crop_baseline.tif": "a3c6a200e48e6d703c0399b0512ea86fa0b68d22a29a9a99a525faa3aeb588fe",
+      "sen4agrinet_work/paoay/review/calendars/kmz_notes_calendar.csv": "2a024e62c0f4f050318298ef749e038abe49afed04f5ac46f8bebabff266fa8c",
+      "sen4agrinet_work/paoay/land_activity/bundles/7a451e1678ff1cf5b266/land_activity.tif": "88acf02710c6d397d02aebab6c4a47a20b9d611b8dc9f1010b3df04b106dadc8",
+      "sen4agrinet_work/paoay/aligned_exploratory/a4aa748fd52767ac/aligned_map.tif": "4abac1607405aa8b81075a6932277580ae163d29d2e844864ef7a869d7a63b4c"
+    },
+    "05_atok_application/figures/calendar_context.png": {
+      "sen4agrinet_work/paoay/crop_baseline/bundles/864c133324dc6055de39/crop_baseline.tif": "a3c6a200e48e6d703c0399b0512ea86fa0b68d22a29a9a99a525faa3aeb588fe",
+      "sen4agrinet_work/paoay/review/calendars/kmz_notes_calendar.csv": "2a024e62c0f4f050318298ef749e038abe49afed04f5ac46f8bebabff266fa8c",
+      "sen4agrinet_work/paoay/land_activity/bundles/7a451e1678ff1cf5b266/land_activity.tif": "88acf02710c6d397d02aebab6c4a47a20b9d611b8dc9f1010b3df04b106dadc8",
+      "sen4agrinet_work/paoay/aligned_exploratory/a4aa748fd52767ac/aligned_map.tif": "4abac1607405aa8b81075a6932277580ae163d29d2e844864ef7a869d7a63b4c"
+    },
+    "06_experiments/figures/experiment_external_scores.png": {
+      "pipeline_outputs/experiments/rerun_20261122/experiments.json": "1ce1a63e39591ae35892dedf24e1ad4089a519ac02ba6d3f3b173b1a23719d39"
+    },
+    "06_experiments/figures/atok_crop_mix.png": {
+      "pipeline_outputs/experiments/rerun_20261122/application/application_atok.csv": "ad7edd9680e7738f1f9bfb54e420bd71070e7400379e37fb000468723fb4a51d",
+      "pipeline_outputs/experiments/rerun_20261122/application/province_reference.json": "d4dca8d8fd265afe04b9b43b86957bfe7e3700032d1468d9a5f903b11a11282b"
+    },
+    "06_experiments/figures/external_vs_atok.png": {
+      "pipeline_outputs/experiments/rerun_20261122/experiments.json": "1ce1a63e39591ae35892dedf24e1ad4089a519ac02ba6d3f3b173b1a23719d39",
+      "pipeline_outputs/experiments/rerun_20261122/application/application_atok.csv": "ad7edd9680e7738f1f9bfb54e420bd71070e7400379e37fb000468723fb4a51d"
+    },
+    "02_preprocessing/figures/split_shuffle.png": {
+      "sen4agrinet_work/analysis/external/external_epbjofk7/development_split.json": "311fcd175d1cfed133028d68b5e6164538f3d07963c025067fd98933f47ba053",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/features_development.json": "7d22c6def56c2e88779219b352b34348cf9870fffb4d2e2911eaf96237e4d4cb"
+    },
+    "02_preprocessing/figures/split_distribution.png": {
+      "sen4agrinet_work/analysis/external/external_epbjofk7/development_split.json": "311fcd175d1cfed133028d68b5e6164538f3d07963c025067fd98933f47ba053",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/features_development.json": "7d22c6def56c2e88779219b352b34348cf9870fffb4d2e2911eaf96237e4d4cb",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/features_test.json": "846f59d32b24cfd8faac0b5c25e73aa10eec1cc304541688a82401e180c213dc"
+    },
+    "02_preprocessing/figures/split_strip.png": {
+      "sen4agrinet_work/analysis/external/external_epbjofk7/development_split.json": "311fcd175d1cfed133028d68b5e6164538f3d07963c025067fd98933f47ba053",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/features_development.json": "7d22c6def56c2e88779219b352b34348cf9870fffb4d2e2911eaf96237e4d4cb",
+      "sen4agrinet_work/analysis/external/external_epbjofk7/features_test.json": "846f59d32b24cfd8faac0b5c25e73aa10eec1cc304541688a82401e180c213dc"
+    },
+    "06_experiments/figures/mixed_split_strip.png": {
+      "pipeline_outputs/mixed_training/weighted_20261122/experiment.json": "bd095d8b894a4bfb729d24e49c9a68a7532057d3ab658b3b89e22a31bc12ac55",
+      "pipeline_outputs/mixed_training/weighted_20261122/split.csv": "3b3660cb2085e455cd26b9b737963e36ef645ce76f4be4529907eeba0856da2a",
+      "pipeline_outputs/mixed_training/weighted_20261122/summary.csv": "609dce1d563ba161b8f761e6dde8ac9488b50eecd7241f586051a121101b2ef3",
+      "pipeline_outputs/annual/inputs/run_cdfe06803944/pixels.json": "9544e5f41ecc6c6d2bd8ab4544630104721469921132c99d813570a703cc5bfc"
+    }
+  }
+}

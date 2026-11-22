@@ -6,7 +6,8 @@ frozen Random Forests on external test data. The current pipeline uses increment
 parcel batches and reports sample shortfalls alongside results.
 
 Start with [project design](docs/project_design.md) for the experiment and targets,
-then follow [the workflow](docs/workflow.md). The [documentation index](docs/README.md)
+then follow [the workflow](docs/workflow.md). For a visual, stage-by-stage walkthrough with figures from the
+current runs, see the [pipeline guide](docs/pipeline/README.md). The [documentation index](docs/README.md)
 contains ten guides, with technical references and history kept separate.
 
 ## Setup
