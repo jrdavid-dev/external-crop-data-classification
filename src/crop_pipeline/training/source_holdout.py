@@ -140,6 +140,8 @@ def freeze(development_path, *, destination=None):
                             "missing_values": "exclude_no_imputation"},
                 "source_feature_manifest_sha256": seasons.file_sha256(destination / "development.json"),
             }
+            if name == "aligned" and data.get("timing_policy"):
+                recipe["aligned_timing_policy"] = data["timing_policy"]
             joblib.dump({"classifier": model, "feature_columns": columns, "configuration": configuration},
                         folder / "model.joblib")
             save_json(folder / "recipe.json", recipe)

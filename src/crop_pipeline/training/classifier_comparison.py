@@ -81,10 +81,11 @@ def parcel_calibration_folds(rows):
     return folds
 
 
-def fit_classifier(kind, params, rows, columns):
+def fit_classifier(kind, params, rows, columns, *, sample_weight=None):
     values = exploratory.feature_matrix(rows, columns)
     labels = [row["crop"] for row in rows]
-    weights = exploratory.normalized_training_weights(rows, comparisons.WEIGHTS)
+    weights = (exploratory.normalized_training_weights(rows, comparisons.WEIGHTS)
+               if sample_weight is None else sample_weight)
     if kind == "xgboost":
         return CropXGBoost(params).fit(values, labels, sample_weight=weights)
     # Route weights to the classifier and calibration, using an unweighted standard scaler.

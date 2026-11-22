@@ -102,9 +102,12 @@ def train(repository, development_path=None):
     data = _read(source)
     _check_development(data)
     run = _new_run(repository, 'training')
-    # Copy the loaded JSON, so a later preprocessing run cannot alter this input.
+    # Snapshot the verified feature bytes without expanding the compact export.
     snapshot = run / 'features_development.json'
-    save_json(snapshot, data)
+    if data.get('split_mode') == 'fresh_matched_first':
+        shutil.copyfile(source, snapshot)
+    else:
+        save_json(snapshot, data)
     index = source_holdout.freeze(snapshot, destination=run / 'validation')
     receipt = _seal(run, 'training', development_source=str(source),
                     candidate_index=str(index), implementation_sha256=seasons.file_sha256(source_holdout.__file__))

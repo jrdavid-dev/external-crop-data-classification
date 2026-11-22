@@ -133,3 +133,15 @@ selection and small forests to verify handoffs, collection isolation and snapsho
 rejection. Separate tests cover the processing and transfer helpers. These checks
 do not replace a completed experiment on the chosen data or establish crop accuracy.
 Dated past test totals belong in [history](history/README.md), not a live run guide.
+
+### SakAI final aligned rerun
+
+Start at Preprocessing 02 with the saved feature handoff. The lean export reads
+the verified baseline and incorporates completed development additions. It
+creates a new matched-first train/validation split with roughly 25% held for
+validation. The previous 69-field benchmark remains available in its own run.
+Each new split locks one assignment per development field. Preprocessing 03 verifies that
+export. Continue with Training 01–02 and Testing 01–02. The aligned model recipe
+records the 25-day onset-bracketing limit, the 20-day later confirmation limit,
+and the two adjacent-month timing rules. The experimental JECAM adaptation
+models remain separate from this development-trained workflow.

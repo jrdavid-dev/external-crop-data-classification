@@ -60,3 +60,35 @@ To check only the new carrot and cabbage top-ups, open
 [05_matched_coverage.ipynb](05_matched_coverage.ipynb). It processes the locally
 completed top-up batches and checks them against the saved development windows.
 The report shows new matched candidates before train/validation assignment.
+
+[06_aligned_month_check.ipynb](06_aligned_month_check.ipynb) compares the strict
+aligned timing rule with trying both adjacent months for supported green-up
+intervals that cross a month boundary. A second comparison also allows adjacent
+month disagreement across NDVI thresholds for the same supported cycle. A third
+comparison raises only the onset-bracketing gap from 20 to 25 days and reports
+matched coverage for development and primary JECAM. The notebook reuses a saved
+preprocessing run,
+adds newly completed development downloads to both sides, and reports aligned-full
+and matched field gains and losses by crop. It uses local imagery and leaves the
+saved splits and preprocessing pointers in place.
+
+## Final 25-day run
+
+Start at [02_window_selection.ipynb](02_window_selection.ipynb) with blank
+inputs when the saved feature pointer is available. It reuses the verified
+original audit and windows, audits only newly completed development downloads,
+and publishes compact development and external features. This run splits the
+current development pool by crop and recipe availability, prioritizing matched
+fields, with about 75% for training and 25% for validation. The new assignments
+are locked within the new run. The previous exact 69-field benchmark remains
+available in its own archive. Pending downloads enter a subsequent run once
+completed. If the feature pointer is unavailable, set `baseline_features` to
+the original verified `features.json`.
+
+Run 03 to review and verify the export, then Training 01–02 and Testing 01–02.
+The 25-day limit applies to the observations bracketing green-up. The
+20-day later confirmation limit, 80% imagery threshold, eight-bin
+completeness, pixel cap, and shared-location checks still apply. The
+25-day recipe tries adjacent months for eligible boundary and threshold
+disagreements. The official feature package contains development and reserved
+external parcels. Local JECAM adaptation has its own exploratory reports.

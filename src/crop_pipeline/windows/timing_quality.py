@@ -135,7 +135,8 @@ def observation_support(window, observations, detector, policy):
         failures.append("onset_endpoints_not_supported_by_actual_observations")
     if not 0 < gap_days <= policy["maximum_onset_gap_days"]:
         failures.append("onset_gap_too_large_or_invalid")
-    if onset_start.strftime("%Y-%m") != onset_end.strftime("%Y-%m"):
+    if (not window.get("alternate_onset_months")
+            and onset_start.strftime("%Y-%m") != onset_end.strftime("%Y-%m")):
         failures.append("onset_month_uncertain")
     amplitude = finite_value(window.get("amplitude"))
     if amplitude is None or amplitude < detector["minimum_amplitude"]:
@@ -195,7 +196,9 @@ def threshold_stability(window, sensitivity, policy, cycle_selection_policy="sin
     for threshold, by_region in sensitivity.items():
         candidates = by_region.get(window["region_id"], [])
         reason = threshold_problem(window, candidates, policy, cycle_selection_policy)
-        details[str(threshold)] = reason or "same_cycle_and_onset_month"
+        success = ("same_cycle_and_allowed_onset_months" if window.get("alternate_onset_months")
+                   else "same_cycle_and_onset_month")
+        details[str(threshold)] = reason or success
         if reason:
             failures.append(f"threshold_{threshold:g}_{reason}")
     return failures, details
@@ -223,8 +226,9 @@ def threshold_problem(window, candidates, policy, cycle_selection_policy="single
     allowed_statuses = {"candidate", "ambiguous"} if multiple_cycles else {"candidate"}
     if candidate["status"] not in allowed_statuses or candidate.get("source_kind") != "observed_daily":
         return "cycle_not_supported_by_actual_observations"
-    month = window["window_start"][:7]
-    if candidate["onset_interval_start"][:7] != month or candidate["onset_interval_end"][:7] != month:
+    months = window.get("alternate_onset_months", (window["window_start"][:7],))
+    candidate_months = {candidate["onset_interval_start"][:7], candidate["onset_interval_end"][:7]}
+    if not candidate_months.issubset(months):
         return "onset_month_changes"
     peak_shift = abs((date.fromisoformat(candidate["peak_date"]) - date.fromisoformat(window["peak_date"])).days)
     if peak_shift > policy["maximum_peak_shift_days"]:
