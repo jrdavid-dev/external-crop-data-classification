@@ -55,3 +55,21 @@ models and saved feature, prediction, reference-audit, and imagery-quality files
 It writes parcel errors and support, imagery coverage, the training cabbage
 trace, reconstructed internal OOB diagnostics, grouped impurity importance, and
 hard pixel and parcel votes to a separate Batch 3 directory.
+
+## Annual model test and paired comparison
+
+[Testing 05](05_annual_external_test.ipynb) scores the frozen annual model from
+Training 04 once on JECAM, each supplement and the combined pool, in the same
+layout as Testing 01. It then compares the annual model with each original
+window model on the parcels that model scored, using the parcel bootstrap of the
+external report:
+
+```bash
+.venv/bin/python -m crop_pipeline.training.paired_comparison \
+    pipeline_outputs/annual/test/run_<id> annual pipeline_outputs/testing/run_<id> \
+    pipeline_outputs/reports/<new_folder> [--revised-scope]
+```
+
+The external parcels were already scored for the window models, so this
+comparison is retrospective. [Paoay 08](../paoay/08_annual_maps.ipynb) applies the
+frozen annual model to Paoay and the wider Atok boundary.

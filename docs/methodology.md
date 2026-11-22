@@ -112,7 +112,7 @@ equal total weight, then parcels equal shares within crop; confidence distribute
 a parcel's share across its pixels (confirmed 1.0, reported 0.5 before normalization).
 
 Both window recipes use the ordered 72 interval predictors. The older 48-shape
-and 120-combined recipes are retained as [historical feature context](history/feature_experiments.md),
+and 120-combined recipes are earlier experiments,
 not alternative designs selected by the current notebooks. Fixed windows are
 May–August; aligned windows follow the saved green-up recipe. Old exports lacking
 fixed-start metadata retain their January-start interpretation and must be paired

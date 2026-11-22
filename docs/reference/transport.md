@@ -49,12 +49,7 @@ workflow checks. Read their CLI/help and retained plans before running them;
 keep task ledgers until local results verify. `--status` on the benchmark
 is a read-only inspection route; its normal invocation can submit/collect jobs.
 
-The [small live comparison](../history/live_batch_validation.md) records transport
-agreement and the mask correction for its selected case. The
-[historical pixel-table notes](../history/pixel_tables.md) retain benchmark context,
-and [full-catalogue notes](../history/full_year_collection.md) retain old controls.
-Their retired notebook numbering and 5,000-tile procedures are not current source
-notebook instructions. No full-catalogue notebook run is prescribed here.
+No full-catalogue notebook run is prescribed here.
 
 Downloaded Parquet size is not network transfer volume or Earth Engine cost.
 Client parsing, computation, queue delays and scene inventories affect elapsed

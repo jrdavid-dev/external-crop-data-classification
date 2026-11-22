@@ -67,8 +67,7 @@ data and your private settings separately, without distributing credentials.
 Both former `sen4agrinet_work` locations have been removed. Saved runtime paths
 and dependent metadata checksums now use `data/pipeline_work/` directly. Original
 metadata and before/after checksums are retained locally under
-`data/storage_migrations/`; detailed dated evidence is in the
-[storage migration history](history/storage_migration.md). Do not rewrite receipts
+`data/storage_migrations/`. Do not rewrite receipts
 to pretend a historical run used the current implementation.
 
 Relocated pixel caches retain their original filenames. Exact-contract matching

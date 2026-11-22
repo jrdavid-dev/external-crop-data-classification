@@ -18,6 +18,99 @@ def write_table(path, rows, columns):
     temporary.replace(path)
 
 
+class _JsonStream:
+    """Incremental reader for one top-level JSON object, holding one value at a time."""
+
+    _whitespace = " \t\r\n"
+
+    def __init__(self, stream, chunk_size):
+        self.stream, self.chunk_size = stream, chunk_size
+        self.buffer, self.position, self.eof = "", 0, False
+        self.decoder = json.JSONDecoder()
+
+    def _fill(self):
+        chunk = self.stream.read(self.chunk_size)
+        self.eof = not chunk
+        self.buffer = self.buffer[self.position:] + chunk
+        self.position = 0
+        return bool(chunk)
+
+    def peek(self):
+        while True:
+            while self.position < len(self.buffer) and self.buffer[self.position] in self._whitespace:
+                self.position += 1
+            if self.position < len(self.buffer):
+                return self.buffer[self.position]
+            if not self._fill():
+                raise ValueError("Unexpected end of JSON file")
+
+    def expect(self, character):
+        if self.peek() != character:
+            raise ValueError(f"Expected {character!r} in JSON file")
+        self.position += 1
+
+    def value(self):
+        self.peek()
+        while True:
+            try:
+                value, end = self.decoder.raw_decode(self.buffer, self.position)
+            except json.JSONDecodeError:
+                if self.eof or not self._fill():
+                    raise
+                continue
+            # A number at the end of the buffer may continue in the next chunk.
+            if end == len(self.buffer) and not self.eof and self._fill():
+                continue
+            self.position = end
+            return value
+
+
+def iter_json_object(path, arrays=(), chunk_size=1 << 24):
+    """Yield ``(key, value)`` for a top-level JSON object without loading it whole.
+
+    Arrays named in ``arrays`` are yielded element by element as ``(key, element)``;
+    every other top-level value is yielded whole. Elements of other arrays are
+    decoded as part of their value, so only name small values there.
+    """
+    arrays = set(arrays)
+    with Path(path).open(encoding="utf-8") as stream:
+        reader = _JsonStream(stream, chunk_size)
+        reader.expect("{")
+        if reader.peek() == "}":
+            return
+        while True:
+            key = reader.value()
+            if not isinstance(key, str):
+                raise ValueError("JSON object keys must be strings")
+            reader.expect(":")
+            if key in arrays and reader.peek() == "[":
+                reader.expect("[")
+                if reader.peek() != "]":
+                    while True:
+                        yield key, reader.value()
+                        if reader.peek() == "]":
+                            break
+                        reader.expect(",")
+                reader.expect("]")
+            else:
+                yield key, reader.value()
+            if reader.peek() == "}":
+                return
+            reader.expect(",")
+
+
+def iter_json_array(path, key, large=("fixed", "aligned")):
+    """Yield one top-level array's elements; other ``large`` arrays are skipped element-wise."""
+    for name, value in iter_json_object(path, arrays={key, *large}):
+        if name == key:
+            yield value
+
+
+def json_scalars(path, large):
+    """Return the top-level values other than the named large arrays."""
+    return {name: value for name, value in iter_json_object(path, arrays=large) if name not in large}
+
+
 def save_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

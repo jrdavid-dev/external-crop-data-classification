@@ -1,0 +1,81 @@
+diff --git a/src/crop_pipeline/sources/test_cohort.py b/src/crop_pipeline/sources/test_cohort.py
+index 8aa2439..893fab3 100644
+--- a/src/crop_pipeline/sources/test_cohort.py
++++ b/src/crop_pipeline/sources/test_cohort.py
+@@ -89,6 +89,12 @@ def prepare_cabbage_supplement(report_folder, archive_root, features, provenance
+     )
+ 
+ 
++def _source_parcel(physical_key):
++    """(source, parcel ID) from ``source|country|parcel``; parcel IDs are unique within a source."""
++    source, _, parcel = physical_key.split("|", 2)
++    return source, parcel
++
++
+ def prepare_carrot_potato_supplement(report_folder, archive_root, features, provenance, limit):
+     """Collect separately after screening against development and reserved test parcels."""
+     from crop_pipeline.windows.seasons import file_sha256
+@@ -102,16 +108,20 @@ def prepare_carrot_potato_supplement(report_folder, archive_root, features, prov
+         selections = [json.loads(path.read_text())
+                       for path in campaign.glob("rounds/*/*/selection.json")]
+         keys = {key for selection in selections for key in selection["physical_keys"]}
+-        selected = [f for f in features if adaptive.physical_key(TEST, f["properties"]) in keys]
++        # The country part of a key is derived (dataset name before boundary files were
++        # used, country name after), so match saved selections by source and parcel ID.
++        wanted = {_source_parcel(key) for key in keys}
++        selected = [f for f in features
++                    if _source_parcel(adaptive.physical_key(TEST, f["properties"])) in wanted]
+         occupied.extend(selected)
+-        selected_keys = {adaptive.physical_key(TEST, f["properties"]) for f in selected}
++        found = {_source_parcel(adaptive.physical_key(TEST, f["properties"])) for f in selected}
+         for path in sorted(campaign.glob("rounds/*/*/completed.json")):
+             handoffs = json.loads(path.read_text())["handoffs"]
+             handoff_paths = [Path(record["path"]) for record in handoffs]
+             if any(file_sha256(p) != record["sha256"] for p, record in zip(handoff_paths, handoffs)):
+                 raise ValueError("Existing test handoff changed after registration")
+             occupied.extend(source_footprints(pilot_sources.load_sources(handoff_paths)))
+-        if keys - selected_keys:
++        if wanted - found:
+             raise ValueError("Current references lack saved test selections needed for overlap screening")
+     candidates = [f for f in features if f["properties"]["crop"] in crops
+                   and f["properties"]["source_dataset"] != "jecam"]
+diff --git a/tests/test_source_holdout.py b/tests/test_source_holdout.py
+index 44cc929..b7f2f5b 100644
+--- a/tests/test_source_holdout.py
++++ b/tests/test_source_holdout.py
+@@ -45,6 +45,35 @@ class SourceHoldoutTests(unittest.TestCase):
+             self.assertNotEqual(adaptive.root(report, test_cohort.CARROT_POTATO_SUPPLEMENT_POLICY), campaign)
+             self.assertEqual(original, selection.read_bytes())
+ 
++    def test_supplement_matches_saved_selections_when_country_labels_changed(self):
++        from crop_pipeline.common import save_json
++        from crop_pipeline.sources import adaptive
++
++        def feature(group, country, geometry, dataset="jecam"):
++            return {"geometry": mapping(geometry), "properties": {
++                "partition_group": group, "parcel_id": group, "country": country,
++                "source_dataset": dataset, "crop": "carrot",
++            }}
++
++        # Saved before country boundaries were used ("jecam"); current references say "Madagascar".
++        saved = feature("jecam:1", "jecam", box(0, 0, 2, 2))
++        current = feature("jecam:1", "Madagascar", box(0, 0, 2, 2))
++        overlapping = feature("idf:1", "France", box(1, 1, 3, 3), "ile-de-france")
++        with TemporaryDirectory() as tmp:
++            report = Path(tmp) / "inventory"
++            campaign = adaptive.root(report, test_cohort.TEST_POLICY)
++            save_json(campaign / "rounds/0001/primary/selection.json",
++                      {"physical_keys": [adaptive.physical_key("cropharvest", saved["properties"])]})
++            with patch.object(test_cohort, "completed_sources", return_value=[]), \
++                    patch.object(adaptive, "prepare_round_batches") as prepare:
++                test_cohort.prepare_carrot_potato_supplement(report, Path(tmp), [current, overlapping], {}, 50)
++            self.assertEqual(prepare.call_args.args[1], [])  # the overlapping parcel is still screened out
++            missing = feature("jecam:2", "jecam", box(8, 8, 9, 9))
++            save_json(campaign / "rounds/0001/other/selection.json",
++                      {"physical_keys": [adaptive.physical_key("cropharvest", missing["properties"])]})
++            with patch.object(test_cohort, "completed_sources", return_value=[]), self.assertRaises(ValueError):
++                test_cohort.prepare_carrot_potato_supplement(report, Path(tmp), [current, overlapping], {}, 50)
++
+     def test_fixed_window_uses_may_through_august_in_source_year(self):
+         region = {"properties": {"source_year": 2022, "partition_group": "parcel", "fragment_id": "tile"}}
+         window, = external.fixed_windows([region])

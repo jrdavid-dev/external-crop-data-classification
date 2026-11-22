@@ -71,5 +71,4 @@ assign a license to this project's code.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Local fixture tests verify software behavior, not scientific validity. Dated prior
-experiments and cleanup/verification records are in [documentation history](docs/history/README.md).
+Local fixture tests verify software behavior, not scientific validity.

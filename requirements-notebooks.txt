@@ -9,6 +9,9 @@ pyproj==3.8.0
 earthengine-api==1.7.48
 requests==2.34.2
 scikit-learn==1.9.1
+# Experiments only (experiments/classifiers); macOS needs the OpenMP runtime (brew install libomp).
+# Without it the experiment falls back to scikit-learn gradient boosting and records the backend.
+xgboost==3.4.1
 joblib==1.6.0
 pyarrow==26.0.0
 scipy==1.18.1
