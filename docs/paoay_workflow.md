@@ -147,3 +147,43 @@ These proposals never rewrite the model raster, relabel training data or imply w
 ### Saved review
 
 Each report bundle contains the frozen preliminary TIFF, per-boundary crop and screening tables, original calendar context, field checklist and immutable copies of all editable records. Old reports remain readable after source CSV edits. Keep photographs/documents separately and retain stable references to them. All local records and generated artifacts remain outside Git.
+
+## Whole-barangay farmland-first demonstration
+
+[Notebook 08](../notebooks/paoay/08_whole_barangay_farmland.ipynb) uses the
+indicative [OpenStreetMap Paoay boundary](https://www.openstreetmap.org/relation/20601702)
+(© OpenStreetMap contributors, ODbL) or an explicit WGS84 barangay GeoJSON
+feature. It keeps the older study-area runs separate. The coverage audit
+queries January–April and May–August for 2024–2026 with the original
+Sentinel-2 cloud probability, SCL, and edge masks. It reports the clear
+fraction per bin and the intersection across all eight bins.
+
+Before crop feature extraction, the workflow audits the Dynamic World
+land-cover evidence. Its conservative rule requires confident cover support
+in at least four bins and a strict majority of crop votes. The January–April
+2024 application keeps those results as a diagnostic and uses the published
+[SEA_Cropland10 2024](https://doi.org/10.5281/zenodo.19303406) layer (Cai and Zeng,
+CC BY 4.0) as the farmland gate. The workflow reads only the local portion
+of that raster and aligns categorical labels by nearest neighbor. Only
+mapped cropland enters crop inference. The 80% spectral coverage gate is
+evaluated over that farmland in each bin. Each scored pixel needs finite inputs
+from all eight bins. GeoTIFFs and per-class areas are saved under
+`paoay/whole_barangay/maps/`; the map preserves low-confidence crop type
+and unavailable imagery as distinct statuses.
+
+The frozen fixed-matched model uses May–August at training. The notebook
+can apply it to January–April only with the explicit calendar-shift option,
+which labels the map exploratory. Local field records are required to
+verify the land-cover mask, crop identity, and prediction accuracy.
+
+### Zoom to the supplied study boundary
+
+The demo also links to an offline interactive view of the original KMZ
+**Region of Interest**. This is a separate farmland-first run using verified
+imagery on the smaller study grid. The seven reference areas are outlines for
+field checks. Hover or tap a dashed red reference area for the original KMZ
+crop notes. The model label and score appear separately. Outside reference
+areas, pixels show the model status and a suggested field check. Zoom, pan, and reset work locally without a basemap
+service. Recreate the view with `interactive_map.export(map_handoff,
+reference_handoff, output_html)` from `crop_pipeline.paoay`. The inputs must
+share the verified study boundary and retain the original raster grid.
