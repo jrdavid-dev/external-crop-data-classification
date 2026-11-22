@@ -88,9 +88,10 @@ def select(records):
     """Apply the pipeline's first-occurrence de-duplication, shared-location exclusion and cap."""
     indexed = {}
     for record in records:
-        indexed.setdefault(external.pixel_key(record), record)
-    retained, exclusions = external.exclude_shared_development_locations(indexed)
-    return external.capped(retained), exclusions
+        indexed.setdefault(external.pixel_key(record), (None, record))
+    # The pipeline index stores (byte span, row) pairs; exclusion edits it in place.
+    exclusions = external.exclude_shared_development_locations(indexed)
+    return [row for _, row in external.capped(indexed)], exclusions
 
 
 def to_feature_rows(records):

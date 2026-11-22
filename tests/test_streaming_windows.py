@@ -18,8 +18,9 @@ def in_memory_export(path):
     for name in ("fixed", "aligned"):
         indexed[name] = {}
         for row in data[name]:
-            indexed[name].setdefault(external.pixel_key(row), row)
-        indexed[name], _ = external.exclude_shared_development_locations(indexed[name])
+            indexed[name].setdefault(external.pixel_key(row), (None, row))
+        external.exclude_shared_development_locations(indexed[name])
+        indexed[name] = {key: row for key, (_, row) in indexed[name].items()}
     common = indexed["fixed"].keys() & indexed["aligned"].keys()
     return {f"{name}_{cohort}": [experiments.enhance_window(row, experiments.FEATURE_POLICY)
                                  for row in external.capped(rows if cohort == "full"
@@ -81,8 +82,14 @@ class StreamingExportTests(unittest.TestCase):
             save_json(path, {"fixed": rows + [duplicate], "aligned": aligned,
                              "quality": "fixture", "fixed_start_month": 5})
             expected = in_memory_export(path)
-            with patch("crop_pipeline.windows.external.json.loads",
-                       side_effect=AssertionError("window handoff loaded whole")):
+            size, loads = path.stat().st_size, json.loads
+
+            def row_loads(text, *args, **kwargs):
+                if len(text) >= size // 2:
+                    raise AssertionError("window handoff loaded whole")
+                return loads(text, *args, **kwargs)
+
+            with patch("crop_pipeline.windows.external.json.loads", side_effect=row_loads):
                 external.export_features(path)
             development = json.loads(path.with_name("features_development.json").read_text())
             test = json.loads(path.with_name("features_test.json").read_text())
