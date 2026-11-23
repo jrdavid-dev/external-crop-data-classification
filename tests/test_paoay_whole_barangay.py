@@ -1,4 +1,7 @@
 from datetime import date
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 import numpy as np
@@ -34,6 +37,18 @@ class WholeBarangayTests(unittest.TestCase):
         self.assertEqual(whole_barangay.date_candidates(date(2026, 8, 16)), [
             "2024-01-01", "2024-05-01", "2025-01-01", "2025-05-01", "2026-01-01",
         ])
+
+    def test_training_period_comes_from_the_verified_model(self):
+        with TemporaryDirectory() as folder:
+            model = Path(folder) / "model_manifest.json"
+            model.write_text(json.dumps({
+                "identity": {"recipe": {"window_recipe": {"type": "fixed", "start_month": 11}}}
+            }))
+            handoff = {"identity": {"model": whole_barangay.references.checksum(model)},
+                       "model_manifest": str(model)}
+            self.assertEqual(whole_barangay.fixed_training_period(handoff), "November–February")
+            model.write_text("{}")
+            self.assertEqual(whole_barangay.fixed_training_period(handoff), "")
 
     def test_shift_needs_opt_in_and_rechecks_other_imagery_settings(self):
         image = {"manifest": {"period": {"start": "2024-01-01"}}}

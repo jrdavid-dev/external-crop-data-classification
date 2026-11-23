@@ -168,13 +168,16 @@ of that raster and aligns categorical labels by nearest neighbor. Only
 mapped cropland enters crop inference. The 80% spectral coverage gate is
 evaluated over that farmland in each bin. Each scored pixel needs finite inputs
 from all eight bins. GeoTIFFs and per-class areas are saved under
-`paoay/whole_barangay/maps/`; the map preserves low-confidence crop type
-and unavailable imagery as distinct statuses.
+`paoay/whole_barangay/maps/`. The map distinguishes unresolved crops from
+unavailable imagery. A **Threshold-qualified crop prediction** requires a
+top mean forest probability of at least 0.60 and a lead of at least 0.10 over
+the next crop.
 
-The frozen fixed-matched model uses May–August at training. The notebook
-can apply it to January–April only with the explicit calendar-shift option,
-which labels the map exploratory. Local field records are required to
-verify the land-cover mask, crop identity, and prediction accuracy.
+January–April 2024 was chosen for clear Sentinel-2 coverage. The frozen
+fixed-matched model was trained on May–August imagery. The notebook applies
+it with an explicit calendar-shift option and labels the result exploratory.
+Local field records for the mapped season are required to validate the
+land-cover mask, crop identity and prediction accuracy.
 
 ### Zoom to the supplied study boundary
 

@@ -71,7 +71,7 @@ def export(handoff, reference_handoff, destination):
                "outline": _pixel_polygons(roi["geometry"], crs, inverse), "areas": areas,
                "labels": whole_barangay.PREDICTION_CODES, "colors": COLORS, "hints": HINTS,
                "start": saved["period"]["start"], "end": saved["period"]["end"],
-               "mode": saved["identity"]["mode"]}
+               "mode": saved["identity"]["mode"], "training": whole_barangay.fixed_training_period(saved)}
     # Keep names and labels as data even if a later KMZ includes script-like characters.
     data = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -117,8 +117,11 @@ footer{color:#49665a;font-size:13px;line-height:1.5}
 <div id="tooltip" hidden><b id="label"></b><span id="notes"></span><span id="score"></span><span id="hint"></span></div></div>
 <p id="details">Hover or tap a red reference area to see its original KMZ crop notes.</p>
 <div id="notes-panel" hidden><strong id="notes-title"></strong><p id="notes-detail"></p></div>
+<strong>Threshold-qualified crop prediction</strong>
 <div id="legend" aria-label="Map legend"></div>
-<footer>Exploratory crop predictions on <a href="https://doi.org/10.5281/zenodo.19303406">SEA_Cropland10 2024</a> farmland. Model labels and scores are shown separately from the original reference notes.</footer>
+<footer>Crop labels require a top model score of at least 60% and a lead of at least 10 percentage points over the next crop.
+Local accuracy is unvalidated. <span id="season-note"></span>
+Farmland source: <a href="https://doi.org/10.5281/zenodo.19303406">SEA_Cropland10 2024</a>.</footer>
 </main>
 <script type="application/json" id="map-data">__MAP_DATA__</script>
 <script>
@@ -142,6 +145,11 @@ rasterContext.putImageData(pixels,0,0);
 get("subtitle").textContent = `${d.start} to ${d.end} (end exclusive) · Professor’s study boundary · ${d.mode === "exploratory_aligned_calendar_proxy"
  ? "JECAM-adapted forest on a calendar proxy"
  : d.mode === "exploratory_shifted_calendar" ? "exploratory calendar shift" : "calendar matches training"}`;
+if (d.mode === "exploratory_shifted_calendar") {
+  const clarity = d.start === "2024-01-01" && d.end === "2024-05-01"
+    ? "January–April 2024 was chosen for clear imagery. " : "";
+  get("season-note").textContent = clarity + (d.training ? `The fixed model was trained on ${d.training} imagery.` : "");
+}
 Object.entries(d.labels).forEach(([key,label]) => {
   const item = document.createElement("span"), swatch = document.createElement("i");
   swatch.style.background = d.colors[key]; item.append(swatch,document.createTextNode(label)); get("legend").append(item);

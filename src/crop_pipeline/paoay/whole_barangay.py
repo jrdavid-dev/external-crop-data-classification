@@ -1,5 +1,6 @@
 """Barangay-wide imagery audit and farmland-first frozen-model application."""
 
+from calendar import month_name
 from concurrent.futures import ThreadPoolExecutor
 import csv
 from datetime import date
@@ -355,6 +356,18 @@ def fetch_boundary(path):
     return path
 
 
+def fixed_training_period(handoff):
+    """Recover the fixed training months when the map's verified model is available."""
+    manifest = Path(handoff.get("model_manifest", ""))
+    if not manifest.is_file() or references.checksum(manifest) != handoff["identity"].get("model"):
+        return ""
+    window = json.loads(manifest.read_text())["identity"]["recipe"]["window_recipe"]
+    if window["type"] != "fixed":
+        return ""
+    start = window["start_month"]
+    return f"{month_name[start]}–{month_name[(start + 2) % 12 + 1]}"
+
+
 def plot_maps(handoff):
     """Show the land-cover mask next to its separate crop inference layer."""
     import matplotlib.pyplot as plt
@@ -367,7 +380,7 @@ def plot_maps(handoff):
     panels = [
         ("land_cover.tif", COVER_CODES, ["#538b57", "#d8ddde", "#a5a5a9"], "Land-cover eligibility"),
         ("crop_map.tif", PREDICTION_CODES, ["#e08438", "#437f46", "#8b69af", "#edce72",
-                                          "#8ebbd7", "#d8ddde", "#a5a5a9"], "Crop model output"),
+                                          "#8ebbd7", "#d8ddde", "#a5a5a9"], "Threshold-qualified crop prediction"),
     ]
     fig, axes = plt.subplots(1, 2, figsize=(11, 6), layout="constrained")
     for ax, (filename, categories, colors, title) in zip(axes, panels, strict=True):
@@ -379,10 +392,15 @@ def plot_maps(handoff):
         ax.set(title=title, xlabel="UTM easting (km)", ylabel="UTM northing (km)")
         ax.legend(handles=[Patch(color=color, label=categories[index]) for index, color in enumerate(colors, 1)],
                   loc="upper center", bbox_to_anchor=(.5, -.17), frameon=False, fontsize=8, ncol=2)
-    mode = ("Exploratory · different season from training"
-            if data["identity"]["mode"] == "exploratory_shifted_calendar" else "Calendar matches training")
-    fig.suptitle(f"Barangay Paoay, Atok · {data['period']['start']} to {data['period']['end']} (exclusive)\n{mode}",
-                 fontweight="bold")
+    if data["identity"]["mode"] == "exploratory_shifted_calendar":
+        training = fixed_training_period(data)
+        mode = "Exploratory calendar shift"
+        if training:
+            mode += f" · {training} training"
+    else:
+        mode = "Calendar matches training"
+    fig.suptitle(f"Barangay Paoay, Atok · {data['period']['start']} to {data['period']['end']} (exclusive)\n"
+                 f"{mode} · local accuracy unvalidated", fontweight="bold")
     source = (" · Cropland: Cai and Zeng, SEA_Cropland10 2024."
               if data.get("regional_cropland") else " · Cropland: Dynamic World.")
     fig.supxlabel("Boundary © OpenStreetMap contributors (ODbL) when using the supplied OSM outline." + source, fontsize=8)
